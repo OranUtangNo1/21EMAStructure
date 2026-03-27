@@ -1,0 +1,24 @@
+{
+  "run_created_at": "2026-03-27T10:38:24",
+  "requested_symbols": [
+    "NVDA",
+    "META",
+    "PLTR"
+  ],
+  "available_symbols": [
+    "NVDA",
+    "META",
+    "PLTR"
+  ],
+  "data_source_label": "live + cache",
+  "used_sample_data": false,
+  "data_health_summary": {
+    "live_price_coverage_pct": 0.0,
+    "real_price_coverage_pct": 100.0,
+    "stale_cache_count": 0,
+    "sample_count": 0,
+    "missing_count": 0
+  },
+  "market_score": 12.4,
+  "market_label": "Risk-off"
+}

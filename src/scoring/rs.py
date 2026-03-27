@@ -1,0 +1,105 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+import pandas as pd
+
+from src.utils import normalize_series
+
+
+@dataclass(slots=True)
+class RSConfig:
+    """Configuration for benchmark-relative strength scoring."""
+
+    benchmark_symbol: str = "SPY"
+    rs_lookbacks: tuple[int, ...] = (5, 21, 63, 126)
+    rs_normalization_method: str = "percentile"
+    rs_strong_threshold: float = 80.0
+    rs_weak_threshold: float = 39.0
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, object]) -> "RSConfig":
+        lookbacks = tuple(int(value) for value in payload.get("rs_lookbacks", [5, 21, 63, 126]))
+        return cls(
+            benchmark_symbol=str(payload.get("benchmark_symbol", "SPY")),
+            rs_lookbacks=lookbacks,
+            rs_normalization_method=str(payload.get("rs_normalization_method", "percentile")),
+            rs_strong_threshold=float(payload.get("rs_strong_threshold", 80.0)),
+            rs_weak_threshold=float(payload.get("rs_weak_threshold", 39.0)),
+        )
+
+
+class RSScorer:
+    """Score symbols versus a benchmark using percentile rank within each symbol's own ratio history."""
+
+    def __init__(self, config: RSConfig) -> None:
+        self.config = config
+
+    def score(
+        self,
+        snapshot: pd.DataFrame,
+        histories: dict[str, pd.DataFrame],
+        benchmark_history: pd.DataFrame,
+    ) -> pd.DataFrame:
+        result = snapshot.copy()
+        if benchmark_history.empty or "close" not in benchmark_history:
+            return self._append_empty_columns(result)
+
+        benchmark_close = benchmark_history["close"].sort_index().replace(0, np.nan)
+        raw_scores: dict[str, dict[str, float]] = {}
+        current_ratios: dict[str, float] = {}
+
+        for ticker, history in histories.items():
+            raw_scores[ticker] = {}
+            current_ratios[ticker] = np.nan
+            if history.empty or "close" not in history:
+                self._fill_missing_scores(raw_scores[ticker])
+                continue
+
+            aligned = pd.concat([history["close"], benchmark_close], axis=1, join="inner").dropna()
+            if aligned.empty:
+                self._fill_missing_scores(raw_scores[ticker])
+                continue
+
+            ratio = aligned.iloc[:, 0] / aligned.iloc[:, 1]
+            ratio = ratio.replace([np.inf, -np.inf], np.nan).dropna()
+            if ratio.empty:
+                self._fill_missing_scores(raw_scores[ticker])
+                continue
+
+            current_ratios[ticker] = float(ratio.iloc[-1])
+            for lookback in self.config.rs_lookbacks:
+                raw_scores[ticker][f"raw_rs{lookback}"] = self._score_ratio_window(ratio, lookback)
+
+        raw_frame = pd.DataFrame.from_dict(raw_scores, orient="index")
+        for lookback in self.config.rs_lookbacks:
+            column = f"raw_rs{lookback}"
+            values = raw_frame[column] if column in raw_frame.columns else pd.Series(np.nan, index=result.index, dtype=float)
+            result[column] = values.reindex(result.index)
+            result[f"rs{lookback}"] = result[column]
+
+        result["price_ratio"] = pd.Series(current_ratios, dtype=float).reindex(result.index)
+        return result
+
+    def _append_empty_columns(self, snapshot: pd.DataFrame) -> pd.DataFrame:
+        result = snapshot.copy()
+        for lookback in self.config.rs_lookbacks:
+            result[f"raw_rs{lookback}"] = np.nan
+            result[f"rs{lookback}"] = np.nan
+        result["price_ratio"] = np.nan
+        return result
+
+    def _fill_missing_scores(self, raw_score_row: dict[str, float]) -> None:
+        for lookback in self.config.rs_lookbacks:
+            raw_score_row[f"raw_rs{lookback}"] = np.nan
+
+    def _score_ratio_window(self, ratio: pd.Series, lookback: int) -> float:
+        if len(ratio) < lookback:
+            return float("nan")
+        window = ratio.tail(lookback)
+        ranked = normalize_series(window, self.config.rs_normalization_method)
+        if ranked.empty:
+            return float("nan")
+        value = ranked.iloc[-1]
+        return float(value) if pd.notna(value) else float("nan")

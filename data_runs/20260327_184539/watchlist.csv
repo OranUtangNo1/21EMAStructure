@@ -1,0 +1,8 @@
+ticker,name,sector,industry,H,F,I,21,63,126,rs5,overlap_count,hit_scans,hit_lists,vcs,earnings,pp_count_30d,ema21_low_pct,atr_21ema_zone,atr_50sma_zone,three_weeks_tight,atr_pct_from_50sma,price_data_source,fundamental_data_source,data_quality_label,data_quality_score,data_warning
+GEV,GE Vernova Inc.,Industrials,Specialty Industrial Machinery,80.13,36.97,82.14,90.48,96.83,98.41,60.0,2,Momentum 97,"21EMA Watch, Momentum 97",54.13,No,0,4.45,0.95,1.88,False,9.7,cache_fresh,cache_fresh,mixed,83.83,
+AMAT,"Applied Materials, Inc.",Technology,Semiconductor Equipment & Materials,67.08,53.25,64.29,52.38,73.02,86.51,20.0,1,,High Est. EPS Growth,42.66,No,0,-2.08,-0.41,-0.3,False,-1.47,cache_fresh,cache_fresh,mixed,83.83,
+AMD,"Advanced Micro Devices, Inc.",Technology,Semiconductors,58.0,64.21,35.71,95.24,71.43,53.17,80.0,2,,"21EMA Watch, Relative Strength 21 > 63",45.51,No,0,1.86,0.38,-1.06,False,-4.94,cache_fresh,cache_fresh,mixed,83.83,
+INTC,Intel Corporation,Technology,Semiconductors,53.19,26.67,35.71,71.43,66.67,83.33,80.0,1,,Relative Strength 21 > 63,45.36,No,0,-0.47,-0.08,-0.94,False,-5.29,cache_fresh,cache_fresh,mixed,82.17,
+PLTR,Palantir Technologies Inc.,Technology,Software - Infrastructure,38.38,72.85,14.29,52.38,47.62,23.81,20.0,1,,Relative Strength 21 > 63,45.72,No,0,-0.5,-0.11,-0.3,False,-1.41,cache_fresh,cache_fresh,mixed,83.83,
+AVGO,Broadcom Inc.,Technology,Semiconductors,36.62,53.33,35.71,42.86,36.51,18.25,40.0,1,,Relative Strength 21 > 63,45.07,No,0,-2.85,-0.7,-1.48,False,-5.7,cache_fresh,cache_fresh,mixed,83.83,
+ORCL,Oracle Corporation,Technology,Software - Infrastructure,29.54,81.01,14.29,28.57,20.63,10.32,20.0,1,,Relative Strength 21 > 63,37.94,No,0,-4.89,-0.97,-2.17,False,-9.84,cache_fresh,cache_fresh,mixed,83.83,

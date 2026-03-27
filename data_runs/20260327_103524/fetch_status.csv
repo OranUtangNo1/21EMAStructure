@@ -1,0 +1,12 @@
+symbol,dataset,source,has_data,fetched_at,note
+META,fundamental,cache_fresh,True,2026-03-26 18:21:19.081338,
+META,price,cache_fresh,True,2026-03-27 10:05:39.296686,
+META,profile,cache_fresh,True,2026-03-26 18:21:18.294863,
+NVDA,fundamental,cache_fresh,True,2026-03-26 18:21:18.676260,
+NVDA,price,cache_fresh,True,2026-03-27 10:05:39.062671,
+NVDA,profile,cache_fresh,True,2026-03-26 18:21:17.977545,
+PLTR,fundamental,cache_fresh,True,2026-03-26 18:21:19.146025,
+PLTR,price,cache_fresh,True,2026-03-27 10:05:39.477145,
+PLTR,profile,cache_fresh,True,2026-03-26 18:21:18.627988,
+SPY,price,cache_fresh,True,2026-03-27 10:05:41.104300,
+^VIX,price,cache_fresh,True,2026-03-27 10:05:41.280304,

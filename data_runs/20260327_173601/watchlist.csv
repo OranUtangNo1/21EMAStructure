@@ -1,0 +1,3 @@
+ticker,name,sector,industry,H,F,I,21,63,126,rs5,overlap_count,hit_scans,hit_lists,vcs,earnings,pp_count_30d,ema21_low_pct,atr_21ema_zone,atr_50sma_zone,three_weeks_tight,atr_pct_from_50sma,price_data_source,fundamental_data_source,data_quality_label,data_quality_score,data_warning
+PLTR,Palantir Technologies Inc.,Technology,Software - Infrastructure,60.36,54.17,100.0,52.38,47.62,23.81,20.0,2,,"High Est. EPS Growth, Relative Strength 21 > 63",45.72,No,0,-0.5,-0.11,-0.3,False,-1.41,cache_fresh,cache_fresh,mixed,83.83,
+CRWD,"CrowdStrike Holdings, Inc.",Technology,Software - Infrastructure,51.31,37.5,100.0,38.1,33.33,16.67,60.0,1,,Relative Strength 21 > 63,47.2,No,0,-3.08,-0.65,-1.46,False,-6.52,cache_fresh,cache_fresh,mixed,82.17,
