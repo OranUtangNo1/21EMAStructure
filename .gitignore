@@ -1,0 +1,49 @@
+# Python bytecode and test caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Packaging and coverage artifacts
+build/
+dist/
+*.egg-info/
+.coverage
+.coverage.*
+htmlcov/
+
+# Type checker / linter caches
+.mypy_cache/
+.ruff_cache/
+.pyre/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Environment and local secrets
+.env
+.env.*
+!.env.example
+.python-version
+.streamlit/secrets.toml
+
+# Editor and OS files
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
+
+# Project-generated data artifacts
+data_cache/*
+!data_cache/.gitkeep
+
+data_runs/*
+!data_runs/.gitkeep
+data_runs/universe_snapshots/*
+!data_runs/universe_snapshots/.gitkeep
+
+# Local logs
+*.log
