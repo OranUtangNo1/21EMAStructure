@@ -4,29 +4,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-SCAN_DISPLAY_ORDER = [
-    "21EMA scan",
-    "4% bullish",
-    "Vol Up",
-    "Momentum 97",
-    "97 Club",
-    "VCS",
-    "Pocket Pivot",
-    "PP Count",
-    "Weekly 20% plus gainers",
-]
-
-SCAN_DISPLAY_NAMES = {
-    "21EMA scan": "21EMA",
-    "4% bullish": "4% bullish",
-    "Vol Up": "Vol Up",
-    "Momentum 97": "Momentum 97",
-    "97 Club": "97 Club",
-    "VCS": "VCS",
-    "Pocket Pivot": "Pocket Pivot",
-    "PP Count": "3+ Pocket Pivots (30d)",
-    "Weekly 20% plus gainers": "Weekly 20%+ Gainers",
-}
+from src.scan.rules import ScanCardConfig, ScanConfig
 
 
 @dataclass(slots=True)
@@ -39,6 +17,9 @@ class ScanCardViewModel:
 
 class WatchlistViewModelBuilder:
     """Prepare screening-only watchlist outputs for Streamlit."""
+
+    def __init__(self, config: ScanConfig | None = None) -> None:
+        self.config = config or ScanConfig()
 
     def build(self, watchlist: pd.DataFrame) -> pd.DataFrame:
         if watchlist.empty:
@@ -59,6 +40,9 @@ class WatchlistViewModelBuilder:
             "126",
             "rs5",
             "overlap_count",
+            "scan_hit_count",
+            "list_overlap_count",
+            "duplicate_ticker",
             "hit_scans",
             "hit_lists",
             "vcs",
@@ -85,29 +69,11 @@ class WatchlistViewModelBuilder:
         if watchlist.empty or hits.empty:
             return []
 
-        scan_hits = hits.loc[hits["kind"] == "scan"].copy()
-        if scan_hits.empty:
-            return []
-
         cards: list[ScanCardViewModel] = []
-        for scan_name in SCAN_DISPLAY_ORDER:
-            tickers = scan_hits.loc[scan_hits["name"] == scan_name, "ticker"].drop_duplicates().tolist()
-            if not tickers:
-                continue
-            frame = watchlist.loc[watchlist.index.intersection(tickers)].copy()
-            if frame.empty:
-                continue
-            sort_columns = [column for column in ["hybrid_score", "overlap_count", "vcs"] if column in frame.columns]
-            if sort_columns:
-                frame = frame.sort_values(sort_columns, ascending=[False] * len(sort_columns))
-            cards.append(
-                ScanCardViewModel(
-                    scan_name=scan_name,
-                    display_name=SCAN_DISPLAY_NAMES.get(scan_name, scan_name),
-                    ticker_count=len(frame),
-                    rows=self._build_card_rows(frame),
-                )
-            )
+        for section in self.config.card_sections:
+            card = self._build_single_card(section, watchlist, hits)
+            if card is not None:
+                cards.append(card)
         return cards
 
     def build_earnings_today(self, snapshot: pd.DataFrame) -> pd.DataFrame:
@@ -134,6 +100,58 @@ class WatchlistViewModelBuilder:
         if "Hybrid-RS" in display.columns:
             display["Hybrid-RS"] = display["Hybrid-RS"].round(2)
         return display
+
+    def build_duplicate_tickers(self, watchlist: pd.DataFrame, hits: pd.DataFrame, min_count: int) -> pd.DataFrame:
+        if watchlist.empty or hits.empty:
+            return pd.DataFrame(columns=["Ticker", "Scan Hits", "Hybrid-RS", "Overlap", "VCS"])
+
+        scan_hits = hits.loc[hits["kind"] == "scan"].copy()
+        if scan_hits.empty:
+            return pd.DataFrame(columns=["Ticker", "Scan Hits", "Hybrid-RS", "Overlap", "VCS"])
+
+        scan_counts = scan_hits.groupby("ticker")["name"].nunique()
+        duplicate_symbols = scan_counts.loc[scan_counts >= int(min_count)].index.tolist()
+        if not duplicate_symbols:
+            return pd.DataFrame(columns=["Ticker", "Scan Hits", "Hybrid-RS", "Overlap", "VCS"])
+
+        frame = watchlist.loc[watchlist.index.intersection(duplicate_symbols)].copy()
+        if frame.empty:
+            return pd.DataFrame(columns=["Ticker", "Scan Hits", "Hybrid-RS", "Overlap", "VCS"])
+
+        frame["scan_hit_count"] = scan_counts.reindex(frame.index).fillna(0).astype(int)
+        if "overlap_count" not in frame.columns:
+            frame["overlap_count"] = frame["scan_hit_count"]
+        frame["duplicate_ticker"] = frame["scan_hit_count"] >= int(min_count)
+        sort_columns = [column for column in ["scan_hit_count", "hybrid_score", "overlap_count", "vcs"] if column in frame.columns]
+        if sort_columns:
+            frame = frame.sort_values(sort_columns, ascending=[False] * len(sort_columns))
+
+        display = frame.reset_index(names="Ticker").copy()
+        columns = ["Ticker", "scan_hit_count", "hybrid_score", "overlap_count", "vcs"]
+        available = [column for column in columns if column in display.columns]
+        display = display[available].copy()
+        display = display.rename(columns={"scan_hit_count": "Scan Hits", "hybrid_score": "Hybrid-RS", "overlap_count": "Overlap", "vcs": "VCS"})
+        for column in ["Hybrid-RS", "VCS"]:
+            if column in display.columns:
+                display[column] = display[column].round(2)
+        return display
+
+    def _build_single_card(self, section: ScanCardConfig, watchlist: pd.DataFrame, hits: pd.DataFrame) -> ScanCardViewModel | None:
+        section_hits = hits.loc[(hits["kind"] == "scan") & (hits["name"] == section.scan_name), "ticker"].drop_duplicates().tolist()
+        if not section_hits:
+            return None
+        frame = watchlist.loc[watchlist.index.intersection(section_hits)].copy()
+        if frame.empty:
+            return None
+        sort_columns = [column for column in section.sort_columns if column in frame.columns]
+        if sort_columns:
+            frame = frame.sort_values(sort_columns, ascending=[False] * len(sort_columns))
+        return ScanCardViewModel(
+            scan_name=section.scan_name,
+            display_name=section.display_name or section.scan_name,
+            ticker_count=len(frame),
+            rows=self._build_card_rows(frame),
+        )
 
     def _build_card_rows(self, frame: pd.DataFrame) -> pd.DataFrame:
         display = frame.reset_index(names="Ticker").copy()

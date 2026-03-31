@@ -36,28 +36,30 @@ class ScanRunner:
                 if matched:
                     records.append({"ticker": ticker, "kind": "list", "name": name})
 
-        hits = pd.DataFrame(records)
+        hits = pd.DataFrame(records, columns=["ticker", "kind", "name"])
         watchlist = working.copy()
         if hits.empty:
             watchlist["hit_scans"] = ""
             watchlist["hit_lists"] = ""
             watchlist["overlap_count"] = 0
+            watchlist["list_overlap_count"] = 0
             watchlist["duplicate_ticker"] = False
-            watchlist = self._sort_watchlist(watchlist).head(10)
+            watchlist = self._sort_watchlist(watchlist)
             return ScanRunResult(hits=hits, watchlist=watchlist)
 
         scan_hits = hits.loc[hits["kind"] == "scan"].groupby("ticker")["name"].agg(lambda values: ", ".join(sorted(values)))
         list_hits = hits.loc[hits["kind"] == "list"].groupby("ticker")["name"].agg(lambda values: ", ".join(sorted(values)))
-        overlap_count = hits.loc[hits["kind"] == "list"].groupby("ticker").size()
+        list_overlap_count = hits.loc[hits["kind"] == "list"].groupby("ticker").size()
         scan_hit_count = hits.loc[hits["kind"] == "scan"].groupby("ticker").size()
         hit_count = hits.groupby("ticker").size()
 
         watchlist["hit_scans"] = scan_hits.reindex(watchlist.index).fillna("")
         watchlist["hit_lists"] = list_hits.reindex(watchlist.index).fillna("")
-        watchlist["overlap_count"] = overlap_count.reindex(watchlist.index).fillna(0).astype(int)
         watchlist["scan_hit_count"] = scan_hit_count.reindex(watchlist.index).fillna(0).astype(int)
+        watchlist["overlap_count"] = watchlist["scan_hit_count"]
+        watchlist["list_overlap_count"] = list_overlap_count.reindex(watchlist.index).fillna(0).astype(int)
         watchlist["hit_count"] = hit_count.reindex(watchlist.index).fillna(0).astype(int)
-        watchlist["duplicate_ticker"] = watchlist["overlap_count"] >= self.config.duplicate_min_count
+        watchlist["duplicate_ticker"] = watchlist["scan_hit_count"] >= self.config.duplicate_min_count
         watchlist = watchlist.loc[watchlist["scan_hit_count"] > 0].copy()
         watchlist = self._sort_watchlist(watchlist)
         return ScanRunResult(hits=hits, watchlist=watchlist)
@@ -66,11 +68,10 @@ class ScanRunner:
         if watchlist.empty:
             return watchlist
         if self.config.watchlist_sort_mode == "overlap_then_hybrid":
-            return watchlist.sort_values(
-                ["overlap_count", "hybrid_score", "vcs", "rs21"],
-                ascending=[False, False, False, False],
-            )
-        return watchlist.sort_values(
-            ["hybrid_score", "overlap_count", "vcs", "rs21"],
-            ascending=[False, False, False, False],
-        )
+            priorities = ["overlap_count", "hybrid_score", "vcs", "rs21"]
+        else:
+            priorities = ["hybrid_score", "overlap_count", "vcs", "rs21"]
+        sort_columns = [column for column in priorities if column in watchlist.columns]
+        if not sort_columns:
+            return watchlist
+        return watchlist.sort_values(sort_columns, ascending=[False] * len(sort_columns))

@@ -1,0 +1,4 @@
+interface:
+  display_name: "OraTek Spec to Code Sync"
+  short_description: "Change code to match OraTek specs"
+  default_prompt: "Use $oratek-spec-to-code-syncing to read the OraTek specifications and update the implementation to match them without editing the specs."

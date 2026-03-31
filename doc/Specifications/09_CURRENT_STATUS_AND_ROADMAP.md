@@ -1,227 +1,178 @@
-# Current Status and Roadmap
+# 09. Current Status And Roadmap
 
-## 1. Purpose of This Document
+## 1. Summary
 
-This document is a status review of the project as of March 27, 2026.
-It reflects the scope clarification that the system is a **screening and candidate extraction platform**,
-not an entry evaluation or trade management system.
+As of March 31, 2026, the active OraTek system is a working screening and candidate extraction platform. The implemented outputs are:
 
----
+1. Market Dashboard
+2. RS Radar
+3. Today's Watchlist
 
-## 2. Scope Clarification
+The current implementation already covers:
 
-### What this system does
+- weekly universe discovery and snapshot persistence
+- daily price loading with cache and data lineage labels
+- local indicator and scoring calculation
+- nine scan rules for candidate extraction
+- duplicate ticker detection from scan overlap
+- market, radar, and watchlist Streamlit views
 
-The system delivers three daily outputs:
+The active system does not implement trade entry, position sizing, or exit management as product behavior. Those topics remain archived research material.
 
-1. **Market Dashboard** — market environment assessment
-2. **RS Radar** — sector and industry strength ranking
-3. **Today's Watchlist** — candidate stocks from 9 scans, displayed as a card grid sorted by Hybrid-RS
+## 2. Implemented System State
 
-### What this system does not do
+### 2.1 Data Layer
 
-The following are performed outside the system, primarily in TradingView:
+Implemented modules:
 
-- Entry evaluation (21EMA Cockpit)
-- Chart structure analysis (Structure Pivot, 21EMA Cloud visual)
-- Position sizing (Position Size Calculator)
-- Trade management (phase exits, trim, trail)
-- Portfolio-level risk
+- `src/data/finviz_provider.py`
+- `src/data/providers.py`
+- `src/data/cache.py`
+- `src/data/store.py`
+- `src/data/universe.py`
 
-### Archived modules
+Current behavior:
 
-Code and design for entry, structure, risk, and exit modules have been isolated to `archived/`.
-They are preserved as assets for a future entry decision system.
+- weekly universe discovery uses Finviz by default
+- daily price data is loaded from Yahoo Finance
+- profile and fundamental fields are taken from the weekly snapshot when available and filled from Yahoo fallback providers when missing
+- cache lineage is preserved as `live`, `cache_fresh`, `cache_stale`, `snapshot`, `sample`, or `missing`
+- run metadata and snapshots are persisted under `data_runs/`
 
----
+### 2.2 Indicator And Scoring Layer
 
-## 3. Current Progress
+Implemented modules:
 
-### Data foundation
+- `src/indicators/core.py`
+- `src/scoring/rs.py`
+- `src/scoring/fundamental.py`
+- `src/scoring/industry.py`
+- `src/scoring/hybrid.py`
+- `src/scoring/vcs.py`
 
-Status: implemented
+Current behavior:
 
-- price / profile / fundamental loading (yfinance primary)
-- cache management with TTL
-- data lineage and fetch status tracking (live / cache_fresh / cache_stale / sample / missing)
-- data quality scoring
-- run snapshot persistence under `data_runs/`
+- 21EMA, SMA, ATR, ADR, DCR, RSI, return horizons, pocket pivot, PP count, trend base, and 3WT are computed from daily price history
+- raw RS and normalized RS are computed versus SPY
+- fundamental, industry, hybrid, and VCS values are computed with configurable research formulas
 
-### Indicators
+### 2.3 Candidate Extraction Layer
 
-Status: implemented
+Implemented modules:
 
-- 21EMA High / Low / Cloud
-- SMA50 / SMA200
-- ATR / ADR / DCR / Relative Volume
-- RS5 / RS21 / RS63 / RS126
-- PP Count 30d
-- 3WT
-- ATR zone metrics (21EMA / 10WMA / 50SMA)
-- ATR% from 50SMA
-- ema21_low_pct
+- `src/scan/rules.py`
+- `src/scan/runner.py`
+- `src/dashboard/watchlist.py`
 
-### Scoring
+Current behavior:
 
-Status: initial version implemented
+- nine scan rules are executed against the eligible universe
+- the watchlist is the union of all scan hits
+- duplicate tickers are determined from scan overlap only
+- list-style annotations are computed separately and do not control watchlist eligibility
 
-- Fundamental Score (placeholder research formula)
-- Industry Score (placeholder research formula)
-- Hybrid Score (RS 5 : F 2 : I 3 weighting)
-- VCS (initial version)
+### 2.4 Dashboard Layer
 
-### Scans
+Implemented modules:
 
-Status: implemented
+- `src/dashboard/market.py`
+- `src/dashboard/radar.py`
+- `src/dashboard/watchlist.py`
+- `app/main.py`
 
-- 9 scan rules implemented
-- 7 lists implemented
-- duplicate ticker aggregation
+Current behavior:
 
-### Today's Watchlist
+- Market Dashboard is active
+- RS Radar is active
+- Today's Watchlist is active
+- the old chart, cockpit, and entry workflow are not part of the active application
 
-Status: needs UI revision
+## 3. What Is Still Research-Oriented
 
-- Watchlist data pipeline is working
-- UI currently shows a detailed table format
-- **Needs revision to scan-based card grid format** matching actual usage
+The following parts are implemented but should still be treated as configurable research logic, not fixed truth:
 
-### Market Dashboard
+- exact fundamental score formula
+- exact industry score aggregation formula
+- hybrid missing-value handling policy and weights
+- VCS formula details
+- market condition component design and thresholds
+- universe discovery heuristics from third-party providers
 
-Status: initial version present
+These areas are intentionally parameterized in `config/default.yaml` and modularized in the scoring and dashboard packages.
 
-- Market condition score and label
-- Breadth summary
-- VIX display
-- **Needs revision to match actual UI** (43 ETF scoring, Market Snapshot, S5TH chart, Factors vs SP500)
+## 4. Main Remaining Gaps
 
-### RS Radar
+### 4.1 Provider Depth
 
-Status: initial version present
+Current implementation is good enough for screening workflows, but provider depth is still limited.
 
-- Sector/industry grouping exists
-- **Needs revision to match actual UI** (4-axis RS, RS change rates, MAJOR STOCKS, Top 3 RS% Change)
+Remaining gaps:
 
-### Archived (scope-external) modules
+- no FMP provider chain yet
+- no dedicated security master for strict common-stock classification
+- universe quality still depends on screener heuristics and local exclusion rules
 
-Status: code exists, isolated from active scope
+### 4.2 Historical Review Workflow
 
-- StructurePivotDetector (initial version)
-- EntryEvaluator (initial hypothesis)
-- PositionSizingCalculator
-- ExitRuleEvaluator (phase model)
-- CockpitPanelBuilder
-- DarvasRetestFilter (stub)
-- TrendRegimeFilter (stub)
+The system writes run artifacts, but comparison workflows are still thin.
 
----
+Remaining gaps:
 
-## 4. Current Gaps (Within Scope)
+- no dedicated run-to-run comparison UI
+- no daily watchlist archive explorer in the app
+- no historical scan hit trend view
 
-### Data
+### 4.3 Formula Review And Calibration
 
-- Provider coverage depends heavily on yfinance
-- FMP integration as secondary provider not yet active
-- Fundamental coverage varies by symbol
-- 43 ETF list for Market Conditions not defined
+Several indicators and scores are implemented as reasonable defaults, but they still require ongoing review against real use.
 
-### Scan quality
+Examples:
 
-- Scan thresholds still need research validation
-- Some scan conditions may need refinement against real market data
+- VCS maturity thresholds
+- industry RS weighting scheme
+- market score weights and labeling thresholds
+- scan thresholds for momentum or earnings-sensitive environments
 
-### UI
+## 5. Near-Term Roadmap
 
-- Today's Watchlist needs conversion from table to card grid
-- Market Dashboard needs significant expansion (Market Snapshot, S5TH, Factors)
-- RS Radar needs expansion (4-axis RS, RS change rates, MAJOR STOCKS)
-- Earnings for today section not implemented
+### 5.1 Data Hardening
 
-### Research workflow
+Priority tasks:
 
-- No run-to-run comparison UI
-- No daily watchlist history
-- No scan-hit history tracking
+1. add an optional secondary provider path
+2. improve security-type filtering for the weekly universe
+3. keep weekly universe discovery and daily scan execution separated
 
----
+### 5.2 Research Workflow Improvement
 
-## 5. Roadmap
+Priority tasks:
 
-### Near-term priorities
+1. add historical run comparison views
+2. add review tools for duplicate tickers and recurring scan hits
+3. make trend changes in sector and industry leaders easier to compare across dates
 
-#### A. Revise Today's Watchlist UI
+### 5.3 Formula Governance
 
-Priority: high
+Priority tasks:
 
-Planned work:
-- Convert from detailed table to scan-based card grid
-- Each scan as an independent card showing ticker count + ticker grid
-- Sort within each card by Hybrid-RS
-- Add Earnings for today section
+1. document active formulas from code whenever they change
+2. keep parameter catalog synchronized with `config/default.yaml`
+3. treat changes in scoring formulas as product-level behavior changes
 
-#### B. Expand Market Dashboard
+## 6. Scope Boundary
 
-Priority: high
+The current active scope remains:
 
-Planned work:
-- Implement 43 ETF-based Market Conditions scoring
-- Add Market Snapshot (RSP, QQQE, IWM, DIA, VIX, BTC + 21EMA position labels)
-- Add S5TH time-series chart
-- Add Factors vs SP500 display
-- Add time-axis scores (1D/1W/1M/3M ago)
+- market environment monitoring
+- sector and industry RS monitoring
+- candidate extraction and ranking
 
-#### C. Expand RS Radar
+The current active scope does not include:
 
-Priority: high
+- trade execution logic
+- entry confirmation workflow
+- stop placement workflow
+- position sizing workflow
+- phased exit workflow
 
-Planned work:
-- Add 4-axis RS (overall, 1D, 1W, 1M)
-- Add RS change rate columns (RS DAY%, RS WK%, RS MTH%)
-- Add MAJOR STOCKS to Industry Leaders
-- Add Top 3 RS% Change (Daily / Weekly)
-
-#### D. Strengthen provider chain
-
-Priority: medium
-
-Planned work:
-- Add FMP as optional provider
-- Improve profile/fundamental coverage
-- Define 43 ETF universe for Market Conditions
-
-#### E. Add run comparison
-
-Priority: medium
-
-Planned work:
-- Compare saved runs under `data_runs/`
-- Show watchlist deltas by day
-- Track data-quality changes over time
-
-### Mid-term themes
-
-- Richer Market Dashboard analytics
-- Stronger Industry RS model
-- Fundamental Score research refinement
-- Daily workflow automation
-
-### Decision principles
-
-1. Focus on the three output screens first
-2. Match UI to actual usage patterns
-3. Improve trust in real data
-4. Keep scoring logic configurable for research
-5. Preserve entry/structure/risk research for future use
-
----
-
-## 6. Summary
-
-The project has a working data foundation, indicator pipeline, scoring engine, and scan execution layer.
-
-The most important near-term work is not adding new features but **aligning the UI with actual usage**:
-- Today's Watchlist as a scan-based card grid
-- Market Dashboard with full breadth, Market Snapshot, S5TH chart, and Factors
-- RS Radar with full detail (4-axis RS, RS change rates, MAJOR STOCKS)
-
-Entry/structure/risk modules are preserved but isolated from the active screening scope.
+Those topics remain out of scope for the active screening product and belong to archived materials.

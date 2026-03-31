@@ -11,7 +11,6 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
-from src.dashboard.watchlist import SCAN_DISPLAY_NAMES, SCAN_DISPLAY_ORDER
 from src.pipeline import PlatformArtifacts, ResearchPlatform
 
 
@@ -306,45 +305,32 @@ def render_watchlist(artifacts: PlatformArtifacts) -> None:
             unsafe_allow_html=True,
         )
 
-    card_lookup = {card.scan_name: card for card in artifacts.watchlist_cards}
-    cards: list[tuple[str, list[str], str]] = []
-    for scan_name in SCAN_DISPLAY_ORDER:
-        card = card_lookup.get(scan_name)
-        tickers = _to_ticker_list(card.rows if card else pd.DataFrame(columns=["Ticker"]))
-        cards.append((SCAN_DISPLAY_NAMES.get(scan_name, scan_name), tickers, "No tickers matched this scan."))
+    cards: list[tuple[str, list[str], str]] = [
+        (card.display_name, _to_ticker_list(card.rows), "No tickers matched this scan.")
+        for card in artifacts.watchlist_cards
+    ]
 
-    duplicate_tickers: list[str] = []
-    duplicate_frame = artifacts.watchlist.copy()
-    if not duplicate_frame.empty:
-        if "duplicate_ticker" in duplicate_frame.columns:
-            duplicate_frame = duplicate_frame.loc[duplicate_frame["duplicate_ticker"].fillna(False)].copy()
-        elif "overlap_count" in duplicate_frame.columns:
-            overlap = pd.to_numeric(duplicate_frame["overlap_count"], errors="coerce").fillna(0)
-            duplicate_frame = duplicate_frame.loc[overlap >= 3].copy()
-        else:
-            duplicate_frame = pd.DataFrame(columns=duplicate_frame.columns)
-        if not duplicate_frame.empty:
-            sort_columns = [column for column in ["H", "hybrid_score", "overlap_count", "vcs"] if column in duplicate_frame.columns]
-            if sort_columns:
-                duplicate_frame = duplicate_frame.sort_values(sort_columns, ascending=[False] * len(sort_columns))
-            duplicate_frame = duplicate_frame.reset_index(names="Ticker")
-            duplicate_tickers = _to_ticker_list(duplicate_frame)
+    duplicate_frame = artifacts.duplicate_tickers.copy()
+    duplicate_tickers = _to_ticker_list(duplicate_frame)
 
     render_priority_ticker_band(
         "Duplicate Tickers",
         duplicate_tickers,
-        "Overlap count and Hybrid-RS priority are already resolved upstream. This band highlights the strongest names repeated across the working lists.",
+        "Overlap count and Hybrid-RS priority are already resolved upstream. This band highlights the strongest names repeated across multiple scan cards.",
         "No duplicate tickers in the current watchlist.",
     )
 
     earnings_frame = artifacts.earnings_today.sort_values("Hybrid-RS", ascending=False) if not artifacts.earnings_today.empty and "Hybrid-RS" in artifacts.earnings_today.columns else artifacts.earnings_today
 
-    for start in range(0, len(cards), 3):
-        batch = cards[start : start + 3]
-        columns = st.columns(3)
-        for column, (title, tickers, empty_text) in zip(columns, batch):
-            with column:
-                render_ticker_card(title, tickers, empty_text)
+    if not cards:
+        st.caption("No scan cards are configured or no scan rules matched the current universe.")
+    else:
+        for start in range(0, len(cards), 3):
+            batch = cards[start : start + 3]
+            columns = st.columns(3)
+            for column, (title, tickers, empty_text) in zip(columns, batch):
+                with column:
+                    render_ticker_card(title, tickers, empty_text)
 
     st.markdown("<div style='margin-top:.2rem;'></div>", unsafe_allow_html=True)
     render_ticker_card(

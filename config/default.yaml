@@ -60,6 +60,8 @@ indicators:
   adr_formula: sma_high_low_ratio
   dcr_formula: closing_range
   relvol_period: 50
+  rsi_short_period: 21
+  rsi_long_period: 63
   weekly_short_wma_period: 10
   weekly_long_wma_period: 30
   three_weeks_tight_pct_threshold: 1.5
@@ -119,6 +121,43 @@ scan:
   high_eps_growth_rank_threshold: 90.0
   earnings_warning_days: 7
   watchlist_sort_mode: hybrid_score
+  enabled_scan_rules:
+    - 21EMA scan
+    - 4% bullish
+    - Vol Up
+    - Momentum 97
+    - 97 Club
+    - VCS
+    - Pocket Pivot
+    - PP Count
+    - Weekly 20% plus gainers
+  enabled_list_rules:
+    - Momentum 97
+    - Volatility Contraction Score
+    - 21EMA Watch
+    - 4% Gainers
+    - Relative Strength 21 > 63
+    - Vol Up Gainers
+    - High Est. EPS Growth
+  card_sections:
+    - scan_name: 21EMA scan
+      display_name: 21EMA
+    - scan_name: 4% bullish
+      display_name: 4% bullish
+    - scan_name: Vol Up
+      display_name: Vol Up
+    - scan_name: Momentum 97
+      display_name: Momentum 97
+    - scan_name: 97 Club
+      display_name: 97 Club
+    - scan_name: VCS
+      display_name: VCS
+    - scan_name: Pocket Pivot
+      display_name: Pocket Pivot
+    - scan_name: PP Count
+      display_name: 3+ Pocket Pivots (30d)
+    - scan_name: Weekly 20% plus gainers
+      display_name: Weekly 20%+ Gainers
 
 market:
   component_weights:

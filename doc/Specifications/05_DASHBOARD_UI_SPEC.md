@@ -1,240 +1,239 @@
 # Dashboard UI Spec
 
-## 1. 目的
+## 1. Active UI scope
 
-UI は以下の3つの出力を一体で提供する。
+The active Streamlit app exposes exactly three pages:
 
-- 市場環境の把握（Market Dashboard）
-- セクター・業界の強弱把握（RS Radar）
-- 好条件銘柄の一覧（Today's Watchlist）
+1. `Today's Watchlist`
+2. `RS Radar`
+3. `Market Dashboard`
 
-本システムの UI は「候補の発見と市場コンテキストの提供」に特化する。
-個別銘柄の詳細評価（チャート構造、エントリー判断）は TradingView 上で行うため、
-本システムには Main Chart / Cockpit Panel / Position Sizing Panel は含まない。
+There is no active chart, cockpit, entry, sizing, or exit page in the current app.
 
 ---
 
-## 2. UI の基本方針
+## 2. Shared UI behavior
 
-### 2.1 3画面構成
+### 2.1 Sidebar controls
 
-本システムは以下の3つの独立した画面で構成する。
+The sidebar currently exposes:
 
-1. **Market Dashboard** — 市場全体の健康状態
-2. **RS Radar** — セクター・業界のリーダーシップ
-3. **Today's Watchlist** — スキャン結果のカードグリッド
+- `Config Path`
+- `Manual Symbols (optional)`
+- `Force Weekly Universe Refresh`
+- page selection radio
+- `Refresh` button
 
-### 2.2 設計原則
+### 2.2 Shared context and health
 
-- スキャン結果は詳細テーブルではなく、スキャン別カードグリッドで俯瞰する
-- 重複出現する銘柄を目視で発見しやすい構成にする
-- 各スキャン内は Hybrid-RS 順でソートする
-- 詳細な指標比較は行わない（それは TradingView の役割）
+All pages can show:
+
+- data-source context strip via `artifacts.data_source_label`
+- data-health warning banner when stale or sample data exists
+- `Data Health` expander with `fetch_status`, universe snapshot path, and run snapshot path
 
 ---
 
-## 3. Market Dashboard
+## 3. Today's Watchlist
 
-### 3.1 Market Conditions
+### 3.1 Header area
 
-表示内容:
+The current page header shows:
 
-- Market Conditions スコア（0〜100）
-- Market Conditions ラベル（Bearish / Negative / Neutral / Positive / Bullish）
-- 時間軸別スコア（1D ago / 1W ago / 1M ago / 3M ago）
-- ゲージ表示（現在スコアの視覚化）
+- title: `Today's Watchlist`
+- trading date from the latest snapshot row
+- subtitle text: `Sorted by Hybrid-RS`
+- `Universe Mode`
+- `Universe Size`
 
-スコアリング方式:
+### 3.2 Duplicate Tickers priority band
 
-- 43 ETF を対象に、Breadth and Trend Metrics, Performance Overview, 52 week highs, VIX のポジティブシグナルの割合で算出
+The page renders a dedicated `Duplicate Tickers` band before the scan cards.
 
-### 3.2 Breadth & Trend Metrics
+Current logic:
 
-表示内容:
+- source: `artifacts.duplicate_tickers`
+- each row is built from raw scan-hit overlap, not list overlap
+- displayed columns available in the artifact:
+  - `Ticker`
+  - `Scan Hits`
+  - `Hybrid-RS`
+  - `Overlap`
+  - `VCS`
 
-- % above SMA10
-- % above SMA20
-- % above SMA50
-- % above SMA200
-- % SMA20 > SMA50
-- % SMA50 > SMA200
+### 3.3 Scan-card grid
 
-各指標に Positive / Neutral / Negative のラベルを付与する。
+The page renders scan cards from `artifacts.watchlist_cards`.
 
-### 3.3 Performance Overview
+Each card currently shows:
 
-表示内容:
+- display name from `scan.card_sections`
+- ticker count
+- a ticker grid built from the card rows
 
-- % YTD
-- % 1W
-- % 1M
-- % 1Y
+Card rows are built from the matching scan-hit subset and currently expose:
 
-各指標に Positive / Neutral / Negative のラベルを付与する。
+- `Ticker`
+- `Name`
+- `Hybrid-RS`
+- `Overlap`
+- `VCS`
+- `Duplicate`
+- `Earnings`
 
-### 3.4 HIGH & VIX
+Only scan-based cards are supported by config.
 
-表示内容:
+### 3.4 Earnings for today
 
-- S2W HIGH（2週間新高値の割合）
-- VIX
+The page renders a separate ticker card titled `Earnings for today (liquid)`.
 
-### 3.5 Market Snapshot
+Current source:
 
-表示内容:
-
-- S&P 500 Equal Weight (RSP) — 価格、日次変化率、Volume % vs 50d Avg、21EMA位置ラベル
-- NASDAQ 100 Equal Weight (QQQE) — 同上
-- Russell 2000 (IWM) — 同上
-- Dow Jones (DIA) — 同上
-- Volatility (VIX) — 値、日次変化率、21EMA位置ラベル
-- Bitcoin (BTC) — 価格、日次変化率、Volume % vs 50d Avg、21EMA位置ラベル
-
-21EMA位置ラベル:
-
-- `↘ 21EMA Low`: 価格が 21EMA Low を下回っている
-- `↗ 21EMA High`: 価格が 21EMA High を上回っている
-- `↔ 21EMA Cloud`: 価格がクラウド内
-
-### 3.6 S5TH チャート
-
-表示内容:
-
-- S&P 500 Stocks > 200-Day Moving Average (S5TH) の時系列チャート
-- ローソク足表示
-- 参考ラインの表示
-
-### 3.7 Factors vs SP500
-
-表示内容:
-
-- Growth — 相対パフォーマンスバー、変化率
-- Value — 同上
-- High Dividend — 同上
-- Large-Cap — 同上
-- Mid-Cap — 同上
-- Small-Cap — 同上
-- Momentum — 同上
-- IPOs — 同上
+- `artifacts.earnings_today`
+- built from `earnings_today == True` in the eligible snapshot
+- sorted by `hybrid_score desc`, then `market_cap desc`
 
 ---
 
 ## 4. RS Radar
 
-### 4.1 Top 3 RS% Change
+### 4.1 Header
 
-表示内容:
+The page header shows:
 
-- Top 3 RS% Change (Daily) — RS, ティッカー、業界名、価格、日次変化率
-- Top 3 RS% Change (Weekly) — RS, ティッカー、業界名、価格、週次変化率
+- title: `RS Radar`
+- subtitle: ETF-based radar using configured sector and industry universes
+- `Updated: HH:MM:SS`
 
-### 4.2 Sector Leaders テーブル
+### 4.2 Left column
 
-カラム:
+The left column contains two panels:
 
-- RS（総合）
-- 1D（日次RS）
-- 1W（週次RS）
-- 1M（月次RS）
-- TICKER
-- NAME
-- DAY %
-- WK %
-- MTH %
-- RS DAY%
-- RS WK%
-- RS MTH%
-- 52W HIGH
+- `Top 3 RS% Change (Daily)`
+- `Top 3 RS% Change (Weekly)`
 
-### 4.3 Industry Leaders テーブル
+Each panel is sourced from the ETF radar universe and currently shows:
 
-カラム:
+- `RS`
+- `TICKER`
+- `NAME`
+- `PRICE`
+- one performance column (`DAY %` or `WK %`)
+- one relative-strength change column (`RS DAY%` or `RS WK%`)
 
-- RS（総合）
-- 1D
-- 1W
-- 1M
-- TICKER
-- NAME
-- DAY %
-- WK %
-- MTH %
-- RS DAY%
-- RS WK%
-- RS MTH%
-- 52W HIGH
-- MAJOR STOCKS（上位3銘柄のティッカー）
+### 4.3 Right / lower sections
 
----
+The page also renders:
 
-## 5. Today's Watchlist
+- `Sector Leaders`
+- `Industry Leaders`
 
-### 5.1 基本構成
+Current `Sector Leaders` columns:
 
-- 日付表示（例: March 20, 2026）
-- ソート基準表示（例: Sorted by Hybrid-RS）
-- 9スキャン別のカードグリッド
-- Earnings for today セクション
+- `RS`
+- `1D`
+- `1W`
+- `1M`
+- `TICKER`
+- `NAME`
+- `DAY %`
+- `WK %`
+- `MTH %`
+- `RS DAY%`
+- `RS WK%`
+- `RS MTH%`
+- `52W HIGH`
 
-### 5.2 スキャンカード
+Current `Industry Leaders` columns:
 
-各スキャンは独立したカードとして表示する。
-
-カード内容:
-
-- スキャン名（例: 21EMA, 4% bullish, Vol Up ...）
-- ヒット数（例: 26 tickers）
-- ティッカーのグリッド表示（Hybrid-RS 順ソート）
-
-### 5.3 9スキャンカード
-
-1. **21EMA** — 21EMA 構造に基づくセットアップ候補
-2. **4% bullish** — 当日4%以上上昇 + RS + 出来高
-3. **Vol Up** — 出来高増加 + 上昇
-4. **Momentum 97** — 短期・中期モメンタム上位
-5. **97 Club** — Hybrid RS 上位 + RS 1M 上位
-6. **VCS** — ボラティリティ圧縮スコア上位
-7. **Pocket Pivot** — 当日 Pocket Pivot 発生
-8. **3+ Pocket Pivots (30d)** — 過去30日で PP 3回以上
-9. **Weekly 20% + Gainers** — 週間20%以上上昇
-
-### 5.4 Earnings for today (liquid)
-
-- 当日決算発表予定の流動性のある銘柄を独立セクションで表示
-- ヒット数とティッカーグリッド
-
-### 5.5 ユーザーの使い方
-
-1. 各スキャンカードを俯瞰する
-2. **複数のカードに重複して出現する銘柄**に注目する（= duplicate tickers の実運用）
-3. 注目銘柄を TradingView に持っていき、21EMA Cockpit で詳細評価する
+- all sector-leader columns above
+- `MAJOR STOCKS`
 
 ---
 
-## 6. ソート
+## 5. Market Dashboard
 
-- 各スキャンカード内は `hybrid_score desc` でソート
-- duplicate tickers の自動集計は内部で行い、重複銘柄は特別表示可能にする
+### 5.1 Header and top stats
+
+The page header is centered and shows the update time.
+
+The top stat cards currently show:
+
+- `Market Score`
+- `Label`
+- `1W Ago`
+- `1M Ago`
+- `VIX`
+
+### 5.2 Market Conditions block
+
+The Market Conditions section currently renders:
+
+- current score
+- current label
+- a progress bar from `score / 100`
+- a short explanatory panel
+
+### 5.3 Score timeline
+
+The page renders a table with:
+
+- `Now`
+- `1D Ago`
+- `1W Ago`
+- `1M Ago`
+- `3M Ago`
+
+### 5.4 Summary tables
+
+The current Market Dashboard renders separate tables for:
+
+- `Breadth & Trend Metrics`
+- `Performance Overview`
+- `High & VIX`
+- `Component Scores`
+
+### 5.5 Market Snapshot
+
+The page renders a `Market Snapshot` table sourced from configured symbols.
+
+Current columns:
+
+- `TICKER`
+- `NAME`
+- `PRICE`
+- `DAY %`
+- `VOL vs 50D %`
+- `21EMA POS`
+
+The current 21EMA position labels are:
+
+- `below 21EMA Low`
+- `inside 21EMA Cloud`
+- `above 21EMA High`
+- `unknown`
+
+### 5.6 Factors vs SP500
+
+The page renders a `Factors vs SP500` table.
+
+Current columns:
+
+- `TICKER`
+- `NAME`
+- `REL 1W %`
+- `REL 1M %`
+- `REL 1Y %`
+
+### 5.7 S5TH chart
+
+The page renders a line chart from `result.s5th_series` using the `pct_above_sma200` series.
 
 ---
 
-## 7. Market Conditions スコアリング詳細
+## 6. Current UI conventions
 
-### 7.1 基本構造
-
-- 43 ETF を対象
-- Breadth and Trend Metrics、Performance Overview、52 week highs、VIX のポジティブシグナル割合
-
-### 7.2 非公開のためパラメータ化
-
-- 対象 ETF リスト
-- 各メトリクスの Positive / Negative 判定閾値
-- component weights
-- label thresholds（Bearish / Negative / Neutral / Positive / Bullish の境界値）
-
----
-
-## 8. 更新情報
-
-- 各画面に `Updated: HH:MM:SS` を表示
-- データの鮮度を常に把握できるようにする
+- The app uses the configured universes from `config/default.yaml`.
+- Numeric display formatting is handled in the page-specific builders.
+- Duplicate highlighting in watchlist cards depends on the `duplicate_ticker` field from the raw watchlist rows.
+- UI data is always sourced from `PlatformArtifacts`, not recomputed inside the page renderer except for presentation-only formatting.

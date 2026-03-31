@@ -38,4 +38,6 @@
 
 ## Skills
 
-- Use `$oratek-doc-syncing` for larger spec-sync or index-sync tasks after code or config changes.
+- Use `$oratek-spec-to-code-syncing` when the specifications are authoritative and implementation must change. Do not edit specs in that flow.
+- Use `$oratek-code-to-spec-syncing` when the implementation is authoritative and specifications must change. Do not edit implementation in that flow.
+- Use `$oratek-doc-syncing` only when the request is ambiguous and you need to choose the sync direction first.

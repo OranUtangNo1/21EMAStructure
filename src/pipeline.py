@@ -47,6 +47,7 @@ class PlatformArtifacts:
     snapshot: pd.DataFrame
     eligible_snapshot: pd.DataFrame
     watchlist: pd.DataFrame
+    duplicate_tickers: pd.DataFrame
     watchlist_cards: list[ScanCardViewModel]
     earnings_today: pd.DataFrame
     scan_hits: pd.DataFrame
@@ -97,7 +98,7 @@ class ResearchPlatform:
         self.scan_config = ScanConfig.from_dict(self.settings.get("scan", {}))
         self.scan_runner = ScanRunner(self.scan_config)
         self.market_scorer = MarketConditionScorer(MarketConditionConfig.from_dict(self.settings.get("market", {})))
-        self.watchlist_builder = WatchlistViewModelBuilder()
+        self.watchlist_builder = WatchlistViewModelBuilder(self.scan_config)
         self.radar_builder = RadarViewModelBuilder(RadarConfig.from_dict(self.settings.get("radar", {})))
 
         allow_stale = bool(data_settings.get("allow_stale_cache_on_failure", True))
@@ -157,10 +158,11 @@ class ResearchPlatform:
 
         eligible_snapshot = self.universe_builder.filter(snapshot)
         if eligible_snapshot.empty and not snapshot.empty:
-            eligible_snapshot = snapshot.sort_values(["data_quality_score", "hybrid_score"], ascending=[False, False]).head(min(10, len(snapshot))).copy()
+            eligible_snapshot = snapshot.sort_values(["data_quality_score", "hybrid_score"], ascending=[False, False]).copy()
 
         scan_result = self.scan_runner.run(eligible_snapshot)
         watchlist = self.watchlist_builder.build(scan_result.watchlist)
+        duplicate_tickers = self.watchlist_builder.build_duplicate_tickers(scan_result.watchlist, scan_result.hits, self.scan_config.duplicate_min_count)
         watchlist_cards = self.watchlist_builder.build_scan_cards(scan_result.watchlist, scan_result.hits)
         earnings_today = self.watchlist_builder.build_earnings_today(eligible_snapshot)
 
@@ -190,6 +192,7 @@ class ResearchPlatform:
             snapshot=snapshot,
             eligible_snapshot=eligible_snapshot,
             watchlist=watchlist,
+            duplicate_tickers=duplicate_tickers,
             watchlist_cards=watchlist_cards,
             earnings_today=earnings_today,
             scan_hits=scan_result.hits,
