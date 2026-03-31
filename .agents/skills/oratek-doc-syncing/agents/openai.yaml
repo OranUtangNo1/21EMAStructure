@@ -1,0 +1,4 @@
+interface:
+  display_name: "OraTek Doc Sync"
+  short_description: "Sync OraTek specs with code changes"
+  default_prompt: "Use $oratek-doc-syncing to update the relevant OraTek specs after code or config changes."

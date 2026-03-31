@@ -12,14 +12,14 @@ class IndustryScoreConfig:
     """Configuration for industry-relative strength aggregation."""
 
     industry_aggregation_method: str = "mean"
-    industry_rs_input_metric: str = "weighted_rs"
+    industry_rs_input_metric: str = "rs21"
     industry_score_normalization_method: str = "percentile"
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> "IndustryScoreConfig":
         return cls(
             industry_aggregation_method=str(payload.get("industry_aggregation_method", "mean")),
-            industry_rs_input_metric=str(payload.get("industry_rs_input_metric", "weighted_rs")),
+            industry_rs_input_metric=str(payload.get("industry_rs_input_metric", "rs21")),
             industry_score_normalization_method=str(payload.get("industry_score_normalization_method", "percentile")),
         )
 

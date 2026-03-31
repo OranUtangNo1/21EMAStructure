@@ -10,7 +10,7 @@ app:
     - SNOW
   benchmark_symbol: SPY
   vix_symbol: ^VIX
-  price_period: 18mo
+  price_period: 1y
   cache_dir: data_cache
   snapshot_dir: data_runs
   use_sample_data_if_fetch_fails: false
@@ -22,11 +22,16 @@ data:
   fundamental_cache_ttl_hours: 24
   allow_stale_cache_on_failure: true
   persist_research_snapshots: true
+  price_batch_size: 80
+  price_max_retries: 3
+  price_request_sleep_seconds: 2.0
+  price_retry_backoff_multiplier: 2.0
+  price_incremental_period: 5d
 
 universe:
   min_market_cap: 1000000000
   min_avg_volume_50d: 1000000
-  min_price: 10.0
+  min_price: 0.0
   min_adr_percent: 3.5
   max_adr_percent: 10.0
   excluded_sectors:
@@ -34,19 +39,17 @@ universe:
 
 universe_discovery:
   enabled: true
+  provider: finviz
   use_snapshot_when_no_manual_symbols: true
   snapshot_ttl_days: 7
   allowed_exchanges:
     - NASDAQ
     - NYSE
-  page_size: 250
-  max_pages_per_exchange: 1
-  max_symbols: 60
+    - AMEX
+  excluded_sectors:
+    - Healthcare
+  max_symbols: 2500
   min_market_cap: 1000000000
-  min_avgdailyvol3m: 1000000
-  min_price: 10.0
-  sort_field: intradaymarketcap
-  sort_ascending: false
 
 indicators:
   ema_period: 21
@@ -54,12 +57,12 @@ indicators:
   sma_long_period: 200
   atr_period: 14
   adr_period: 20
-  adr_formula: hl_pct
+  adr_formula: sma_high_low_ratio
   dcr_formula: closing_range
   relvol_period: 50
   weekly_short_wma_period: 10
   weekly_long_wma_period: 30
-  three_weeks_tight_threshold_pct: 1.5
+  three_weeks_tight_pct_threshold: 1.5
   enable_3wt: true
   atr_21ema_good_min: -0.5
   atr_21ema_good_max: 1.0
@@ -85,7 +88,7 @@ scoring:
     missing_fundamental_policy: fill_neutral
   industry:
     industry_aggregation_method: mean
-    industry_rs_input_metric: weighted_rs
+    industry_rs_input_metric: rs21
     industry_score_normalization_method: percentile
   hybrid:
     rs_weights: [1.0, 2.0, 2.0]
@@ -119,15 +122,80 @@ scan:
 
 market:
   component_weights:
-    pct_above_ema21: 0.20
-    pct_above_sma50: 0.25
-    pct_above_sma200: 0.20
-    pct_sma50_gt_sma200: 0.20
-    vix_score: 0.15
+    pct_above_sma10: 0.12
+    pct_above_sma20: 0.12
+    pct_above_sma50: 0.14
+    pct_above_sma200: 0.14
+    pct_sma20_gt_sma50: 0.10
+    pct_sma50_gt_sma200: 0.10
+    pct_positive_1m: 0.10
+    pct_positive_ytd: 0.08
+    pct_2w_high: 0.05
+    vix_score: 0.05
   bullish_threshold: 80.0
   positive_threshold: 60.0
   neutral_threshold: 40.0
   negative_threshold: 20.0
+  market_condition_etf_universe:
+    - { ticker: SPY, name: S&P 500 }
+    - { ticker: QQQ, name: Nasdaq 100 }
+    - { ticker: DIA, name: Dow Jones }
+    - { ticker: IWM, name: Russell 2000 }
+    - { ticker: RSP, name: S&P 500 Equal Weight }
+    - { ticker: QQQE, name: Nasdaq 100 Equal Weight }
+    - { ticker: MDY, name: S&P MidCap 400 }
+    - { ticker: IJR, name: S&P SmallCap 600 }
+    - { ticker: XLB, name: Materials }
+    - { ticker: XLC, name: Communication Services }
+    - { ticker: XLE, name: Energy }
+    - { ticker: XLF, name: Financials }
+    - { ticker: XLI, name: Industrials }
+    - { ticker: XLK, name: Technology }
+    - { ticker: XLP, name: Consumer Staples }
+    - { ticker: XLRE, name: Real Estate }
+    - { ticker: XLU, name: Utilities }
+    - { ticker: XLV, name: Health Care }
+    - { ticker: XLY, name: Consumer Discretionary }
+    - { ticker: XBI, name: Biotech }
+    - { ticker: SMH, name: Semiconductors }
+    - { ticker: IGV, name: Software }
+    - { ticker: FDN, name: Internet }
+    - { ticker: HACK, name: Cybersecurity }
+    - { ticker: ITA, name: Aerospace and Defense }
+    - { ticker: KRE, name: Regional Banks }
+    - { ticker: XRT, name: Retail }
+    - { ticker: XOP, name: Oil and Gas Exploration }
+    - { ticker: IBB, name: Biotech Large Cap }
+    - { ticker: TAN, name: Solar }
+    - { ticker: IYT, name: Transportation }
+    - { ticker: SOXX, name: Semiconductors Broad }
+    - { ticker: VUG, name: Growth }
+    - { ticker: VTV, name: Value }
+    - { ticker: VYM, name: High Dividend }
+    - { ticker: MGC, name: Large Cap }
+    - { ticker: VO, name: Mid Cap }
+    - { ticker: VB, name: Small Cap }
+    - { ticker: MTUM, name: Momentum }
+    - { ticker: IPO, name: IPOs }
+    - { ticker: EEM, name: Emerging Markets }
+    - { ticker: FXI, name: China Large Cap }
+    - { ticker: KWEB, name: China Internet }
+  market_snapshot_symbols:
+    - { ticker: RSP, name: S&P 500 Equal Weight }
+    - { ticker: QQQE, name: Nasdaq 100 Equal Weight }
+    - { ticker: IWM, name: Russell 2000 }
+    - { ticker: DIA, name: Dow Jones }
+    - { ticker: '^VIX', name: Volatility Index }
+    - { ticker: BTC-USD, name: Bitcoin }
+  factor_etfs:
+    - { ticker: VUG, name: Growth }
+    - { ticker: VTV, name: Value }
+    - { ticker: VYM, name: High Dividend }
+    - { ticker: MGC, name: Large Cap }
+    - { ticker: VO, name: Mid Cap }
+    - { ticker: VB, name: Small Cap }
+    - { ticker: MTUM, name: Momentum }
+    - { ticker: IPO, name: IPOs }
 
 radar:
   top_movers_count: 3
@@ -151,12 +219,22 @@ radar:
     - { ticker: XLC, name: Communication Services }
     - { ticker: XLI, name: Industrials }
   industry_etfs:
-    - { ticker: SMH, name: Semiconductors, major_stocks: [NVDA, AVGO, AMD] }
+    - { ticker: ICLN, name: Clean Energy, major_stocks: [FSLR, NXT, BE] }
+    - { ticker: UFO, name: Space, major_stocks: [RKLB, PL, VSAT] }
+    - { ticker: XOP, name: Oil and Gas Exploration, major_stocks: [COP, EOG, OXY] }
+    - { ticker: CIBR, name: Cybersecurity, major_stocks: [CRWD, PANW, ZS] }
+    - { ticker: POWR, name: Power Grid, major_stocks: [GEV, PWR, NEE] }
+    - { ticker: BOAT, name: Marine Shipping, major_stocks: [ZIM, SBLK, GOGL] }
+    - { ticker: IPO, name: IPOs, major_stocks: [ARM, UBER, DUOL] }
     - { ticker: IGV, name: Software, major_stocks: [MSFT, ORCL, CRM] }
-    - { ticker: HACK, name: Cybersecurity, major_stocks: [CRWD, PANW, ZS] }
-    - { ticker: FDN, name: Internet, major_stocks: [AMZN, META, NFLX] }
+    - { ticker: TAN, name: Solar, major_stocks: [FSLR, ENPH, NXT] }
+    - { ticker: MOO, name: Agribusiness, major_stocks: [DE, NTR, CF] }
     - { ticker: XBI, name: Biotech, major_stocks: [VRTX, REGN, ARGX] }
-    - { ticker: ITA, name: Aerospace and Defense, major_stocks: [GE, RTX, LMT] }
+    - { ticker: SMH, name: Semiconductors, major_stocks: [NVDA, AVGO, AMD] }
+    - { ticker: FINX, name: FinTech, major_stocks: [COIN, SOFI, SQ] }
+    - { ticker: WGMI, name: Bitcoin Miners, major_stocks: [IREN, CIFR, HUT] }
+    - { ticker: BLOK, name: Blockchain, major_stocks: [COIN, MSTR, HOOD] }
+    - { ticker: QTUM, name: Quantum and AI, major_stocks: [IONQ, IBM, GOOGL] }
 
 optional:
   enable_darvas_retest_filter: false

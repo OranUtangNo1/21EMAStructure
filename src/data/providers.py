@@ -1,8 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import date, datetime
+import time
 from typing import Any
 
 import pandas as pd
@@ -210,12 +211,28 @@ class YahooScreenerProvider(UniverseDiscoveryProvider):
 
 
 class YFinancePriceDataProvider(PriceDataProvider):
-    """Price provider backed by yfinance with fresh/stale cache support."""
+    """Price provider backed by yfinance bulk downloads with fresh/stale cache support."""
 
-    def __init__(self, cache: CacheLayer, technical_ttl_hours: int = 12, allow_stale_cache_on_failure: bool = True) -> None:
+    def __init__(
+        self,
+        cache: CacheLayer,
+        technical_ttl_hours: int = 12,
+        allow_stale_cache_on_failure: bool = True,
+        batch_size: int = 80,
+        max_retries: int = 3,
+        request_sleep_seconds: float = 2.0,
+        retry_backoff_multiplier: float = 2.0,
+        incremental_period: str | None = "5d",
+    ) -> None:
         self.cache = cache
         self.technical_ttl_hours = technical_ttl_hours
         self.allow_stale_cache_on_failure = allow_stale_cache_on_failure
+        self.batch_size = max(1, int(batch_size))
+        self.max_retries = max(1, int(max_retries))
+        self.request_sleep_seconds = max(0.0, float(request_sleep_seconds))
+        self.retry_backoff_multiplier = max(1.0, float(retry_backoff_multiplier))
+        normalized_incremental_period = str(incremental_period).strip() if incremental_period is not None else ""
+        self.incremental_period = normalized_incremental_period or None
 
     def get_price_history(self, symbols: list[str], period: str = "18mo", interval: str = "1d") -> PriceHistoryBatch:
         if yf is None:
@@ -223,38 +240,164 @@ class YFinancePriceDataProvider(PriceDataProvider):
 
         histories: dict[str, pd.DataFrame] = {}
         statuses: dict[str, FetchStatus] = {}
-        for symbol in symbols:
-            cache_key = f"prices_{symbol}_{period}_{interval}"
+        stale_histories: dict[str, pd.DataFrame] = {}
+        full_refresh_symbols: list[str] = []
+        incremental_symbols: list[str] = []
+
+        normalized_symbols = list(dict.fromkeys(str(symbol).strip().upper() for symbol in symbols if str(symbol).strip()))
+        for symbol in normalized_symbols:
+            cache_key = self._cache_key(symbol, period, interval)
             cached = self.cache.load_csv(cache_key, ttl_hours=self.technical_ttl_hours)
             if cached is not None and not cached.empty:
                 histories[symbol] = cached
                 statuses[symbol] = self._status(symbol, "cache_fresh", True, self.cache.get_modified_at(cache_key, "csv"))
                 continue
 
-            try:
-                frame = yf.download(symbol, period=period, interval=interval, auto_adjust=False, progress=False, threads=False)
-                normalized = self._normalize_download(frame)
-                if normalized.empty:
-                    raise RuntimeError("Empty price history returned.")
-                histories[symbol] = normalized
-                self.cache.save_csv(cache_key, normalized)
-                statuses[symbol] = self._status(symbol, "live", True, datetime.now())
+            stale = self.cache.load_csv(cache_key, ttl_hours=self.technical_ttl_hours, allow_stale=True)
+            if stale is not None and not stale.empty:
+                stale_histories[symbol] = stale
+                incremental_symbols.append(symbol)
                 continue
-            except Exception as exc:
-                if self.allow_stale_cache_on_failure:
-                    stale = self.cache.load_csv(cache_key, ttl_hours=self.technical_ttl_hours, allow_stale=True)
-                    if stale is not None and not stale.empty:
-                        histories[symbol] = stale
-                        statuses[symbol] = self._status(
-                            symbol,
-                            "cache_stale",
-                            True,
-                            self.cache.get_modified_at(cache_key, "csv"),
-                            f"live fetch failed: {type(exc).__name__}",
-                        )
-                        continue
-                statuses[symbol] = self._status(symbol, "missing", False, None, f"price fetch failed: {type(exc).__name__}")
+
+            full_refresh_symbols.append(symbol)
+
+        self._fetch_symbol_group(
+            symbols=full_refresh_symbols,
+            download_period=period,
+            cache_period=period,
+            interval=interval,
+            histories=histories,
+            statuses=statuses,
+            fallback_histories={},
+        )
+
+        update_period = self.incremental_period or period
+        self._fetch_symbol_group(
+            symbols=incremental_symbols,
+            download_period=update_period,
+            cache_period=period,
+            interval=interval,
+            histories=histories,
+            statuses=statuses,
+            fallback_histories=stale_histories,
+        )
         return PriceHistoryBatch(histories=histories, statuses=statuses)
+
+    def _fetch_symbol_group(
+        self,
+        symbols: list[str],
+        download_period: str,
+        cache_period: str,
+        interval: str,
+        histories: dict[str, pd.DataFrame],
+        statuses: dict[str, FetchStatus],
+        fallback_histories: dict[str, pd.DataFrame],
+    ) -> None:
+        batches = self._chunk_symbols(symbols)
+        for batch_index, batch in enumerate(batches):
+            downloaded, error_note = self._download_batch(batch, download_period, interval)
+            fetched_at = datetime.now()
+            for symbol in batch:
+                cache_key = self._cache_key(symbol, cache_period, interval)
+                history = downloaded.get(symbol, pd.DataFrame())
+                if not history.empty:
+                    merged = self._merge_histories(fallback_histories.get(symbol), history)
+                    histories[symbol] = merged
+                    self.cache.save_csv(cache_key, merged)
+                    statuses[symbol] = self._status(symbol, "live", True, fetched_at)
+                    continue
+
+                stale = fallback_histories.get(symbol)
+                if self.allow_stale_cache_on_failure and stale is not None and not stale.empty:
+                    histories[symbol] = stale
+                    statuses[symbol] = self._status(
+                        symbol,
+                        "cache_stale",
+                        True,
+                        self.cache.get_modified_at(cache_key, "csv"),
+                        error_note,
+                    )
+                    continue
+
+                statuses[symbol] = self._status(symbol, "missing", False, None, error_note or "price fetch returned no rows")
+
+            if batch_index < len(batches) - 1 and self.request_sleep_seconds > 0:
+                time.sleep(self.request_sleep_seconds)
+
+    def _download_batch(self, symbols: list[str], period: str, interval: str) -> tuple[dict[str, pd.DataFrame], str | None]:
+        downloaded: dict[str, pd.DataFrame] = {}
+        remaining = list(symbols)
+        error_note: str | None = None
+
+        for attempt in range(self.max_retries):
+            if not remaining:
+                break
+            try:
+                raw = yf.download(
+                    remaining,
+                    period=period,
+                    interval=interval,
+                    auto_adjust=False,
+                    progress=False,
+                    threads=False,
+                    group_by="ticker",
+                )
+                split_frames = self._split_download_frame(raw, remaining)
+                for symbol in list(remaining):
+                    normalized = self._normalize_download(split_frames.get(symbol, pd.DataFrame()))
+                    if not normalized.empty:
+                        downloaded[symbol] = normalized
+                remaining = [symbol for symbol in remaining if symbol not in downloaded]
+                if not remaining:
+                    error_note = None
+                    break
+                error_note = f"price fetch incomplete: {', '.join(remaining)}"
+            except Exception as exc:
+                error_note = f"live fetch failed: {type(exc).__name__}"
+
+            if remaining and attempt < self.max_retries - 1 and self.request_sleep_seconds > 0:
+                delay = self.request_sleep_seconds * (self.retry_backoff_multiplier ** attempt)
+                time.sleep(delay)
+
+        return downloaded, error_note
+
+    def _split_download_frame(self, frame: pd.DataFrame, symbols: list[str]) -> dict[str, pd.DataFrame]:
+        if frame is None or frame.empty:
+            return {}
+        if isinstance(frame.columns, pd.MultiIndex):
+            level_zero = {str(value) for value in frame.columns.get_level_values(0)}
+            level_one = {str(value) for value in frame.columns.get_level_values(1)} if frame.columns.nlevels > 1 else set()
+            if any(symbol in level_zero for symbol in symbols):
+                return {
+                    symbol: frame.xs(symbol, axis=1, level=0, drop_level=True)
+                    for symbol in symbols
+                    if symbol in level_zero
+                }
+            if any(symbol in level_one for symbol in symbols):
+                return {
+                    symbol: frame.xs(symbol, axis=1, level=1, drop_level=True)
+                    for symbol in symbols
+                    if symbol in level_one
+                }
+        if len(symbols) == 1:
+            return {symbols[0]: frame}
+        return {}
+
+    def _merge_histories(self, existing: pd.DataFrame | None, incoming: pd.DataFrame) -> pd.DataFrame:
+        if existing is None or existing.empty:
+            return incoming.sort_index()
+        if incoming.empty:
+            return existing.sort_index()
+        combined = pd.concat([existing, incoming], axis=0)
+        combined = combined.loc[~combined.index.duplicated(keep="last")].sort_index()
+        combined.index.name = "date"
+        return combined
+
+    def _chunk_symbols(self, symbols: list[str]) -> list[list[str]]:
+        return [symbols[index : index + self.batch_size] for index in range(0, len(symbols), self.batch_size)]
+
+    def _cache_key(self, symbol: str, period: str, interval: str) -> str:
+        return f"prices_{symbol}_{period}_{interval}"
 
     def _normalize_download(self, frame: pd.DataFrame) -> pd.DataFrame:
         if frame.empty:
@@ -279,7 +422,9 @@ class YFinancePriceDataProvider(PriceDataProvider):
         normalized = normalized[["open", "high", "low", "close", "adjusted_close", "volume"]].copy()
         for column in normalized.columns:
             normalized[column] = pd.to_numeric(normalized[column], errors="coerce")
-        normalized.index = pd.to_datetime(normalized.index, errors="coerce").tz_localize(None)
+        normalized.index = pd.to_datetime(normalized.index, errors="coerce")
+        if getattr(normalized.index, 'tz', None) is not None:
+            normalized.index = normalized.index.tz_localize(None)
         normalized = normalized.loc[normalized.index.notna()].sort_index()
         normalized.index.name = "date"
         return normalized.dropna(how="all")
@@ -293,7 +438,6 @@ class YFinancePriceDataProvider(PriceDataProvider):
         note: str | None = None,
     ) -> FetchStatus:
         return FetchStatus(symbol=symbol, dataset="price", source=source, has_data=has_data, fetched_at=fetched_at, note=note)
-
 
 class YFinanceProfileDataProvider(ProfileDataProvider):
     """Profile provider backed by yfinance info payload with cache fallback."""
@@ -499,3 +643,4 @@ class YFinanceFundamentalDataProvider(FundamentalDataProvider):
         note: str | None = None,
     ) -> FetchStatus:
         return FetchStatus(symbol=symbol, dataset="fundamental", source=source, has_data=has_data, fetched_at=fetched_at, note=note)
+

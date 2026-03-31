@@ -50,12 +50,22 @@ class RadarConfig:
         RadarUniverseItem("XLI", "Industrials"),
     )
     industry_etfs: tuple[RadarUniverseItem, ...] = (
-        RadarUniverseItem("SMH", "Semiconductors", ("NVDA", "AVGO", "AMD")),
+        RadarUniverseItem("ICLN", "Clean Energy", ("FSLR", "NXT", "BE")),
+        RadarUniverseItem("UFO", "Space", ("RKLB", "PL", "VSAT")),
+        RadarUniverseItem("XOP", "Oil and Gas Exploration", ("COP", "EOG", "OXY")),
+        RadarUniverseItem("CIBR", "Cybersecurity", ("CRWD", "PANW", "ZS")),
+        RadarUniverseItem("POWR", "Power Grid", ("GEV", "PWR", "NEE")),
+        RadarUniverseItem("BOAT", "Marine Shipping", ("ZIM", "SBLK", "GOGL")),
+        RadarUniverseItem("IPO", "IPOs", ("ARM", "UBER", "DUOL")),
         RadarUniverseItem("IGV", "Software", ("MSFT", "ORCL", "CRM")),
-        RadarUniverseItem("HACK", "Cybersecurity", ("CRWD", "PANW", "ZS")),
-        RadarUniverseItem("FDN", "Internet", ("AMZN", "META", "NFLX")),
+        RadarUniverseItem("TAN", "Solar", ("FSLR", "ENPH", "NXT")),
+        RadarUniverseItem("MOO", "Agribusiness", ("DE", "NTR", "CF")),
         RadarUniverseItem("XBI", "Biotech", ("VRTX", "REGN", "ARGX")),
-        RadarUniverseItem("ITA", "Aerospace & Defense", ("GE", "RTX", "LMT")),
+        RadarUniverseItem("SMH", "Semiconductors", ("NVDA", "AVGO", "AMD")),
+        RadarUniverseItem("FINX", "FinTech", ("COIN", "SOFI", "SQ")),
+        RadarUniverseItem("WGMI", "Bitcoin Miners", ("IREN", "CIFR", "HUT")),
+        RadarUniverseItem("BLOK", "Blockchain", ("COIN", "MSTR", "HOOD")),
+        RadarUniverseItem("QTUM", "Quantum and AI", ("IONQ", "IBM", "GOOGL")),
     )
     top_movers_count: int = 3
     overall_rs_weights: tuple[float, float, float] = (1.0, 2.0, 2.0)
@@ -197,7 +207,7 @@ class RadarViewModelBuilder:
             return pd.DataFrame()
 
         display = frame.reset_index(names="TICKER")
-        columns = ["RS", "1D", "1W", "1M", "TICKER", "NAME", "PRICE", "DAY %", "WK %", "MTH %", "RS DAY%", "RS WK%", "RS MTH%", "52W HIGH"]
+        columns = ["RS", "1D", "1W", "1M", "TICKER", "NAME", "DAY %", "WK %", "MTH %", "RS DAY%", "RS WK%", "RS MTH%", "52W HIGH"]
         if include_major_stocks:
             columns.append("MAJOR STOCKS")
         display = display[columns].copy()
@@ -245,3 +255,9 @@ class RadarViewModelBuilder:
             return "Yes"
         off_pct = (price / rolling_high - 1.0) * 100.0
         return f"{off_pct:.1f}%"
+
+
+class GroupStrengthAggregator(RadarViewModelBuilder):
+    """Docs-facing alias for the ETF-based RS radar aggregator."""
+
+    pass

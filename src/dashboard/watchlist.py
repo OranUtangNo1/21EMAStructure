@@ -156,3 +156,9 @@ class WatchlistViewModelBuilder:
             if column in display.columns:
                 display[column] = display[column].round(2)
         return display
+
+
+class WatchlistCardGridBuilder(WatchlistViewModelBuilder):
+    """Docs-facing alias for the scan card grid builder."""
+
+    pass

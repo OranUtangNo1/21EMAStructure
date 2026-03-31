@@ -12,6 +12,12 @@ from src.dashboard.radar import RadarConfig, RadarResult, RadarViewModelBuilder
 from src.dashboard.watchlist import ScanCardViewModel, WatchlistViewModelBuilder
 from src.data.cache import CacheLayer
 from src.data.models import FundamentalSnapshot, SymbolProfile
+from src.data.finviz_provider import (
+    FinvizScreenerConfig,
+    FinvizScreenerProvider,
+    build_fundamental_batch_from_snapshot,
+    build_profile_batch_from_snapshot,
+)
 from src.data.providers import (
     YahooScreenerConfig,
     YahooScreenerProvider,
@@ -100,6 +106,11 @@ class ResearchPlatform:
             self.cache,
             technical_ttl_hours=int(data_settings.get("technical_cache_ttl_hours", 12)),
             allow_stale_cache_on_failure=allow_stale,
+            batch_size=int(data_settings.get("price_batch_size", 80)),
+            max_retries=int(data_settings.get("price_max_retries", 3)),
+            request_sleep_seconds=float(data_settings.get("price_request_sleep_seconds", 2.0)),
+            retry_backoff_multiplier=float(data_settings.get("price_retry_backoff_multiplier", 2.0)),
+            incremental_period=data_settings.get("price_incremental_period", "5d"),
         )
         self.profile_provider = YFinanceProfileDataProvider(
             self.cache,
@@ -116,14 +127,20 @@ class ResearchPlatform:
         self.universe_discovery_enabled = bool(discovery_settings.get("enabled", True))
         self.use_snapshot_when_no_manual_symbols = bool(discovery_settings.get("use_snapshot_when_no_manual_symbols", True))
         self.universe_snapshot_ttl_days = int(discovery_settings.get("snapshot_ttl_days", 7))
-        self.screener_provider = YahooScreenerProvider(YahooScreenerConfig.from_dict(discovery_payload))
+        self.discovery_provider_name = str(discovery_settings.get("provider", "finviz")).strip().lower()
+        if self.discovery_provider_name == "finviz":
+            self.screener_provider = FinvizScreenerProvider(FinvizScreenerConfig.from_dict(discovery_payload))
+        elif self.discovery_provider_name == "yahoo":
+            self.screener_provider = YahooScreenerProvider(YahooScreenerConfig.from_dict(discovery_payload))
+        else:
+            raise ValueError(f"Unsupported universe discovery provider: {self.discovery_provider_name}")
 
     def run(self, symbols: list[str] | None = None, force_universe_refresh: bool = False) -> PlatformArtifacts:
-        active_symbols, universe_mode, universe_snapshot_path = self._resolve_active_symbols(symbols, force_universe_refresh)
+        active_symbols, universe_mode, universe_snapshot_path, universe_snapshot = self._resolve_active_symbols(symbols, force_universe_refresh)
         if not active_symbols:
             raise ValueError("At least one symbol is required.")
 
-        price_batch, benchmark_history, vix_history, profile_batch, fundamental_batch = self._load_data(active_symbols)
+        price_batch, benchmark_history, vix_history, profile_batch, fundamental_batch = self._load_data(active_symbols, universe_snapshot, universe_mode)
         live_symbol_histories = self._build_indicator_histories(price_batch.histories, active_symbols)
         if not live_symbol_histories:
             raise RuntimeError("No price histories were available for the requested symbols.")
@@ -149,12 +166,13 @@ class ResearchPlatform:
 
         radar_histories = self._build_indicator_histories(price_batch.histories, self.radar_builder.required_symbols())
         radar_result = self.radar_builder.build(radar_histories, benchmark_history)
+        market_histories = self._build_indicator_histories(price_batch.histories, self.market_scorer.required_symbols())
 
         fetch_status = self._build_fetch_status_frame(price_batch.statuses, profile_batch.statuses, fundamental_batch.statuses)
         data_health_summary = summarize_data_health(fetch_status)
         data_source_label = summarize_data_source_label(fetch_status)
         used_sample_data = bool((fetch_status["source"] == "sample").any()) if not fetch_status.empty else False
-        market_result = self.market_scorer.score(snapshot, benchmark_history, vix_history if not vix_history.empty else None)
+        market_result = self.market_scorer.score(live_symbol_histories, market_histories, benchmark_history)
         run_directory = self._persist_run(
             snapshot,
             eligible_snapshot,
@@ -189,34 +207,34 @@ class ResearchPlatform:
             universe_snapshot_path=universe_snapshot_path,
         )
 
-    def _resolve_active_symbols(self, symbols: list[str] | None, force_universe_refresh: bool) -> tuple[list[str], str, str | None]:
+    def _resolve_active_symbols(self, symbols: list[str] | None, force_universe_refresh: bool) -> tuple[list[str], str, str | None, pd.DataFrame | None]:
         manual_symbols = self._normalize_symbols(symbols or [])
         if manual_symbols:
-            return manual_symbols, "manual", None
+            return manual_symbols, "manual", None, None
 
         if self.use_snapshot_when_no_manual_symbols and self.universe_discovery_enabled:
             fresh = self.snapshot_store.load_latest_universe_snapshot(max_age_days=self.universe_snapshot_ttl_days)
             if not force_universe_refresh and fresh.snapshot is not None and not fresh.snapshot.empty:
-                return self._symbols_from_universe_snapshot(fresh.snapshot), "weekly_snapshot_cached", fresh.path
+                return self._symbols_from_universe_snapshot(fresh.snapshot), "weekly_snapshot_cached", fresh.path, fresh.snapshot
 
             stale = self.snapshot_store.load_latest_universe_snapshot(max_age_days=None)
             try:
                 discovery = self.screener_provider.discover()
                 if not discovery.snapshot.empty:
                     snapshot_path = self.snapshot_store.save_universe_snapshot(discovery.snapshot, discovery.metadata)
-                    return self._symbols_from_universe_snapshot(discovery.snapshot), "weekly_snapshot_live", str(snapshot_path)
+                    return self._symbols_from_universe_snapshot(discovery.snapshot), "weekly_snapshot_live", str(snapshot_path), discovery.snapshot
             except Exception:
                 if stale.snapshot is not None and not stale.snapshot.empty:
-                    return self._symbols_from_universe_snapshot(stale.snapshot), "weekly_snapshot_stale", stale.path
+                    return self._symbols_from_universe_snapshot(stale.snapshot), "weekly_snapshot_stale", stale.path, stale.snapshot
                 raise
 
             if stale.snapshot is not None and not stale.snapshot.empty:
-                return self._symbols_from_universe_snapshot(stale.snapshot), "weekly_snapshot_stale", stale.path
+                return self._symbols_from_universe_snapshot(stale.snapshot), "weekly_snapshot_stale", stale.path, stale.snapshot
 
         default_symbols = self._normalize_symbols(self.settings.get("app", {}).get("default_symbols", []))
         if default_symbols:
-            return default_symbols, "default_symbols", None
-        return [], "none", None
+            return default_symbols, "default_symbols", None, None
+        return [], "none", None, None
 
     def _symbols_from_universe_snapshot(self, snapshot: pd.DataFrame) -> list[str]:
         if snapshot.empty or "ticker" not in snapshot.columns:
@@ -229,13 +247,15 @@ class ResearchPlatform:
     def _load_data(
         self,
         symbols: list[str],
+        universe_snapshot: pd.DataFrame | None,
+        universe_mode: str,
     ) -> tuple[PriceHistoryBatch, pd.DataFrame, pd.DataFrame, ProfileBatchResult, FundamentalBatchResult]:
         app_settings = self.settings.get("app", {})
         benchmark_symbol = str(app_settings.get("benchmark_symbol", "SPY"))
         vix_symbol = str(app_settings.get("vix_symbol", "^VIX"))
         period = str(app_settings.get("price_period", "18mo"))
 
-        auxiliary_symbols = self.radar_builder.required_symbols()
+        auxiliary_symbols = list(dict.fromkeys(self.radar_builder.required_symbols() + self.market_scorer.required_symbols()))
         requested_price_symbols = list(dict.fromkeys(symbols + [benchmark_symbol, vix_symbol] + auxiliary_symbols))
         price_batch = self.price_provider.get_price_history(requested_price_symbols, period=period)
         self._apply_sample_price_fallback(price_batch, requested_price_symbols, benchmark_symbol, vix_symbol)
@@ -246,11 +266,62 @@ class ResearchPlatform:
             raise RuntimeError(f"Benchmark history for {benchmark_symbol} is required but unavailable.")
 
         active_price_symbols = [symbol for symbol in symbols if symbol in price_batch.histories and not price_batch.histories[symbol].empty]
-        profile_batch = self.profile_provider.get_profiles(active_price_symbols)
-        fundamental_batch = self.fundamental_provider.get_fundamentals(active_price_symbols)
+        snapshot_source = self._snapshot_source_label(universe_mode)
+        snapshot_fetched_at = self._snapshot_fetched_at(universe_snapshot)
+        profile_batch = build_profile_batch_from_snapshot(universe_snapshot, active_price_symbols, snapshot_source, snapshot_fetched_at)
+        fundamental_batch = build_fundamental_batch_from_snapshot(universe_snapshot, active_price_symbols, snapshot_source, snapshot_fetched_at)
+
+        missing_profile_symbols = [symbol for symbol in active_price_symbols if symbol not in profile_batch.statuses]
+        if missing_profile_symbols:
+            fallback_profile_batch = self.profile_provider.get_profiles(missing_profile_symbols)
+            self._merge_profile_batches(profile_batch, fallback_profile_batch)
+
+        missing_fundamental_symbols = [symbol for symbol in active_price_symbols if symbol not in fundamental_batch.statuses]
+        if missing_fundamental_symbols:
+            fallback_fundamental_batch = self.fundamental_provider.get_fundamentals(missing_fundamental_symbols)
+            self._merge_fundamental_batches(fundamental_batch, fallback_fundamental_batch)
+
         self._apply_sample_profile_fallback(profile_batch, active_price_symbols)
         self._apply_sample_fundamental_fallback(fundamental_batch, active_price_symbols)
         return price_batch, benchmark_history, vix_history, profile_batch, fundamental_batch
+
+    def _snapshot_source_label(self, universe_mode: str) -> str:
+        if universe_mode == "weekly_snapshot_live":
+            return "live"
+        if universe_mode == "weekly_snapshot_stale":
+            return "cache_stale"
+        if universe_mode == "weekly_snapshot_cached":
+            return "cache_fresh"
+        return "missing"
+
+    def _snapshot_fetched_at(self, universe_snapshot: pd.DataFrame | None) -> datetime | None:
+        if universe_snapshot is None or universe_snapshot.empty or "discovered_at" not in universe_snapshot.columns:
+            return None
+        parsed = pd.to_datetime(universe_snapshot["discovered_at"], errors="coerce")
+        valid = parsed.dropna()
+        if valid.empty:
+            return None
+        return valid.max().to_pydatetime()
+
+    def _merge_profile_batches(self, target: ProfileBatchResult, incoming: ProfileBatchResult) -> None:
+        existing = {profile.ticker for profile in target.profiles}
+        for profile in incoming.profiles:
+            if profile.ticker not in existing:
+                target.profiles.append(profile)
+                existing.add(profile.ticker)
+        for symbol, status in incoming.statuses.items():
+            if symbol not in target.statuses:
+                target.statuses[symbol] = status
+
+    def _merge_fundamental_batches(self, target: FundamentalBatchResult, incoming: FundamentalBatchResult) -> None:
+        existing = {fundamental.ticker for fundamental in target.fundamentals}
+        for fundamental in incoming.fundamentals:
+            if fundamental.ticker not in existing:
+                target.fundamentals.append(fundamental)
+                existing.add(fundamental.ticker)
+        for symbol, status in incoming.statuses.items():
+            if symbol not in target.statuses:
+                target.statuses[symbol] = status
 
     def _build_indicator_histories(self, histories: dict[str, pd.DataFrame], symbols: list[str]) -> dict[str, pd.DataFrame]:
         result: dict[str, pd.DataFrame] = {}
@@ -436,3 +507,4 @@ class ResearchPlatform:
         history["high"] = history[["open", "close"]].max(axis=1) + 1.0
         history["low"] = history[["open", "close"]].min(axis=1) - 1.0
         return history
+

@@ -59,11 +59,11 @@ The Cockpit is a TradingView indicator with three components:
 
 These modules exist in the codebase but are outside the screening system scope:
 
-- `src/structure/pivot.py` — StructurePivotDetector
-- `src/entry/evaluator.py` — EntryEvaluator
-- `src/risk/position_sizing.py` — PositionSizingCalculator
-- `src/risk/exits.py` — ExitRuleEvaluator
-- `src/dashboard/cockpit.py` — CockpitPanelBuilder
+- `archived/src/structure/pivot.py` — StructurePivotDetector
+- `archived/src/entry/evaluator.py` — EntryEvaluator
+- `archived/src/risk/position_sizing.py` — PositionSizingCalculator
+- `archived/src/risk/exits.py` — ExitRuleEvaluator
+- `archived/src/dashboard/cockpit.py` — CockpitPanelBuilder
 
 ---
 

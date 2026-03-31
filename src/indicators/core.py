@@ -17,12 +17,12 @@ class IndicatorConfig:
     sma_long_period: int = 200
     atr_period: int = 14
     adr_period: int = 20
-    adr_formula: str = "hl_pct"
+    adr_formula: str = "sma_high_low_ratio"
     dcr_formula: str = "closing_range"
     relvol_period: int = 50
     weekly_short_wma_period: int = 10
     weekly_long_wma_period: int = 30
-    three_weeks_tight_threshold_pct: float = 1.5
+    three_weeks_tight_pct_threshold: float = 1.5
     enable_3wt: bool = True
     atr_21ema_good_min: float = -0.5
     atr_21ema_good_max: float = 1.0
@@ -36,7 +36,12 @@ class IndicatorConfig:
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> "IndicatorConfig":
-        return cls(**{key: value for key, value in payload.items() if key in cls.__dataclass_fields__})
+        values = {key: value for key, value in payload.items() if key in cls.__dataclass_fields__}
+        if "three_weeks_tight_pct_threshold" not in values and "three_weeks_tight_threshold_pct" in payload:
+            values["three_weeks_tight_pct_threshold"] = payload["three_weeks_tight_threshold_pct"]
+        if "adr_formula" in values and values["adr_formula"] == "hl_pct":
+            values["adr_formula"] = "sma_high_low_ratio"
+        return cls(**values)
 
 
 class IndicatorCalculator:
@@ -63,13 +68,15 @@ class IndicatorCalculator:
         df["sma200"] = df["close"].rolling(self.config.sma_long_period).mean()
         df["avg_volume_50d"] = df["volume"].rolling(self.config.relvol_period).mean()
 
-        weekly = df.resample("W-FRI").agg({
-            "open": "first",
-            "high": "max",
-            "low": "min",
-            "close": "last",
-            "volume": "sum",
-        })
+        weekly = df.resample("W-FRI").agg(
+            {
+                "open": "first",
+                "high": "max",
+                "low": "min",
+                "close": "last",
+                "volume": "sum",
+            }
+        )
         weekly["wma10_weekly"] = weighted_moving_average(weekly["close"], self.config.weekly_short_wma_period)
         weekly["wma30_weekly"] = weighted_moving_average(weekly["close"], self.config.weekly_long_wma_period)
         weekly["three_weeks_tight"] = self._calculate_three_weeks_tight(weekly) if self.config.enable_3wt else False
@@ -89,11 +96,15 @@ class IndicatorCalculator:
         ).max(axis=1)
         df["atr"] = true_range.ewm(alpha=1 / self.config.atr_period, adjust=False).mean()
 
-        if self.config.adr_formula == "hl_pct":
+        if self.config.adr_formula == "sma_high_low_ratio":
+            high_low_ratio = df["high"] / df["low"].replace(0, np.nan)
+            df["adr_percent"] = (high_low_ratio.rolling(self.config.adr_period).mean() - 1.0) * 100.0
+        elif self.config.adr_formula == "hl_pct":
             daily_range_pct = (df["high"] - df["low"]) / df["close"].replace(0, np.nan) * 100.0
+            df["adr_percent"] = daily_range_pct.rolling(self.config.adr_period).mean()
         else:
             daily_range_pct = (df["high"] / df["low"].replace(0, np.nan) - 1.0) * 100.0
-        df["adr_percent"] = daily_range_pct.rolling(self.config.adr_period).mean()
+            df["adr_percent"] = daily_range_pct.rolling(self.config.adr_period).mean()
 
         range_width = (df["high"] - df["low"]).replace(0, np.nan)
         df["dcr_percent"] = ((df["close"] - df["low"]) / range_width * 100.0).fillna(50.0)
@@ -105,11 +116,21 @@ class IndicatorCalculator:
         df["monthly_return"] = df["close"].pct_change(21) * 100.0
         df["quarterly_return"] = df["close"].pct_change(63) * 100.0
 
-        df["atr_21ema_zone"] = (df["close"] - df["ema21_low"]) / df["atr"].replace(0, np.nan)
-        df["atr_10wma_zone"] = (df["close"] - df["wma10_weekly"]) / df["atr"].replace(0, np.nan)
-        df["atr_50sma_zone"] = (df["close"] - df["sma50"]) / df["atr"].replace(0, np.nan)
-        df["ema21_low_pct"] = (df["close"] - df["ema21_low"]) / df["close"].replace(0, np.nan) * 100.0
-        df["atr_pct_from_50sma"] = (df["close"] - df["sma50"]) / df["sma50"].replace(0, np.nan) * 100.0
+        atr = df["atr"].replace(0, np.nan)
+        df["atr_21ema_zone"] = (df["close"] - df["ema21_close"]) / atr
+        df["atr_10wma_zone"] = (df["close"] - df["wma10_weekly"]) / atr
+        df["atr_50sma_zone"] = (df["close"] - df["sma50"]) / atr
+
+        above_ema21_low = df["close"] >= df["ema21_low"]
+        df["ema21_low_pct"] = np.where(
+            above_ema21_low,
+            (df["close"] - df["ema21_low"]) / df["ema21_low"].replace(0, np.nan) * 100.0,
+            (df["close"] - df["ema21_low"]) / df["close"].replace(0, np.nan) * 100.0,
+        )
+
+        gain_from_ma_pct = (df["close"] / df["sma50"].replace(0, np.nan)) - 1.0
+        atr_pct_daily = atr / df["close"].replace(0, np.nan)
+        df["atr_pct_from_50sma"] = gain_from_ma_pct / atr_pct_daily.replace(0, np.nan)
         df["overheat"] = df["atr_pct_from_50sma"] >= self.config.atr_pct_from_50sma_overheat
 
         df["atr_21ema_label"] = df["atr_21ema_zone"].apply(
@@ -126,20 +147,15 @@ class IndicatorCalculator:
         return df
 
     def _calculate_three_weeks_tight(self, weekly: pd.DataFrame) -> pd.Series:
-        close_range_pct = (
-            (weekly["close"].rolling(3).max() - weekly["close"].rolling(3).min())
-            / weekly["close"].rolling(3).mean().replace(0, np.nan)
-            * 100.0
-        )
-        weekly_changes = weekly["close"].pct_change().abs() * 100.0
-        max_change = weekly_changes.rolling(3).max()
-        return ((close_range_pct <= self.config.three_weeks_tight_threshold_pct) & (max_change <= self.config.three_weeks_tight_threshold_pct)).fillna(False)
+        close = weekly["close"]
+        diff_0_1 = (close - close.shift(1)).abs() / close.shift(1).replace(0, np.nan) * 100.0
+        diff_1_2 = (close.shift(1) - close.shift(2)).abs() / close.shift(2).replace(0, np.nan) * 100.0
+        return ((diff_0_1 <= self.config.three_weeks_tight_pct_threshold) & (diff_1_2 <= self.config.three_weeks_tight_pct_threshold)).fillna(False)
 
     def _calculate_pocket_pivot(self, df: pd.DataFrame) -> pd.Series:
-        down_volume = df["volume"].where(df["close"] <= df["close"].shift(1))
-        max_down_volume = down_volume.rolling(self.config.pocket_pivot_lookback).max().shift(1)
+        prior_volume_high = df["volume"].rolling(self.config.pocket_pivot_lookback).max().shift(1)
         green_candle = df["close"] > df["open"]
-        return (green_candle & (df["volume"] > max_down_volume) & (df["close"] > df["close"].shift(1))).fillna(False)
+        return (green_candle & (df["volume"] > prior_volume_high)).fillna(False)
 
     def _zone_label(self, value: float, lower: float, upper: float) -> str:
         if pd.isna(value):

@@ -49,14 +49,16 @@ class ScanRunner:
         scan_hits = hits.loc[hits["kind"] == "scan"].groupby("ticker")["name"].agg(lambda values: ", ".join(sorted(values)))
         list_hits = hits.loc[hits["kind"] == "list"].groupby("ticker")["name"].agg(lambda values: ", ".join(sorted(values)))
         overlap_count = hits.loc[hits["kind"] == "list"].groupby("ticker").size()
+        scan_hit_count = hits.loc[hits["kind"] == "scan"].groupby("ticker").size()
         hit_count = hits.groupby("ticker").size()
 
         watchlist["hit_scans"] = scan_hits.reindex(watchlist.index).fillna("")
         watchlist["hit_lists"] = list_hits.reindex(watchlist.index).fillna("")
         watchlist["overlap_count"] = overlap_count.reindex(watchlist.index).fillna(0).astype(int)
+        watchlist["scan_hit_count"] = scan_hit_count.reindex(watchlist.index).fillna(0).astype(int)
         watchlist["hit_count"] = hit_count.reindex(watchlist.index).fillna(0).astype(int)
         watchlist["duplicate_ticker"] = watchlist["overlap_count"] >= self.config.duplicate_min_count
-        watchlist = watchlist.loc[watchlist["hit_count"] > 0].copy()
+        watchlist = watchlist.loc[watchlist["scan_hit_count"] > 0].copy()
         watchlist = self._sort_watchlist(watchlist)
         return ScanRunResult(hits=hits, watchlist=watchlist)
 

@@ -46,6 +46,6 @@ def test_radar_builder_builds_etf_based_tables() -> None:
     assert not result.industry_leaders.empty
     assert not result.top_daily.empty
     assert not result.top_weekly.empty
-    assert list(result.sector_leaders.columns) == ["RS", "1D", "1W", "1M", "TICKER", "NAME", "PRICE", "DAY %", "WK %", "MTH %", "RS DAY%", "RS WK%", "RS MTH%", "52W HIGH"]
+    assert list(result.sector_leaders.columns) == ["RS", "1D", "1W", "1M", "TICKER", "NAME", "DAY %", "WK %", "MTH %", "RS DAY%", "RS WK%", "RS MTH%", "52W HIGH"]
     assert "MAJOR STOCKS" in result.industry_leaders.columns
     assert result.industry_leaders.iloc[0]["MAJOR STOCKS"] == "NVDA, AVGO, AMD"

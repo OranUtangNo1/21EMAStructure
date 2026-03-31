@@ -68,3 +68,35 @@ def test_watchlist_cards_use_raw_watchlist_fields() -> None:
     assert len(cards) == 1
     assert list(cards[0].rows["Ticker"]) == ["AAA", "BBB"]
     assert "Hybrid-RS" in cards[0].rows.columns
+
+
+def test_watchlist_excludes_list_only_symbols() -> None:
+    snapshot = pd.DataFrame(
+        {
+            "weekly_return": [5.0],
+            "quarterly_return": [15.0],
+            "close": [100.0],
+            "ema21_low": [90.0],
+            "ema21_low_pct": [4.0],
+            "atr_21ema_zone": [-2.0],
+            "rel_volume": [0.5],
+            "daily_change_pct": [1.0],
+            "from_open_pct": [1.0],
+            "hybrid_score": [50.0],
+            "vcs": [10.0],
+            "rs21": [60.0],
+            "raw_rs21": [70.0],
+            "raw_rs63": [60.0],
+            "eps_growth": [99.0],
+            "trend_base": [False],
+            "pp_count_30d": [0],
+        },
+        index=["AAA"],
+    )
+    runner = ScanRunner(ScanConfig(high_eps_growth_rank_threshold=50.0))
+
+    result = runner.run(snapshot)
+
+    assert result.watchlist.empty
+    assert not result.hits.empty
+    assert set(result.hits["kind"]) == {"list"}

@@ -1,4 +1,0 @@
-ticker,name,sector,industry,H,F,I,21,63,126,rs5,overlap_count,hit_scans,hit_lists,vcs,earnings,pp_count_30d,ema21_low_pct,atr_21ema_zone,atr_50sma_zone,three_weeks_tight,atr_pct_from_50sma,price_data_source,fundamental_data_source,data_quality_label,data_quality_score,data_warning
-NVDA,NVIDIA Corporation,Technology,Semiconductors,47.94,100.0,66.67,19.05,14.29,15.87,20.0,3,,"High Est. EPS Growth, Momentum 97, Relative Strength 21 > 63",45.25,No,0,-4.01,-1.21,-2.21,False,-6.83,cache_fresh,cache_fresh,mixed,83.83,
-PLTR,Palantir Technologies Inc.,Technology,Software - Infrastructure,59.52,50.0,100.0,52.38,47.62,23.81,20.0,1,,Relative Strength 21 > 63,45.72,No,0,-0.5,-0.11,-0.3,False,-1.41,cache_fresh,cache_fresh,mixed,83.83,
-META,"Meta Platforms, Inc.",Communication Services,Internet Content & Information,20.95,50.0,33.33,4.76,1.59,0.79,20.0,1,,Relative Strength 21 > 63,39.08,No,0,-11.9,-3.32,-4.98,False,-15.16,cache_fresh,cache_fresh,mixed,83.83,
