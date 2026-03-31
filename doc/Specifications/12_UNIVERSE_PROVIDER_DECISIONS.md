@@ -1,127 +1,104 @@
-# Universe and Provider Decisions
+# 12. Universe And Provider Decisions
 
-## 1. Scope of this note
+## 1. Current Decision Summary
 
-This note records the active decisions for:
-- scan universe definition
-- refresh cadence
-- provider strategy
-- low-cost operation with finviz + yfinance
+The active implementation uses a practical low-cost stack for screening:
 
-Date: 2026-03-30
+- Finviz for weekly universe discovery
+- Yahoo Finance for daily price history
+- Yahoo fallback providers for profile and fundamental fields when the weekly snapshot does not supply them
+- local cache and local run snapshots for persistence
 
----
+This is the current implemented provider stack.
 
-## 2. Universe definition
+## 2. Current Universe Workflow
 
-### 2.1 Default exchanges
-- NASDAQ
-- NYSE
-- AMEX
+### 2.1 Weekly Discovery
 
-### 2.2 Allowed security type
-- common stock only where practical
-- use the finviz stock screener as the coarse starting point
+The default weekly discovery path is:
 
-### 2.3 Default exclusions
-- exclude Healthcare as a shared universe rule
-- defer strict instrument-type cleanup to configurable filters and local validation when needed
+1. run the Finviz screener
+2. apply the configured discovery filters
+3. save the resulting snapshot under `data_runs/universe_snapshots/`
+4. reuse the latest snapshot until the refresh interval expires or a manual refresh is requested
 
-### 2.4 Scanable universe filters
-Stage 1 coarse snapshot:
-- market cap > 1B
-- exclude Healthcare
+### 2.2 Daily Scan Execution
 
-Stage 2 local daily filter after prices are loaded:
-- avg volume 50d > 1M
-- ADR percent 3.5 to 10.0
+The daily scan path is:
 
-### 2.5 Price floor policy
-- no explicit minimum price filter by default
-- market cap > 1B is treated as the primary coarse quality floor
+1. resolve symbols from the latest weekly snapshot
+2. load price history for those symbols
+3. merge profile and fundamental data
+4. apply the local eligible-universe filter
+5. calculate indicators and scores
+6. run the nine scans
 
----
+This separation between weekly discovery and daily scan execution is active in the code.
 
-## 3. Refresh cadence
+## 3. Current Discovery Filters
 
-### 3.1 Weekly universe snapshot
-Contents:
-- symbols that pass coarse finviz filters
-- sector and industry attributes
-- market cap
-- EPS growth, revenue growth, earnings date
+The current default discovery filters come from `config/default.yaml`.
 
-Recommended cadence:
-- weekly rebuild
-- reuse the latest snapshot during daily runs until TTL expiry
+Implemented defaults:
 
-### 3.2 Daily scan inputs
-Contents:
-- OHLCV
-- indicators
-- scores
-- 9 scans
-- watchlist outputs
+- provider: `finviz`
+- exchanges: `NASDAQ`, `NYSE`, `AMEX`
+- excluded sector: `Healthcare`
+- minimum market cap: `1000000000`
+- maximum symbols: `2500`
+- refresh cadence: weekly
 
-Recommended cadence:
-- daily update
-- fetch recent price deltas and merge them into local cache
+These are discovery-stage filters, not the final eligible-universe rules.
 
-### 3.3 ETF data for dashboards
-Contents:
-- Market Dashboard ETFs
-- RS Radar ETFs
-- benchmark and snapshot symbols
+## 4. Current Eligible-Universe Filter
 
-Recommended cadence:
-- daily update through the same batched price provider
+After prices are loaded, the application applies a local filter before scans run.
 
----
+Current implemented conditions:
 
-## 4. Provider strategy
+- market cap >= 1B
+- average volume 50d >= 1M
+- close >= configured minimum price
+- ADR percent between 3.5 and 10.0
+- sector is not Healthcare
 
-### 4.1 Active provider split
-Use this split as the default architecture:
-1. finviz screener for weekly universe discovery
-2. finviz snapshot as the primary source for profile and fundamental fields
-3. yfinance bulk download for OHLCV only
-4. local cache as the persistence and stale-fallback layer
+This is the actual daily screening universe used by the scan layer.
 
-### 4.2 Why finviz is the primary universe source
-- it returns the coarse stock list and key attributes in one pass
-- it provides the required EPS growth, sales growth, and earnings date fields
-- it avoids per-symbol profile and fundamental scraping during normal runs
-- it keeps the stack free of paid dependencies such as FMP
+## 5. Why The Current Stack Exists
 
-### 4.3 Why yfinance remains in the stack
-- it is sufficient for daily OHLCV updates
-- it can serve prices for both stock universe members and ETF dashboards
-- it works well when requests are batched instead of sent one symbol at a time
+The current stack is a pragmatic implementation choice.
 
-### 4.4 Batch price requirements
-- batch size: 80 symbols per request
-- retry: up to 3 attempts with backoff
-- merge successful downloads into local per-symbol cache
-- allow stale-cache fallback when live fetch fails
+Benefits:
 
----
+- low cost
+- fast enough for the current product scope
+- simple local caching model
+- enough data to run the active scans and dashboards
 
-## 5. Practical recommendation
+Tradeoffs:
 
-The active low-cost architecture is:
-- weekly finviz snapshot for universe, attributes, and fundamentals
-- daily yfinance bulk price update for stocks and ETFs
-- local filtering for avg volume and ADR after price histories are available
+- no strict security master
+- no guaranteed common-stock-only reference layer
+- provider behavior can drift over time
+- fallback coverage is practical rather than institutional-grade
 
-This is the default operating mode for the current screening platform.
+## 6. What Is Not Yet Active
 
----
+The following ideas exist as future directions, but are not part of the current implementation:
 
-## 6. Immediate implementation tasks
+- FMP provider chain
+- Nasdaq-backed security master
+- strict common-stock canonical universe provider
+- richer provider redundancy for profile and fundamentals
 
-1. Keep `FinvizScreenerProvider` as the default universe discovery provider.
-2. Keep weekly universe snapshots persisted and reused within TTL.
-3. Keep `YFinancePriceDataProvider` batched and cache-aware.
-4. Preserve stale-cache fallback and fetch-status visibility in the pipeline.
-5. Keep universe thresholds configurable through `config/default.yaml`.
-6. Treat paid or secondary providers as optional future work, not part of the active default stack.
+These should be treated as future enhancements, not current behavior.
+
+## 7. Current Operational Interpretation
+
+The current provider strategy should be interpreted as:
+
+- good enough for daily screening research and candidate extraction
+- intentionally modular so that providers can be replaced later
+- not yet the final state for institutional-quality universe management
+
+That is the current implementation stance.

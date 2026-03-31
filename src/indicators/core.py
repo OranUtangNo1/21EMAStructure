@@ -20,6 +20,8 @@ class IndicatorConfig:
     adr_formula: str = "sma_high_low_ratio"
     dcr_formula: str = "closing_range"
     relvol_period: int = 50
+    rsi_short_period: int = 21
+    rsi_long_period: int = 63
     weekly_short_wma_period: int = 10
     weekly_long_wma_period: int = 30
     three_weeks_tight_pct_threshold: float = 1.5
@@ -111,6 +113,8 @@ class IndicatorCalculator:
         df["rel_volume"] = df["volume"] / df["avg_volume_50d"].replace(0, np.nan)
 
         df["daily_change_pct"] = df["close"].pct_change() * 100.0
+        df["rsi21"] = self._calculate_rsi(df["close"], self.config.rsi_short_period)
+        df["rsi63"] = self._calculate_rsi(df["close"], self.config.rsi_long_period)
         df["from_open_pct"] = (df["close"] - df["open"]) / df["open"].replace(0, np.nan) * 100.0
         df["weekly_return"] = df["close"].pct_change(5) * 100.0
         df["monthly_return"] = df["close"].pct_change(21) * 100.0
@@ -145,6 +149,19 @@ class IndicatorCalculator:
         df["pp_count_30d"] = df["pocket_pivot"].rolling(self.config.pp_count_window_days).sum().fillna(0).astype(int)
         df["trend_base"] = (df["close"] > df["sma50"]) & (df["wma10_weekly"] > df["wma30_weekly"])
         return df
+
+    def _calculate_rsi(self, close: pd.Series, period: int) -> pd.Series:
+        delta = close.diff()
+        gains = delta.clip(lower=0.0)
+        losses = -delta.clip(upper=0.0)
+        avg_gain = gains.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
+        avg_loss = losses.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
+        rs = avg_gain / avg_loss.replace(0, np.nan)
+        rsi = 100.0 - (100.0 / (1.0 + rs))
+        rsi = rsi.where(~((avg_gain == 0) & (avg_loss == 0)), 50.0)
+        rsi = rsi.where(~((avg_gain > 0) & (avg_loss == 0)), 100.0)
+        rsi = rsi.where(~((avg_gain == 0) & (avg_loss > 0)), 0.0)
+        return rsi
 
     def _calculate_three_weeks_tight(self, weekly: pd.DataFrame) -> pd.Series:
         close = weekly["close"]

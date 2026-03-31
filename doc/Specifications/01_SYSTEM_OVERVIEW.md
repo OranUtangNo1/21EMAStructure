@@ -1,146 +1,123 @@
 # System Overview
 
-## 1. 目的
+## 1. Product Definition
 
-本システムは、成長株トレード手法に基づく**スクリーニング・候補抽出プラットフォーム**である。
+OraTek is an active screening and candidate extraction platform for growth-stock research. The implemented product produces three daily outputs:
 
-目的は以下の3つ。
+1. Market Dashboard
+2. RS Radar
+3. Today's Watchlist
 
-1. 市場環境・業界・個別銘柄の強さを一体で把握する
-2. スキャンに基づき候補銘柄を抽出・順位付けする
-3. 毎日の候補リストを安定的に生成し、レビュー効率を高める
+The application is designed to help the user review market context, locate leading groups, and surface candidate tickers that satisfy one or more scan conditions.
 
----
+## 2. Active Scope
 
-## 2. スコープ
+The active product scope is limited to:
 
-### 2.1 本システムの責務
+- market environment monitoring
+- sector and industry leadership review
+- watchlist candidate extraction and ranking
+- duplicate ticker highlighting from scan overlap
+- data-quality visibility for the current run
 
-本システムの責務は、以下の3つの出力を毎日提供することに集約される。
+## 3. Out-Of-Scope Areas
 
-1. **Market Dashboard**: 今日の市場環境はどうか
-2. **RS Radar**: 今日どのセクター・業界が強いか
-3. **Today's Watchlist**: 今日どの銘柄が複数の好条件を満たしているか
+The active product does not implement:
 
-### 2.2 本システムのスコープ外
+- entry confirmation
+- chart-structure review for execution
+- position sizing
+- stop placement
+- exit management
+- portfolio-level risk management
 
-以下は本システムのスコープ外とする。
-これらは TradingView 上のツール群（21EMA Cockpit, Structure Pivot, VCS, Position Size Calculator）で行う。
+Those topics remain archived research material and are not active application behavior.
 
-- エントリー評価・最終判断
-- チャート上の構造分析（Structure Pivot, 21EMA Cloud の目視確認）
-- ポジションサイジング
-- 売買執行・フェーズ別イグジット管理
-- ポートフォリオレベルのリスク管理
+## 4. Current End-To-End Workflow
 
-### 2.3 将来の拡張
+### 4.1 Weekly Universe Discovery
 
-entry/structure/risk に関する設計情報は `archived/` に隔離保存しており、
-将来「エントリー判断システム」を別途構築する際の資産として使う。
+The current implementation builds a weekly universe snapshot with the Finviz screener. The latest snapshot is stored locally and reused until the snapshot TTL expires or a manual refresh is requested.
 
----
+### 4.2 Daily Data Loading
 
-## 3. 基本方針
+For the resolved universe, the application loads daily price history from Yahoo Finance. Profile and fundamental fields are primarily sourced from the weekly universe snapshot and filled from Yahoo fallback providers when needed.
 
-### 3.1 固定するもの
+### 4.3 Local Filtering
 
-公開情報から確定度が高い構造は固定する。
+Before scans run, the application applies a local eligible-universe filter based on market cap, average volume, ADR, price, and excluded sectors.
 
-- 日足ベース
-- 21EMA 構造（High / Low / Cloud）をスキャン条件の基盤として使用
-- 9スキャンの存在と基本条件
-- 7リスト重複（duplicate tickers）の考え方
-- Hybrid Score の大枠（RS + Fundamental + Industry）
-- VCS の位置づけ（圧縮状態の数値化）
-- Market Conditions の基本構造（43 ETF ベースの breadth スコア）
+### 4.4 Indicator And Score Calculation
 
-### 3.2 固定しないもの
+The pipeline calculates the technical indicator stack, benchmark-relative strength, research-oriented scoring layers, and watchlist annotations.
 
-非公開または未確定部分はパラメータ化する。
+### 4.5 Candidate Extraction
 
-- Fundamental Score の詳細式
-- Industry RS の詳細式
-- Market Conditions の集計式の詳細
-- 各スキャンの閾値
-- Hybrid の重み
-- キャッシュ TTL
+The application executes nine active scan rules. Any ticker that passes at least one scan becomes part of Today's Watchlist.
 
-### 3.3 システムの性質
+### 4.6 Duplicate Highlighting
 
-本システムは「完全再現アプリ」ではなく「研究・運用基盤」である。
+A ticker is marked as a duplicate ticker when it appears in three or more of the nine active scans.
 
----
+### 4.7 Dashboard Rendering
 
-## 4. 全体構造
+The three active views consume the same run artifacts:
 
-本システムは以下の3層で構成する。
+- Market Dashboard summarizes breadth, performance, factor leadership, and snapshot metrics
+- RS Radar summarizes sector and industry ETF leadership plus top RS movers
+- Today's Watchlist presents duplicate tickers, scan cards, and earnings context
 
-### 4.1 市場環境判定層
+## 5. Core Design Principles
 
-- Market Conditions（43 ETF ベースの breadth スコア）
-- Breadth & Trend Metrics（SMA10/20/50/200 の % above 等）
-- Performance Overview（YTD/1W/1M/1Y）
-- HIGH & VIX（S2W HIGH, VIX）
-- Market Snapshot（RSP, QQQE, IWM, DIA, VIX, BTC + 21EMA位置関係）
-- S5TH チャート（S&P 500 % above 200SMA の時系列）
-- Factors vs SP500（Growth, Value, High Dividend, Large/Mid/Small-Cap, Momentum, IPOs）
-- Sector / Industry RS Radar
+### 5.1 Code And Config Are Authoritative
 
-### 4.2 銘柄抽出層
+The source of truth for current behavior is:
 
-- 9スキャン実行
-- 候補銘柄抽出
-- scan hit の記録
+- implementation in `src/` and `app/`
+- runtime defaults in `config/default.yaml`
 
-### 4.3 候補順位付け層
+### 5.2 Replaceable Research Logic
 
-- Hybrid Score でスキャン結果をソート
-- 7リスト構築
-- duplicate tickers 集計（3回以上出現した銘柄を優先監視）
-- earnings flag 付与
-- スキャン別カードグリッドとして表示
+Non-public or uncertain logic remains configurable rather than fixed. This includes:
 
----
+- fundamental scoring details
+- industry scoring details
+- VCS details
+- market condition component tuning
+- scan thresholds and sort preferences
 
-## 5. この手法の本質
+### 5.3 Data Lineage Is Product Behavior
 
-- 強い銘柄を見つける
-- 強い業界に属する銘柄を優先する
-- 成長性も加味して候補を絞る
-- 21EMA 構造の指標をスキャン条件に活用する
-- VCS や 3WT で収縮状態を確認する
-- 複数スキャンに重複して出現する銘柄に注目する
-- スクリーニング通過後の最終判断は TradingView 上で行う
+Fetch status and source labels are not incidental logging. The product exposes lineage such as `live`, `cache_fresh`, `cache_stale`, `snapshot`, `sample`, and `missing` because data quality is part of the screening workflow.
 
----
+## 6. Active System Layers
 
-## 6. 実装上の重要方針
+### 6.1 Data Layer
 
-### 6.1 分割単位
+Responsibilities:
 
-ロジックは以下の3分割を基本とする。
+- weekly universe discovery
+- price/profile/fundamental loading
+- cache reuse and stale-cache fallback
+- run snapshot persistence
 
-- Config
-- Calculator / Scorer / Evaluator
-- Result
+### 6.2 Indicator And Scoring Layer
 
-### 6.2 試行錯誤前提
+Responsibilities:
 
-非公開部分は差し替え可能にし、比較実験できる構造を優先する。
+- technical indicator calculation
+- SPY-relative strength calculation
+- fundamental, industry, hybrid, and VCS scoring
 
-### 6.3 データ品質の可視化
+### 6.3 Extraction And Presentation Layer
 
-データソースの状態（live / cache_fresh / cache_stale / sample / missing）を
-出力に含め、データ品質を常に把握できるようにする。
+Responsibilities:
 
----
+- scan execution
+- annotation generation
+- duplicate ticker aggregation
+- watchlist, market, and radar views
 
-## 7. まず作るべきもの
+## 7. Current Implementation Stance
 
-1. データ取得
-2. 基本指標（21EMA, SMA, ATR, ADR, DCR, RelVol, RS）
-3. Hybrid Score 骨格
-4. 9スキャン
-5. Today's Watchlist UI（スキャン別カードグリッド）
-6. Market Dashboard
-7. RS Radar
+The active OraTek product should be understood as a working screener with configurable research formulas. It is not a trade execution engine. The core problem it solves is daily screening and prioritization, not final discretionary trade management.

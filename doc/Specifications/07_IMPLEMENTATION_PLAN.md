@@ -1,176 +1,158 @@
 # Implementation Plan
 
-## 1. 実装方針
+## 1. Current Product State
 
-本システムのスコープは「候補抽出・順位付け・市場環境の可視化」に限定する。
+The active screening product is already implemented at the MVP-plus stage. The current codebase includes:
 
-エントリー評価、Structure Pivot、Position Sizing、売買管理は
-TradingView 上で行うため、本システムには含まない。
+- weekly universe discovery and persistence
+- daily data loading with cache and lineage tracking
+- full indicator stack required by the active scans
+- nine scan rules and annotation lists
+- duplicate ticker aggregation from scan overlap
+- Market Dashboard, RS Radar, and Today's Watchlist
 
----
+This document therefore focuses on the current execution order and the next work phases, not on an unimplemented greenfield plan.
 
-## 2. フェーズ分割
+## 2. Current Execution Order
 
-### Phase 1: データ基盤 + 基本指標
+### Phase A: Weekly Universe Discovery
 
-目的:
-- データ取得パイプラインの構築
-- 全スキャンに必要な基本指標の計算
+Current behavior:
 
-実装対象:
-- price / profile / fundamental 取得（yfinance + FMP）
-- EMA21 High / Low / Cloud
-- SMA50 / SMA200
-- ATR, ADR, DCR, Relative Volume
-- RS5 / RS21 / RS63 / RS126
-- Fundamental / Industry の仮スコア
-- Hybrid Score
-- キャッシュ基盤
-- データソース状態追跡（live / cache_fresh / cache_stale / sample / missing）
+1. discover a weekly universe snapshot with Finviz
+2. persist the snapshot locally
+3. reuse the latest snapshot until refresh is required
 
-成果物:
-- 全指標が計算可能な状態
-- データ品質レポート
+Primary modules:
 
----
+- `src/data/finviz_provider.py`
+- `src/data/store.py`
+- `src/pipeline.py`
 
-### Phase 2: 9スキャン + Today's Watchlist
+### Phase B: Daily Data Realization
 
-目的:
-- 9スキャンの実装
-- スキャン別カードグリッド UI の構築
+Current behavior:
 
-実装対象:
-- 9スキャンルール実装
-- VCS 計算
-- PP Count 計算
-- 3WT 計算
-- Trend Base 条件
-- スキャン結果の Hybrid-RS 順ソート
-- Today's Watchlist カードグリッド UI
-- Earnings for today セクション
+1. resolve symbols from the latest weekly snapshot or manual override
+2. load daily price history from Yahoo Finance
+3. load or backfill profile and fundamental fields
+4. apply local universe filters
+5. preserve fetch status and source labels
 
-成果物:
-- 9スキャン別のカードグリッド表示
-- 各スキャン内は Hybrid-RS 順ソート
-- 当日決算銘柄の表示
+Primary modules:
 
----
+- `src/data/providers.py`
+- `src/data/cache.py`
+- `src/data/universe.py`
+- `src/pipeline.py`
 
-### Phase 3: 7リスト + duplicate tickers
+### Phase C: Indicator And Scoring Calculation
 
-目的:
-- 7リスト構築
-- 重複銘柄の自動集計
+Current behavior:
 
-実装対象:
-- 7リスト生成ロジック
-- duplicate tickers 集計（3回以上出現）
-- 重複銘柄の強調表示
+1. calculate the technical indicator stack
+2. calculate SPY-relative strength
+3. calculate fundamental, industry, hybrid, and VCS scores
+4. enrich the snapshot with scan context columns
 
-成果物:
-- 7リスト
-- duplicate tickers の自動抽出
-- 重複銘柄が目視で発見しやすい UI
+Primary modules:
 
----
+- `src/indicators/core.py`
+- `src/scoring/rs.py`
+- `src/scoring/fundamental.py`
+- `src/scoring/industry.py`
+- `src/scoring/hybrid.py`
+- `src/scoring/vcs.py`
+- `src/scan/rules.py`
 
-### Phase 4: Market Dashboard
+### Phase D: Candidate Extraction
 
-目的:
-- 市場環境の可視化
+Current behavior:
 
-実装対象:
-- Market Conditions スコア（43 ETF ベース）
-- Breadth & Trend Metrics
-- Performance Overview
-- HIGH & VIX
-- Market Snapshot（RSP, QQQE, IWM, DIA, VIX, BTC + 21EMA位置ラベル）
-- S5TH チャート
-- Factors vs SP500
-- 時間軸別スコア（1D/1W/1M/3M ago）
+1. execute the nine active scan rules
+2. build the watchlist as the union of scan hits
+3. compute annotation-style list hits
+4. mark duplicate tickers from scan overlap
+5. sort the watchlist according to configured mode
 
-成果物:
-- Market Dashboard 画面
+Primary modules:
 
----
+- `src/scan/rules.py`
+- `src/scan/runner.py`
+- `src/dashboard/watchlist.py`
 
-### Phase 5: RS Radar
+### Phase E: Dashboard Packaging
 
-目的:
-- セクター・業界の強弱可視化
+Current behavior:
 
-実装対象:
-- Sector Leaders テーブル（RS 4軸 + パフォーマンス + RS変化率 + 52W HIGH）
-- Industry Leaders テーブル（同上 + MAJOR STOCKS）
-- Top 3 RS% Change（Daily / Weekly）
+1. build the Market Dashboard artifacts
+2. build the RS Radar artifacts
+3. build the watchlist card artifacts
+4. render the three pages in Streamlit
 
-成果物:
-- RS Radar 画面
+Primary modules:
 
----
+- `src/dashboard/market.py`
+- `src/dashboard/radar.py`
+- `src/dashboard/watchlist.py`
+- `app/main.py`
 
-### Phase 6: 研究強化
+## 3. Completed Milestones
 
-目的:
-- 日次比較
-- パラメータ調整
-- 品質改善
+Completed in the active product:
 
-実装対象:
-- run 保存と比較
-- watchlist 日次差分表示
-- scan-hit 履歴
-- データ品質の時系列追跡
-- config バージョン管理
+- screening-only scope alignment
+- duplicate ticker logic based on scan overlap
+- scan-card watchlist presentation
+- RS Radar integration inside the dashboard
+- Market Dashboard integration inside the dashboard
+- weekly universe snapshot workflow
+- data-quality visibility in the UI
 
-成果物:
-- 試行錯誤しやすい研究環境
+## 4. Next Implementation Phases
 
----
+### Phase F: Provider Hardening
 
-## 3. MVP で外してよいもの
+Priority tasks:
 
-最初はなくてよい:
-- 完全な Market Conditions の精密再現
-- Industry RS の精密実装
-- Fundamental Score の精密実装
-- run 比較 UI
-- 日次履歴追跡
+- add an optional secondary provider path
+- improve instrument classification for common-stock purity
+- keep weekly discovery and daily scan execution cleanly separated
 
----
+### Phase G: Historical Review Workflow
 
-## 4. 先に決めるべきこと
+Priority tasks:
 
-- 実装言語 / フレームワーク
-- UI 方式（Streamlit 等）
-- データ保存方式
-- config 形式
-- chart 描画方法（S5TH チャート等）
+- compare saved runs inside the app
+- inspect recurring duplicate tickers across dates
+- inspect changes in sector and industry leadership over time
 
----
+### Phase H: Formula Governance
 
-## 5. 推奨実装順
+Priority tasks:
 
-1. データ取得
-2. データモデル定義
-3. 21EMA High / Low / Cloud
-4. 基本指標（ATR, ADR, DCR, RelVol, RS）
-5. VCS / PP Count / 3WT
-6. Hybrid Score 骨格
-7. 9スキャン
-8. Today's Watchlist カードグリッド UI
-9. 7リスト + duplicate tickers
-10. Market Dashboard
-11. RS Radar
+- keep documentation synchronized with code and config changes
+- review the behavior of research formulas against real usage
+- make parameter changes easier to audit across runs
 
----
+## 5. Explicit Non-Goals For The Active Plan
 
-## 6. 検証の最初の問い
+The following are not part of the active implementation plan:
 
-- Hybrid で並べると候補の質は上がるか
-- duplicate tickers は有効か
-- 9スキャンのカバレッジは十分か
-- Market Conditions スコアは環境判断に使えるか
-- RS Radar はセクターローテーションの把握に役立つか
-- VCS は候補の質の向上に寄与するか
+- entry evaluation workflows
+- structure-pivot workflows
+- position sizing workflows
+- phased exit workflows
+- trade execution workflows
+
+These remain out of scope for the active screening product.
+
+## 6. Practical Validation Questions
+
+The next rounds of work should continue to test these questions:
+
+- is the weekly universe of sufficient quality for the daily scan workflow?
+- are duplicate tickers a useful prioritization signal?
+- does the current market score align with practical market review?
+- do RS Radar tables surface useful sector and industry leadership?
+- do VCS and Hybrid improve candidate prioritization without overfitting?

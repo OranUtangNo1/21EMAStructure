@@ -1,196 +1,254 @@
 # Scan and Watchlist Spec
 
-## 1. 既知の 9 スキャン
+## 1. Active pre-scan universe filter
 
-### 1.1 21EMA scan
-- Market Cap > 1B
-- Avg Vol 50d > 1M
-- Weekly % = 0 to 15%
-- DCR% > 20%
-- 21EMA at ATR -0.5R to +1R
-- 50SMA at ATR 0R to 3R
-- PP Count 30d > 1
-- Trend Base
+Before any scan rule runs, `UniverseBuilder.filter()` applies the active local universe filter:
 
-### 1.2 4% bullish
-- Market Cap > 1B
-- Avg Vol 50d > 1M
-- Rel Vol > 1x
-- Daily % > 4%
-- From Open % > 0%
-- RS 1M > 60
+- `market_cap >= 1B`
+- `avg_volume_50d >= 1M`
+- `close >= min_price` where the current default is `0.0`
+- `adr_percent` between `3.5` and `10.0`
+- sector exclusion: `Healthcare`
 
-### 1.3 Vol Up
-- Market Cap > 1B
-- Avg Vol 50d > 1M
-- Rel Vol > 1.5x
-- Daily % > 0%
-
-### 1.4 Momentum 97
-- Avg Vol 50d > 1M
-- 1W % change top 3% percentile ≥ 0.97（ユニバース横断パーセンタイル）
-- 3M % change top 15% percentile ≥ 0.85（ユニバース横断パーセンタイル）
-- Trend Base
-
-### 1.5 97 Club
-- Market Cap > 1B
-- Avg Vol 50d > 1M
-- Hybrid RS > 90（※ Hybrid RS を使用する唯一のスキャン条件）
-- RS 1M > 97（旧RS）
-- Trend Base
-
-### 1.6 VCS
-- Market Cap > 1B
-- Avg Vol 50d > 1M
-- VCS 60 to 100
-- RS 1M > 60（旧RS）
-
-### 1.7 Pocket Pivot
-- Market Cap > 1B
-- Avg Vol 50d > 1M
-- Price > 50SMA
-- green candle
-- volume > highest volume in past 10 days
-
-### 1.8 PP Count
-- Market Cap > 1B
-- Avg Vol 50d > 1M
-- PP Count 30d > 3
-- Trend Base
-
-### 1.9 Weekly 20% plus gainers
-- Market Cap > 1B
-- Avg Vol 50d > 1M
-- Weekly % > 20%
+The scan rules themselves run only on this eligible snapshot.
 
 ---
 
-## 2. 共通要因
+## 2. Active 9 scan rules
 
-- ADR% フィルタ
-- ex Healthcare
+### 2.1 21EMA scan
 
-### 2.1 Trend Base
-- Price > 50SMA
-- 10WMA > 30WMA
+`True` when all conditions are met:
 
-### 2.2 Cockpit 由来の追加解釈
-21EMA scan は、単なる screener 条件ではなく、
-21EMA Cockpit Core Stats のうち以下と強く対応している。
+- `weekly_return >= 0.0`
+- `weekly_return <= 15.0`
+- `dcr_percent > 20.0`
+- `-0.5 <= atr_21ema_zone <= 1.0`
+- `0.0 <= atr_50sma_zone <= 3.0`
+- `pp_count_30d > 1`
+- `trend_base == True`
 
-- ADR%
-- ATR 21EMA
-- ATR 50SMA
-- 21EMA Low %
-- Trend Base
+### 2.2 4% bullish
 
----
+`True` when all conditions are met:
 
-## 3. 21EMA Scan for Pine Screener の扱い
+- `rel_volume >= 1.0`
+- `daily_change_pct >= 4.0`
+- `from_open_pct > 0.0`
+- `raw_rs21 > 60.0`
 
-### 3.1 位置づけ
-- Pine Screener 専用 indicator
-- 標準の built-in screener では難しい条件を再現するためのもの
+### 2.3 Vol Up
 
-### 3.2 設計上の扱い
-本システムでは TradingView 依存にはせず、同等条件をローカルで再現する。
+`True` when all conditions are met:
 
-### 3.3 実装上の示唆
-- 全市場を直接スキャンするのではなく、まず対象ユニバース / 独自 watchlist を作る思想を持つ
-- その上で detailed scan を走らせる
+- `rel_volume >= 1.5`
+- `daily_change_pct > 0.0`
 
----
+### 2.4 Momentum 97
 
-## 4. 実運用の 7 リスト
+`True` when all conditions are met:
 
-7リストはUIに直接表示しない。
-裏側で集計し、duplicate tickers（3回以上出現した銘柄）を自動抽出するために使う。
+- `weekly_return_rank >= 97.0`
+- `quarterly_return_rank >= 85.0`
+- `trend_base == True`
 
-### 4.1 リスト一覧と生成条件（仮定義）
+`weekly_return_rank` and `quarterly_return_rank` are cross-sectional percentile ranks created by `enrich_with_scan_context()`.
 
-| # | リスト名 | 生成条件 |
-|---|---|---|
-| 1 | Momentum 97 | Momentum 97 スキャン結果を流用 |
-| 2 | Volatility Contraction Score | VCS スキャン結果を流用 |
-| 3 | 21EMA Watch | 21EMA スキャン結果を流用 |
-| 4 | 4% Gainers | 4% bullish スキャン結果を流用 |
-| 5 | Relative Strength 21 > 63 | ユニバース内で RS21 > RS63 の銘柄（RS加速中）|
-| 6 | Vol Up Gainers | Vol Up スキャン結果を流用 |
-| 7 | High Est. EPS Growth | ユニバース内で EPS growth 上位銘柄 |
+### 2.5 97 Club
 
-### 4.2 注意事項
-- リスト 1〜4, 6 は9スキャン結果の流用
-- リスト 5, 7 は独立した条件で生成
-- 7リストの生成条件は仮定義であり、正確な条件が判明した時点で差し替える
-- すべて configurable とする
+`True` when all conditions are met:
 
----
+- `hybrid_score >= 90.0`
+- `raw_rs21 >= 97.0`
+- `trend_base == True`
 
-## 5. duplicate tickers
+### 2.6 VCS
 
-### 5.1 定義
-- **7リスト**中、3回以上出現した銘柄
+`True` when all conditions are met:
 
-### 5.2 扱い
-- 優先監視対象
-- Today's Watchlist 上で強調表示可能にする
-- 7リスト自体はUIに表示しない（裏側集計のみ）
+- `vcs >= 60.0`
+- `raw_rs21 > 60.0`
 
-### 5.3 RS の二層構造との関係
-- 9スキャンの条件内では旧RS（Raw RS）を使用
-- スキャン結果のソートと7リストの生成にはHybrid RSを使用
-- duplicate tickers は7リスト（Hybrid RS基準）に基づいて集計する
+### 2.7 Pocket Pivot
 
----
+`True` when all conditions are met:
 
-## 6. Watchlist 生成フロー
+- `close > sma50`
+- `pocket_pivot == True`
 
-1. データ更新
-2. 指標計算
-3. 9スキャンまたは 7 リスト判定
-4. scan hit 記録
-5. duplicate tickers 集計
-6. Hybrid Score でソート
-7. earnings / PP Count / VCS / Cockpit Core Stats など補助情報を付与
-8. watchlist candidate として表示
+`pocket_pivot` itself is calculated in the indicator layer as:
+
+- green candle: `close > open`
+- current `volume > max(volume over prior pocket_pivot_lookback days)`
+
+### 2.8 PP Count
+
+`True` when all conditions are met:
+
+- `pp_count_30d > 3`
+- `trend_base == True`
+
+### 2.9 Weekly 20% plus gainers
+
+`True` when:
+
+- `weekly_return >= 20.0`
 
 ---
 
-## 7. 順位付けルール
+## 3. Active 7 list annotations
 
-### 7.1 確定
-- Hybrid Score でソートしている運用が確認されている
+The 7 lists are evaluated on the same eligible snapshot, but they do not decide watchlist eligibility.
+They are stored as supporting annotations through `hit_lists` and `list_overlap_count`.
 
-### 7.2 初期案
-- primary: `overlap_count desc`
-- secondary: `hybrid_score desc`
-- tertiary: `vcs desc`
-- quaternary: `cockpit_quality_score desc`
-- quinary: `earnings proximity asc` または penalty
+### 3.1 List rules currently evaluated
+
+1. `Momentum 97`
+   - `weekly_return_rank >= 97.0`
+   - `quarterly_return_rank >= 85.0`
+
+2. `Volatility Contraction Score`
+   - `vcs >= 60.0`
+
+3. `21EMA Watch`
+   - `close >= ema21_low`
+   - `ema21_low_pct <= 8.0`
+   - `-0.5 <= atr_21ema_zone <= 1.0`
+
+4. `4% Gainers`
+   - `daily_change_pct >= 4.0`
+
+5. `Relative Strength 21 > 63`
+   - `rsi21 > rsi63`
+
+6. `Vol Up Gainers`
+   - `rel_volume >= 1.5`
+   - `daily_change_pct > 0.0`
+
+7. `High Est. EPS Growth`
+   - `eps_growth_rank >= 90.0`
+
+### 3.2 Important distinction
+
+- 9 scans drive watchlist eligibility.
+- 7 lists do not create watchlist candidates by themselves.
+- list-only symbols are excluded from the final watchlist.
 
 ---
 
-## 8. watchlist に表示すべき補助情報
+## 4. Duplicate tickers
 
-- hit した scan 名一覧
+### 4.1 Current definition
+
+A duplicate ticker is any ticker that appears in `3` or more of the 9 scan rules.
+
+In the active implementation:
+
+- `scan_hit_count = number of unique scan hits for the ticker`
+- `overlap_count = scan_hit_count`
+- `duplicate_ticker = scan_hit_count >= duplicate_min_count`
+- current `duplicate_min_count = 3`
+
+### 4.2 What is not used
+
+Duplicate tickers are not derived from:
+
+- the 7 list annotations
+- `list_overlap_count`
+- transformed card output rows
+
+The UI priority band is built directly from raw scan hits plus the raw watchlist rows.
+
+---
+
+## 5. Watchlist generation flow
+
+1. Resolve the active symbols.
+2. Load prices, profile data, and fundamentals.
+3. Build indicator histories.
+4. Build the latest snapshot.
+5. Apply scoring: RS, Fundamental, Industry, Hybrid, VCS.
+6. Apply the local universe filter.
+7. Evaluate the 9 scans and 7 list annotations.
+8. Keep only symbols with `scan_hit_count > 0`.
+9. Mark duplicate tickers from scan overlap.
+10. Sort the watchlist.
+11. Build scan cards, duplicate band rows, and earnings rows for the UI.
+
+---
+
+## 6. Sorting
+
+### 6.1 Active watchlist sort
+
+Default config uses `watchlist_sort_mode: hybrid_score`.
+
+This produces the active sort priority:
+
+1. `hybrid_score`
+2. `overlap_count`
+3. `vcs`
+4. `rs21`
+
+### 6.2 Optional sort mode
+
+If `watchlist_sort_mode` is changed to `overlap_then_hybrid`, the runner sorts by:
+
+1. `overlap_count`
+2. `hybrid_score`
+3. `vcs`
+4. `rs21`
+
+### 6.3 Card-level sort
+
+Each scan card uses `card_sections[*].sort_columns`.
+The current default is:
+
+1. `hybrid_score`
+2. `overlap_count`
+3. `vcs`
+
+---
+
+## 7. Active watchlist outputs
+
+The display-oriented watchlist table currently exposes these fields when available:
+
+- `name`
+- `sector`
+- `industry`
+- `H`, `F`, `I`, `21`, `63`, `126`
+- `rs5`
 - `overlap_count`
-- `hybrid_score`
+- `scan_hit_count`
+- `list_overlap_count`
+- `duplicate_ticker`
+- `hit_scans`
+- `hit_lists`
 - `vcs`
-- `earnings_in_7d`
+- `earnings`
 - `pp_count_30d`
 - `ema21_low_pct`
 - `atr_21ema_zone`
 - `atr_50sma_zone`
 - `three_weeks_tight`
 - `atr_pct_from_50sma`
+- `price_data_source`
+- `fundamental_data_source`
+- `data_quality_label`
+- `data_quality_score`
+- `data_warning`
 
 ---
 
-## 9. 非公開部分の扱い
+## 8. Configurable areas
 
-以下はパラメータ化する。
-- 各 scan の閾値細部
-- 7 リストと 9 スキャンの完全対応関係
-- duplicate tickers の最終順位付け
-- earnings 近接の扱い
-- cockpit_quality_score の合成方法
+The active implementation keeps these areas configurable:
+
+- scan thresholds
+- enabled scan rules
+- enabled list rules
+- card sections and their display names
+- duplicate minimum count
+- watchlist sort mode
+- universe thresholds

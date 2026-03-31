@@ -1,396 +1,367 @@
 # Indicators and Scoring
 
-## 1. 主要指標一覧
+## 1. Purpose
 
-- EMA21 High
-- EMA21 Low
-- EMA21 Close
-- 21EMA Cloud
-- SMA50
-- SMA200
-- ATR
-- ADR%
-- DCR%
-- Relative Volume
-- RS5
-- RS21
-- RS63
-- RS126
-- Fundamental Score
-- Industry RS
-- Hybrid Score
-- VCS
-- PP Count 30d
-- 3WT
-- ATR% from 50SMA
-- 21EMA Low %
+This document describes the indicator and scoring behavior currently implemented in code.
 
----
+## 2. Core Technical Indicators
 
-## 2. EMA21 High / Low / Close
+### 2.1 21EMA Structure
 
-### 2.1 定義
-- `EMA21 High = EMA(high, 21)`
-- `EMA21 Low = EMA(low, 21)`
-- `EMA21 Close = EMA(close, 21)`
+Implemented fields:
 
-### 2.2 役割
-- `EMA21 Low` は stop / trail の中心
-- `EMA21 High` と `EMA21 Low` は 21EMA Cloud を構成
-- `EMA21 Close` は補助的トレンド確認に使える
+- `ema21_high = EMA(high, 21)`
+- `ema21_low = EMA(low, 21)`
+- `ema21_close = EMA(close, 21)`
+- `ema21_cloud_width = ema21_high - ema21_low`
 
-### 2.3 重要仕様
-本手法でいう `21EMA Low` は、単なる終値EMAではなく、**安値ベースの 21EMA** として扱う。
+Interpretation:
 
-### 2.4 パラメータ
-- `ema_period`
-- `ema_high_source`
-- `ema_low_source`
-- `ema_close_source`
+- `ema21_low` is the low-based 21EMA and is not replaced with a close-based EMA
+- the 21EMA cloud is represented by the band between `ema21_high` and `ema21_low`
+- current code uses the underlying fields rather than a dedicated chart module
 
----
+### 2.2 Moving Averages
 
-## 3. 21EMA Cloud
+Implemented fields:
 
-### 3.1 定義
-- `21EMA Cloud = band(EMA21 High, EMA21 Low)`
+- `sma50 = rolling_mean(close, 50)`
+- `sma200 = rolling_mean(close, 200)`
+- `wma10_weekly = weighted_moving_average(weekly_close, 10)`
+- `wma30_weekly = weighted_moving_average(weekly_close, 30)`
 
-### 3.2 用途
-- トレンド環境確認
-- 価格がクラウド内 / 上にあるかを確認
-- support 帯の可視化
-- Main Chart 側で表示
+### 2.3 ATR
 
-### 3.3 パラメータ
-- `show_ema21_cloud`
-- `ema_cloud_fill_style`
+Implemented field:
 
----
+- `atr`
 
-## 4. ATR
+Formula:
 
-### 4.1 用途
-- 21EMA からの距離判定
-- 10WMA からの距離判定
-- 50SMA からの距離判定
-- ボラ把握
-- リスク評価
+- `true_range = max(high - low, abs(high - prev_close), abs(low - prev_close))`
+- `atr = EMA(true_range, alpha = 1 / atr_period)`
 
-### 4.2 パラメータ
+Default parameter:
+
 - `atr_period = 14`
-- `atr_source`
 
----
+### 2.4 ADR Percent
 
-## 5. ADR%
+Implemented field:
 
-### 5.1 位置づけ
-- 適度なボラ銘柄を抽出するユニバース共通フィルタ
+- `adr_percent`
 
-### 5.2 初期デフォルト
-- average daily range % を使用
-- `ADR% = 100 * (SMA(high/low, adr_period) - 1)`
+Default formula:
 
-### 5.3 ユニバースフィルタ基準
-- 3.5% 〜 10.0%（原典: "ADR% 3.5 to 10"）
+- `adr_percent = (rolling_mean(high / low, adr_period) - 1.0) * 100`
 
-### 5.4 パラメータ
-- `adr_period = 20`（VCS ソースコード / Pine Screener コード準拠）
-- `adr_formula`
-- `adr_filter_min = 3.5`
-- `adr_filter_max = 10.0`
+Alternative formulas can be selected through config, but the active default is `sma_high_low_ratio`.
 
----
+Default parameters:
 
-## 6. DCR%
+- `adr_period = 20`
+- `min_adr_percent = 3.5`
+- `max_adr_percent = 10.0`
 
-### 6.1 位置づけ
-- 日中レンジに対する終値位置の強さを見る
+### 2.5 DCR Percent
 
-### 6.2 仮置きデフォルト
-- `(close - low) / (high - low) * 100`
+Implemented field:
 
-### 6.3 パラメータ
-- `dcr_formula`
+- `dcr_percent`
 
----
+Formula:
 
-## 7. Relative Volume
+- `dcr_percent = (close - low) / (high - low) * 100`
+- when the daily range is zero, the value falls back to `50`
 
-### 7.1 仮置きデフォルト
-- `today_volume / average_volume_50d`
+### 2.6 Relative Volume
 
-### 7.2 パラメータ
-- `relvol_period`
+Implemented field:
 
----
+- `rel_volume = volume / avg_volume_50d`
 
-## 8. ATR-based Zone Metrics
+Supporting field:
 
-### 8.1 ATR 21EMA
-現在価格と `EMA21 Close`（close ベースの 21EMA）との距離を ATR 基準で評価する。
-計算式: `dist_21_atr = (close - ema21) / atr`
+- `avg_volume_50d = rolling_mean(volume, 50)`
 
-#### 良好ゾーン
-- `-0.5 ATR 〜 +1.0 ATR`
-- 基本的にここが緑の時にエントリーを検討する
+### 2.7 RSI
 
-### 8.2 ATR 10WMA
-週足 10WMA との距離を ATR 基準で評価する。
-計算式: `dist_10w_atr = (close - wma10w) / atr`
+Implemented fields:
 
-#### 良好ゾーン（21EMA Cockpit ソースコード準拠）
-- `-0.5 ATR 〜 +1.0 ATR`（ATR 21EMA と同じゾーン設定を共有）
+- `rsi21`
+- `rsi63`
 
-#### 位置づけ
-- 21EMA を一時的に割っても、10WMA で支えられている（ここが緑）なら、より深い押し目買いのチャンスとなる可能性がある
+Formula:
 
-### 8.3 ATR 50SMA
-現在価格と 50SMA の距離を ATR 基準で評価する。
-計算式: `dist_50_atr = (close - sma50) / atr`
+- Wilder-style RSI using exponentially weighted average gains and losses
+- neutral fallback is `50` when both gains and losses are zero
 
-#### 良好ゾーン
-- `0 〜 +3.0 ATR`
-- 50SMA から ATR 3R 以上離れるとエントリーは遅い可能性があり、リスクが高くなる
+Default parameters:
 
-### 8.4 パラメータ
-- `atr_zone_min = -0.5`（21EMA と 10WMA で共有）
-- `atr_zone_max = 1.0`（21EMA と 10WMA で共有）
-- `atr_50sma_good_max = 3.0`
+- `rsi_short_period = 21`
+- `rsi_long_period = 63`
 
----
+### 2.8 Return Horizons And Daily Change
 
-## 9. 21EMA Low %
+Implemented fields:
 
-### 9.1 定義
-- price >= ema21_low の場合:
-  `ema21_low_pct = (close - ema21_low) / ema21_low * 100`
-- price < ema21_low の場合:
-  `ema21_low_pct = (close - ema21_low) / close * 100`
-- （21EMA Cockpit ソースコード準拠）
+- `daily_change_pct = close.pct_change() * 100`
+- `from_open_pct = (close - open) / open * 100`
+- `weekly_return = close.pct_change(5) * 100`
+- `monthly_return = close.pct_change(21) * 100`
+- `quarterly_return = close.pct_change(63) * 100`
 
-### 9.2 用途
-- 初期リスクの見える化
-- position sizing の判断
-- フルサイズ / 縮小 / 見送り の区分
+## 3. Zone And Structure Metrics
 
-### 9.3 初期運用基準
-- `<= 5%`: フルエントリー候補
-- `> 5% and <= 8%`: サイズ調整候補
-- `> 8%`: 見送り候補
+### 3.1 ATR Distance Zones
 
-### 9.4 パラメータ
-- `ema21_low_pct_full_max = 5.0`
-- `ema21_low_pct_reduce_max = 8.0`
+Implemented fields:
 
----
+- `atr_21ema_zone = (close - ema21_close) / atr`
+- `atr_10wma_zone = (close - wma10_weekly) / atr`
+- `atr_50sma_zone = (close - sma50) / atr`
 
-## 10. RS5 / RS21 / RS63 / RS126
+Derived labels:
 
-### 10.1 RS の二層構造
+- `atr_21ema_label`: `below`, `good`, `extended`, or `unknown`
+- `atr_50sma_label`: `good`, `extended`, or `unknown`
 
-本システムでは RS を2つのレイヤーで扱う。
+Default thresholds:
 
-- **旧RS（Raw RS）**: price ratio の percentile rank。9スキャンの条件（RS 1M > 60 等）で使用
-- **Hybrid RS**: 旧RS + Fundamental Score + Industry Score の加重合成。ソート順 + 97 Club 条件 + 7リストで使用
+- 21EMA zone good range: `-0.5` to `1.0`
+- 50SMA extended threshold: above `3.0`
 
-### 10.2 旧RS の定義
-- benchmark は `SPY`
-- `price_ratio = stock_close / benchmark_close`
-- 各 lookback 期間で、**その銘柄自身の過去 ratio 時系列**に対する percentile rank を算出
-- 0〜100 スコアとする
-- RS 80 = 対SPY比率が過去の中で上位20%の位置
+### 3.2 21EMA Low Percent
 
-### 10.2 期間
-- 5日
-- 21日
-- 63日
-- 126日
+Implemented field:
 
-### 10.3 運用上の役割
-- Hybrid は `21 / 63 / 126` を採用
-- `RS5` は補助列として短期相対強度の確認に使える
+- `ema21_low_pct`
 
-### 10.4 初期ハイライト基準
-- `>= 80`: 強い
-- `<= 39` または `<= 40`: 弱い
+Formula:
 
-### 10.5 パラメータ
-- `benchmark_symbol`
+- if `close >= ema21_low`: `(close - ema21_low) / ema21_low * 100`
+- else: `(close - ema21_low) / close * 100`
+
+Derived field:
+
+- `ema21_low_size_bucket` with values `full`, `reduced`, `avoid`, or `unknown`
+
+Default thresholds:
+
+- `full` when `ema21_low_pct <= 5.0`
+- `reduced` when `ema21_low_pct <= 8.0`
+- `avoid` otherwise
+
+### 3.3 ATR Percent From 50SMA
+
+Implemented fields:
+
+- `atr_pct_from_50sma`
+- `overheat`
+
+Formula:
+
+- `gain_from_ma_pct = (close / sma50) - 1.0`
+- `atr_pct_daily = atr / close`
+- `atr_pct_from_50sma = gain_from_ma_pct / atr_pct_daily`
+
+Default threshold:
+
+- `overheat = atr_pct_from_50sma >= 7.0`
+
+### 3.4 Three Weeks Tight
+
+Implemented field:
+
+- `three_weeks_tight`
+
+Formula:
+
+- resample daily bars to weekly close on `W-FRI`
+- compute the absolute percent difference between the latest two weekly closes
+- compute the absolute percent difference between the previous two weekly closes
+- mark `True` only if both differences are less than or equal to the configured threshold
+
+Default parameters:
+
+- `enable_3wt = true`
+- `three_weeks_tight_pct_threshold = 1.5`
+
+### 3.5 Pocket Pivot And PP Count
+
+Implemented fields:
+
+- `pocket_pivot`
+- `pp_count_30d`
+
+Pocket Pivot formula:
+
+- candle is green: `close > open`
+- volume is greater than the maximum volume of the prior rolling lookback window
+
+PP Count formula:
+
+- rolling sum of `pocket_pivot` over `pp_count_window_days`
+
+Default parameters:
+
+- `pocket_pivot_lookback = 10`
+- `pp_count_window_days = 30`
+
+### 3.6 Trend Base
+
+Implemented field:
+
+- `trend_base = (close > sma50) and (wma10_weekly > wma30_weekly)`
+
+## 4. Relative Strength
+
+### 4.1 Raw RS And RS Fields
+
+Implemented fields:
+
+- `raw_rs5`, `raw_rs21`, `raw_rs63`, `raw_rs126`
+- `rs5`, `rs21`, `rs63`, `rs126`
+- `price_ratio`
+
+Current implementation behavior:
+
+- benchmark symbol defaults to `SPY`
+- align stock close and benchmark close on date index
+- compute `price_ratio = stock_close / benchmark_close`
+- for each lookback window, take the trailing ratio window
+- normalize that window with the configured normalization method
+- use the most recent normalized value as the score for that lookback
+
+In the current implementation, `rs*` is equal to `raw_rs*`.
+
+Default parameters:
+
+- `benchmark_symbol = SPY`
 - `rs_lookbacks = [5, 21, 63, 126]`
-- `rs_normalization_method`
+- `rs_normalization_method = percentile`
 - `rs_strong_threshold = 80`
 - `rs_weak_threshold = 39`
 
-### 10.6 IBD Style RS Rating（参考情報）
+## 5. Fundamental Score
 
-Pine Screener のコード内に、Fred6725 ロジックによる IBD Style RS Rating の計算が存在する。
-重み付けは `0.4*63日 + 0.2*126日 + 0.2*189日 + 0.2*252日` の相対パフォーマンス。
-RS Radar の Sector/Industry Leaders テーブルの「RS」列がこれに該当する可能性がある。
+Implemented fields:
 
-現時点では本システムのスキャン条件には使用しない（旧RS + Hybrid RS で運用）。
-RS Radar の実装時に、この RS Rating の採用を検討する。
+- `eps_growth_score`
+- `revenue_growth_score`
+- `fundamental_score`
 
----
+Current default behavior:
 
-## 11. Fundamental Score
+- normalize `eps_growth` and `revenue_growth` across the current snapshot with the configured method
+- fill missing normalized values with `50` when `missing_fundamental_policy = fill_neutral`
+- compute the weighted average using `eps_weight` and `revenue_weight`
 
-### 11.1 確定していること
-- `EPS growth`
-- `revenue growth`
-に基づくスコア
+Default parameters:
 
-### 11.2 非公開のため固定しないこと
-- 具体的な期間
-- 正規化方法
-- EPS と売上の重み
-- estimate 利用有無
+- `eps_weight = 1.0`
+- `revenue_weight = 1.0`
+- `fundamental_normalization_method = percentile`
+- `missing_fundamental_policy = fill_neutral`
 
-### 11.3 初期デフォルト（仮定義）
-- EPS growth と revenue growth を均等加重
-- 各指標をユニバース内パーセンタイルランクに変換（0〜100）
-- `FundamentalScore = (eps_percentile + revenue_percentile) / 2`
-- データ欠損時は neutral(50) で fill
+## 6. Industry Score
 
-### 11.4 パラメータ
-- `fundamental_metrics`
-- `eps_growth_period`
-- `revenue_growth_period`
-- `use_estimates`
-- `eps_weight`
-- `revenue_weight`
-- `fundamental_normalization_method`
-- `missing_fundamental_policy`
+Implemented field:
 
----
+- `industry_score`
 
-## 12. Industry RS
+Current default behavior:
 
-### 12.1 確定していること
-- industry 単位の相対力スコア
-- 大規模ユニバース集計を前提とする
-- industry 粒度優先
+- group the snapshot by `industry`
+- use `rs21` as the input metric by default
+- aggregate each industry with the configured method
+- normalize aggregated industry values across industries
+- map the normalized industry score back to each ticker
 
-### 12.2 非公開のため固定しないこと
-- 集約方式
-- 加重方法
-- 入力指標
-- 正規化方式
+Default parameters:
 
-### 12.3 初期デフォルト（仮定義）
-- 同一 industry に属する銘柄の RS21 平均を算出
-- industry 間でパーセンタイルランクに変換（0〜100）
-- `IndustryScore = percentile_rank(industry_avg_rs21)`
+- `industry_aggregation_method = mean`
+- `industry_rs_input_metric = rs21`
+- `industry_score_normalization_method = percentile`
 
-### 12.4 パラメータ
-- `industry_classification_source`
-- `industry_aggregation_method`
-- `industry_rs_input_metric`
-- `industry_score_normalization_method`
+Supported aggregation modes in code:
 
----
+- `mean`
+- `median`
+- `market_cap_weighted_mean`
 
-## 13. Hybrid Score
+Supported input metric behavior in code:
 
-### 13.1 目的
-- 候補銘柄の優先順位付け
-- ソート
-- 内訳比較
+- `rs21`
+- `rs63`
+- `rs126`
+- any other input metric falls back to `(rs21 + 2*rs63 + 2*rs126) / 5` before industry normalization
 
-### 13.2 構成要素
-- `RS21`
-- `RS63`
-- `RS126`
-- `Fundamental Score`
-- `Industry RS`
+## 7. Hybrid Score
 
-### 13.3 重み
-- `RS(3期間) : Fundamental : Industry = 5 : 2 : 3`
-- RS 内部 = `1 : 2 : 2`
+Implemented fields:
 
-### 13.4 初期合成式
+- `hybrid_score`
+- `H`
+- `F`
+- `I`
+- `21`
+- `63`
+- `126`
+
+Current default formula:
 
 ```text
-HybridScore =
-(
-  RS21 * 1 +
-  RS63 * 2 +
-  RS126 * 2 +
-  FundamentalScore * 2 +
-  IndustryScore * 3
+Hybrid = (
+  rs21 * 1 +
+  rs63 * 2 +
+  rs126 * 2 +
+  fundamental_score * 2 +
+  industry_score * 3
 ) / 10
-13.5 表示内訳
-H = Hybrid
-F = Fundamental
-I = Industry
-21 = RS21
-63 = RS63
-126 = RS126
-13.6 パラメータ
-rs_weights
-fundamental_weight
-industry_weight
-hybrid_rounding_policy
-hybrid_missing_value_policy
-14. VCS
-14.1 位置づけ
-圧縮状態の成熟度を数値化する補助指標
-単独エントリーシグナルではない
-14.2 用途
-候補抽出
-優先度加点
-breakout 候補の圧縮度確認
-14.3 仮置き運用
-60以上で候補
-80以上で強い圧縮状態
-14.4 パラメータ
-vcs_threshold_candidate
-vcs_threshold_priority
-len_short
-len_long
-len_volume
-sensitivity
-trend_penalty_weight
-bonus_max
-15. PP Count 30d
-15.1 定義
-過去 30 営業日内の Pocket Pivot 発生回数
-15.2 用途
-scan 条件
-補助情報表示
-15.3 パラメータ
-pp_count_window_days
-pocket_pivot_definition_variant
-16. 3-Weeks Tight
-16.1 位置づけ
-O’Neil 系の収縮確認
-Cockpit Core Stats の補助判定
-16.2 用途
-VCP 的な締まり具合の可視化
-setup の質の補強
-16.3 判定ロジック（21EMA Cockpit ソースコード準拠）
-直近3週の週足終値 w_c0, w_c1, w_c2 について:
-- abs(w_c0 - w_c1) / w_c1 * 100 <= threshold
-- abs(w_c1 - w_c2) / w_c2 * 100 <= threshold
-両方を満たせば true
-16.4 パラメータ
-enable_3wt
-three_weeks_tight_pct_threshold = 1.5
-17. ATR% from 50SMA
-17.1 位置づけ
-過熱判定
-部分利確の補助
-17.2 計算式（21EMA Cockpit ソースコード準拠）
-gain_from_ma_pct = (close / sma50) - 1.0
-atr_pct_daily = atr / close
-atrx_from_sma50 = gain_from_ma_pct / atr_pct_daily
+```
 
-ATR 50SMA（ATR何個分離れているか）との違い:
-ATR% from 50SMA は、株価が上昇して50SMAより高くなればなるほど、
-単純な距離よりもさらに数値が大きくなる計算式である。
-17.3 初期基準
->= 7 で過熱の補助シグナル
-段階的な色分け: 7 / 8 / 9 / 10 / 11
-17.4 パラメータ
-atr_pct_from_50sma_overheat = 7.0
-show_overheat_dot = true
+Current default missing-value policy:
+
+- `fill_neutral_50`
+- missing components are replaced with `50` before the weighted average
+
+Other supported code paths:
+
+- `drop_symbol`
+- weighted renormalization over non-missing components
+
+## 8. VCS
+
+Implemented field:
+
+- `vcs`
+
+Current default behavior:
+
+- compute short and long volatility from close-to-close returns
+- compute short and long average range from `(high - low) / close`
+- compute short and long average volume
+- reward contraction in volatility and range
+- add a volume bonus when short-term volume is quieter than long-term volume
+- apply a trend penalty when `close < sma50`
+- clip the result to `[0, 100]`
+
+Default parameters:
+
+- `vcs_threshold_candidate = 60.0`
+- `vcs_threshold_priority = 80.0`
+- `len_short = 13`
+- `len_long = 63`
+- `len_volume = 50`
+- `sensitivity = 2.0`
+- `trend_penalty_weight = 1.0`
+- `bonus_max = 15.0`
+
+## 9. Interpretation Notes
+
+Important distinctions in the active codebase:
+
+- RSI is a price-momentum oscillator and is separate from SPY-relative RS
+- raw RS and normalized RS currently collapse to the same value because the scorer returns the normalized ratio-window endpoint directly
+- fundamental, industry, hybrid, and VCS are configurable research layers, not fixed external standards

@@ -1,125 +1,117 @@
-# Growth Trading Screener — Document Index
+# Growth Trading Screener - Document Index
 
 ## Scope Definition
 
-This system is a **screening and candidate extraction platform**.
-Its responsibility ends at delivering three daily outputs:
+This system is a screening and candidate extraction platform.
+Its active responsibility ends at three outputs:
 
-1. Market environment assessment (Market Dashboard)
-2. Sector and industry strength ranking (RS Radar)
-3. Candidate stocks passing multiple quality scans (Today's Watchlist)
+1. Market Dashboard
+2. RS Radar
+3. Today's Watchlist
 
-Entry evaluation, chart-based structure analysis, position sizing, and trade management
-are performed outside this system (primarily in TradingView using 21EMA Cockpit, Structure Pivot, VCS, and Position Size Calculator).
-
-Information related to entry, structure, risk, and exit has been preserved in the `archived/` directory
-for future use when building a separate entry decision system.
+Entry evaluation, chart-based structure review, position sizing, and trade management are out of scope for the active system and remain archived.
 
 ---
 
-## Active Documents (Screening System)
+## Active Documents
 
 1. `01_SYSTEM_OVERVIEW.md`
-   - purpose and scope
-   - fixed structure vs configurable logic
-   - three-layer architecture
-   - research-platform positioning
+   - active product scope
+   - architecture boundaries
+   - screening-system positioning
 
 2. `02_DATA_MODEL_AND_SOURCES.md`
-   - data models
-   - provider abstraction
-   - cache strategy
-   - storage formats and flow
+   - live data architecture
+   - provider split
+   - cache and snapshot flow
+   - universe discovery
 
 3. `03_INDICATORS_AND_SCORING.md`
-   - 21EMA family
+   - indicators
    - RS
-   - Fundamental Score
-   - Industry Score
-   - Hybrid Score
+   - Fundamental / Industry / Hybrid
    - VCS
-   - supporting indicators
 
 4. `04_SCAN_AND_WATCHLIST_SPEC.md`
-   - 9 scans
-   - 7 lists
-   - duplicate tickers
-   - watchlist output model
+   - 9 scan rules
+   - 7 list annotations
+   - duplicate ticker logic
+   - watchlist generation flow
 
 5. `05_DASHBOARD_UI_SPEC.md`
    - Market Dashboard
    - RS Radar
-   - Today's Watchlist (scan-based card grid)
-   - Earnings for today
+   - Today's Watchlist
+   - active UI behavior
 
 6. `06_MODULE_AND_INTERFACE_SPEC.md`
-   - module responsibilities (screening scope only)
+   - module responsibilities
    - Config / Calculator / Result split
-   - interface definitions
+   - active interfaces
 
 7. `07_IMPLEMENTATION_PLAN.md`
-   - implementation phases (screening scope)
-   - priorities
-   - MVP scope
+   - implementation phases
+   - active priorities
 
 8. `08_PARAMETER_CATALOG.md`
-   - parameter catalog
-   - thresholds
-   - weights and modes
+   - active config parameters
+   - thresholds, weights, universes, and modes
 
 9. `09_CURRENT_STATUS_AND_ROADMAP.md`
-   - current status snapshot
-   - scope clarification
-   - next-step roadmap
+   - current implementation status
+   - active roadmap
 
 10. `10_TRADING_METHOD_PLAYBOOK.md`
     - human-readable method guide
-    - screening flow
-    - indicator explanations
-    - scope boundary with entry/exit
+    - screening workflow
+    - active scope boundary
 
 11. `11_IMPLEMENTATION_GAP_ANALYSIS.md`
-    - docs vs code comparison
-    - active-scope gaps
-    - priority work order
+    - code-first gap analysis
+    - remaining active-scope issues
+
+12. `12_UNIVERSE_PROVIDER_DECISIONS.md`
+    - universe discovery strategy
+    - refresh cadence
+    - current provider decisions
 
 ---
 
-## Archived Documents (Future Entry Decision System)
-
-These documents preserve research and design work for entry evaluation,
-structure analysis, risk management, and trade execution.
-They are not part of the current screening system scope.
+## Archived Documents
 
 - `archived/ENTRY_EXIT_AND_RISK_SPEC.md`
-  - entry hypothesis, sell rules, phase logic, position sizing
 - `archived/ENTRY_STRUCTURE_NOTES.md`
-  - Structure Pivot, 21EMA Cockpit entry process, open-gap filters
+
+These are preserved for a future entry-decision system and are not part of the active screener.
 
 ---
 
 ## Suggested Reading Order
 
-1. `01_SYSTEM_OVERVIEW.md` — what this system does and does not do
-2. `03_INDICATORS_AND_SCORING.md` — metrics used for scanning and ranking
-3. `04_SCAN_AND_WATCHLIST_SPEC.md` — how candidates are extracted
-4. `05_DASHBOARD_UI_SPEC.md` — the three output screens
-5. `09_CURRENT_STATUS_AND_ROADMAP.md` — where we are now
-6. `10_TRADING_METHOD_PLAYBOOK.md` — how screening fits into the full trading method
+1. `01_SYSTEM_OVERVIEW.md`
+2. `02_DATA_MODEL_AND_SOURCES.md`
+3. `03_INDICATORS_AND_SCORING.md`
+4. `04_SCAN_AND_WATCHLIST_SPEC.md`
+5. `05_DASHBOARD_UI_SPEC.md`
+6. `09_CURRENT_STATUS_AND_ROADMAP.md`
 
 ## Agent Operations
 
 - `AGENTS.md`
-  - always-on repository guidance for scope, code map, and default commands
+  - repository-wide operating rules
+- `.agents/skills/oratek-spec-to-code-syncing/SKILL.md`
+  - use when specs are authoritative and implementation must change
+- `.agents/skills/oratek-code-to-spec-syncing/SKILL.md`
+  - use when implementation is authoritative and specs must change
 - `.agents/skills/oratek-doc-syncing/SKILL.md`
-  - task-specific guidance for syncing numbered docs after code or config changes
+  - use only to route ambiguous sync-direction requests
 
 ## Code Entry Points
 
 1. `src/pipeline.py`
-2. `src/data/providers.py`
+2. `src/data/*`
 3. `src/indicators/core.py`
 4. `src/scoring/*`
 5. `src/scan/*`
-6. `app/main.py`
-- [12_UNIVERSE_PROVIDER_DECISIONS.md](12_UNIVERSE_PROVIDER_DECISIONS.md) - current decisions for universe definition, refresh cadence, and yfinance-first provider strategy
+6. `src/dashboard/*`
+7. `app/main.py`

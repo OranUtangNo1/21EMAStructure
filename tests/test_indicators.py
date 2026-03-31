@@ -140,3 +140,27 @@ def test_pocket_pivot_flags_green_candle_when_volume_breaks_prior_10_day_high() 
     result = calculator.calculate(frame)
 
     assert bool(result.iloc[-1]["pocket_pivot"]) is True
+
+
+def test_indicator_calculator_adds_rsi_columns() -> None:
+    dates = pd.date_range("2025-01-01", periods=90, freq="D")
+    close = [100.0 + (i * 0.2) + (5.0 if i > 70 else 0.0) for i in range(90)]
+    frame = pd.DataFrame(
+        {
+            "open": close,
+            "high": [value * 1.01 for value in close],
+            "low": [value * 0.99 for value in close],
+            "close": close,
+            "adjusted_close": close,
+            "volume": [1_000_000] * len(close),
+        },
+        index=dates,
+    )
+    calculator = IndicatorCalculator(IndicatorConfig())
+
+    result = calculator.calculate(frame)
+
+    assert "rsi21" in result.columns
+    assert "rsi63" in result.columns
+    assert pd.notna(result.iloc[-1]["rsi21"])
+    assert pd.notna(result.iloc[-1]["rsi63"])
