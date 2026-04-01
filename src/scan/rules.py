@@ -20,6 +20,9 @@ DEFAULT_SCAN_RULE_NAMES = (
     "Pocket Pivot",
     "PP Count",
     "Weekly 20% plus gainers",
+    "Near 52W High",
+    "Three Weeks Tight",
+    "RS Acceleration",
 )
 
 DEFAULT_ANNOTATION_FILTER_NAMES = (
@@ -38,6 +41,9 @@ DEFAULT_CARD_SECTION_PAYLOADS = (
     {"scan_name": "Pocket Pivot", "display_name": "Pocket Pivot"},
     {"scan_name": "PP Count", "display_name": "3+ Pocket Pivots (30d)"},
     {"scan_name": "Weekly 20% plus gainers", "display_name": "Weekly 20%+ Gainers"},
+    {"scan_name": "Near 52W High", "display_name": "Near 52W High"},
+    {"scan_name": "Three Weeks Tight", "display_name": "3WT"},
+    {"scan_name": "RS Acceleration", "display_name": "RS Accel"},
 )
 DEFAULT_ANNOTATION_FILTER_PAYLOADS = (
     {"filter_name": "Relative Strength 21 > 63", "display_name": "RSI 21 > 63"},
@@ -113,6 +119,10 @@ class ScanConfig:
     club_97_rs21_threshold: float = 97.0
     vcs_min_threshold: float = 60.0
     weekly_gainer_threshold: float = 20.0
+    near_52w_high_threshold_pct: float = 5.0
+    near_52w_high_hybrid_min: float = 70.0
+    three_weeks_tight_vcs_min: float = 50.0
+    rs_acceleration_rs21_min: float = 70.0
     duplicate_min_count: int = 3
     high_eps_growth_rank_threshold: float = 90.0
     earnings_warning_days: int = 7
@@ -291,6 +301,37 @@ def _scan_weekly_gainer(row: pd.Series, config: ScanConfig) -> bool:
     return bool(row.get("weekly_return", 0.0) >= config.weekly_gainer_threshold)
 
 
+def _scan_near_52w_high(row: pd.Series, config: ScanConfig) -> bool:
+    high_52w = row.get("high_52w", float("nan"))
+    return bool(
+        pd.notna(high_52w)
+        and high_52w > 0.0
+        and row.get("close", 0.0) >= high_52w * (1.0 - config.near_52w_high_threshold_pct / 100.0)
+        and row.get("hybrid_score", 0.0) >= config.near_52w_high_hybrid_min
+        and row.get("trend_base", False)
+    )
+
+
+def _scan_three_weeks_tight(row: pd.Series, config: ScanConfig) -> bool:
+    return bool(
+        row.get("three_weeks_tight", False)
+        and row.get("trend_base", False)
+        and row.get("vcs", 0.0) >= config.three_weeks_tight_vcs_min
+    )
+
+
+def _scan_rs_acceleration(row: pd.Series, config: ScanConfig) -> bool:
+    rs21 = row.get("rs21", float("nan"))
+    rs63 = row.get("rs63", float("nan"))
+    return bool(
+        pd.notna(rs21)
+        and pd.notna(rs63)
+        and float(rs21) > float(rs63)
+        and float(rs21) >= config.rs_acceleration_rs21_min
+        and row.get("trend_base", False)
+    )
+
+
 def _annotation_rsi21_gt_63(row: pd.Series, config: ScanConfig) -> bool:
     rsi21 = row.get("rsi21", float("nan"))
     rsi63 = row.get("rsi63", float("nan"))
@@ -311,6 +352,9 @@ SCAN_RULE_REGISTRY: dict[str, RuleEvaluator] = {
     "Pocket Pivot": _scan_pocket_pivot,
     "PP Count": _scan_pp_count,
     "Weekly 20% plus gainers": _scan_weekly_gainer,
+    "Near 52W High": _scan_near_52w_high,
+    "Three Weeks Tight": _scan_three_weeks_tight,
+    "RS Acceleration": _scan_rs_acceleration,
 }
 
 ANNOTATION_FILTER_REGISTRY: dict[str, RuleEvaluator] = {

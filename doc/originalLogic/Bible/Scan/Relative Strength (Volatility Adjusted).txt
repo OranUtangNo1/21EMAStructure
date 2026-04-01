@@ -1,0 +1,64 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © mattishenner
+
+//@version=5
+indicator("Relative Strength (Volatility Adjusted)")
+
+string instrument_comparison = input.symbol("SPY", "Comparison Instrument")
+lookback_length = input.int(100, "Look-back Length", minval=1)
+ma_length = input.int(100, "MA Length")
+ma_type = input.string("hma", options = ["hma", "sma", "ema"], title = "Moving Average Type")
+atr_length = input.int(50, "ATR Length")
+
+// Request security data
+inst = request.security(instrument_comparison, "", close)
+
+// Normalize data
+inst_atr = request.security(instrument_comparison, "", ta.atr(atr_length))
+normalized_change = (inst - inst[1]) / inst_atr
+
+// Calculations for each ticker's change
+change_1 = (inst - inst[1]) / inst[1] * 100
+
+// Index change
+index_change = (close - close[1])  / request.security(syminfo.tickerid, "", ta.atr(atr_length))
+
+// Cumulative change calculations with look-back period
+var float cumulative_change = na
+var float cumulative_change_index = na
+
+
+// Use look-back length
+if na(cumulative_change)
+    cumulative_change := math.sum(normalized_change, lookback_length)
+else
+    cumulative_change := math.sum(normalized_change, lookback_length)
+
+if na(cumulative_change_index)
+    cumulative_change_index := math.sum(index_change, lookback_length)
+else
+    cumulative_change_index := math.sum(index_change, lookback_length)
+
+rs = cumulative_change_index - cumulative_change
+
+// ZERO LINE
+zero_plot = plot(0, "ZERO LINE", color.new(color.black, 70))
+
+//plot(cumulative_change, color=color.new(color.orange, 80), title="INDEX Color")
+//plot(cumulative_change_index, color=color.new(color.black, 80), title="Instrument Color")
+
+//plot(normalized_change, "INDEX Change", color=color.new(color.orange, 50), style=plot.style_columns)
+//plot(index_change, "Instrument Change", color=color.new(color.gray, 50), style=plot.style_columns)
+
+ma_function(ma_type, length) =>
+    ema_1 = ta.ema(rs, length)
+    hma_1 = ta.hma(rs, length)
+    sma_1 = ta.sma(rs, length)
+    ma_type == 'ema' ? ema_1 : ma_type == 'hma' ? hma_1 : sma_1
+
+rs_plot = plot(rs, "RS", rs > 0 ? color.blue : color.fuchsia, linewidth = 2)
+ma = ma_function(ma_type, ma_length)
+ma_plot = plot(ma, color = ta.rising(ma, 1) ? color.blue : color.fuchsia, linewidth = 2)
+
+fill(zero_plot, rs_plot, rs > 0 ? #0084ff52 : #ff52c852)
+fill(ma_plot, rs_plot, rs > ma ? #0084ff52 : #ff52c852)

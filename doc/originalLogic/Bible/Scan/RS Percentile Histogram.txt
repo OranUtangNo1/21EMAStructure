@@ -1,0 +1,37 @@
+The second indicator from the top on the chart calculates relative strength over a 1-month or 3-month period. Since calculating relative strength can be tedious, I’ve slightly tweaked an indicator shared by one of my followers.
+
+This indicator shows how strong a stock is relative to $SPY. Currently, $ALAB is showing signs of weakness. (The chart displays the 1-month calculation.)
+
+Using Relative Strength can sometimes help you spot subtle trends. Even when the chart is moving sideways, if Relative Strength is rising, it means that stock is stronger than others, so it may be building momentum for the next uptrend.
+
+//@version=5
+indicator(“RS Percentile Histogram (1M/3M)”, overlay=false)
+
+// ---- Inputs (all on one line to avoid line-continuation issues)
+mode        = input.string(title=“Mode”, defval="1M", options=[‘1M’,“3M”])
+showStrength = input.bool(true, title="Show RS Percentile Histogram")
+refSymbol   = input.symbol(“SPY”, “Benchmark Symbol”)
+lookback1M  = input.int(26, “Lookback (1M)”, minval=2, maxval=500, step=1)
+length3M    = input.int(63,     “Length (3M)”,   minval=10, maxval=300, step=1)
+alpha3M     = input.float(0.03, “Alpha (0..1)”,  step=0.01, minval=0.0, maxval=1.0)
+
+// ---- Benchmark close
+benchClose = request.security(refSymbol, timeframe.period, close)
+
+// ---- RS series
+var float ewRetAssetSeries = 0.0
+var float ewRetBenchSeries = 0.0
+
+float relativeStrength = na
+int   lookback         = 0
+
+if mode == “1M”
+    // Price ratio RS
+    relativeStrength := close / benchClose
+    lookback := lookback1M
+else
+    // 3M EW return RS
+    retAsset = math.log(close / close[1])
+    retBench = math.log(benchClose / benchClose[1])
+    ewRetAssetSeries := alpha3M * retAsset + (1 - alpha3M) * nz(ewRetAssetSeries[1], 0.0)
+    ewRetBenchSeri

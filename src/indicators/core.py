@@ -68,6 +68,7 @@ class IndicatorCalculator:
         df["ema21_cloud_width"] = df["ema21_high"] - df["ema21_low"]
         df["sma50"] = df["close"].rolling(self.config.sma_short_period).mean()
         df["sma200"] = df["close"].rolling(self.config.sma_long_period).mean()
+        df["high_52w"] = df["high"].rolling(252).max()
         df["avg_volume_50d"] = df["volume"].rolling(self.config.relvol_period).mean()
 
         weekly = df.resample("W-FRI").agg(

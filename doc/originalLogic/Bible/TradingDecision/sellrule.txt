@@ -1,0 +1,48 @@
+My basic sell rules:
+
+Phase 1: Before 1R, exit on a close below the 21EMA low
+
+Phase 2: After 1R, exit on a close below entry
+
+Trim: Trim 33% at 3R
+
+Final TP: After 3R, exit the rest on a close below the 21EMA low
+
+Risk: 21EMA low at entry
+
+All based on the daily chart.
+My 9 scan setups
+
+・21EMA
+Market Cap >1B, Avg Vol 50d >1M, Weekly % 0 to 15%, DCR% >20%, 21EMA at ATR -0.5R to +1R, 50SMA at ATR 0R to 3R, PP Count 30d >1, Trend Base
+
+・4% bullish
+Market Cap >1B, Avg Vol 50d >1M, Rel Vol >1x, Daily % >4%, From Open % >0%, RS 1M >60
+
+・Vol Up
+Market Cap >1B, Avg Vol 50d >1M, Rel Vol >1.5x, Daily % >0%
+
+・Momentum 97
+Avg Vol 50d >1M, 1W % change top 3% percentile ≥ 0.97, 3M % change top 15% percentile ≥ 0.85, Trend Base
+
+・97 Club
+Market Cap >1B, Avg Vol 50d >1M, Hybrid RS >90, RS 1M >97, Trend Base
+
+・VCS
+Market Cap >1B, Avg Vol 50d >1M, VCS 60 to 100, RS 1M >60
+
+・Pocket Pivot
+Market Cap >1B, Avg Vol 50d >1M, Price >50SMA, green candle, volume higher than the highest volume in the past 10 days.
+
+・PP Count
+Market Cap >1B, Avg Vol 50d >1M, PP Count 30d >3, Trend Base
+
+・Weekly 20% plus gainers
+Market Cap >1B, Avg Vol 50d >1M, Weekly % >20%
+
+Common factors: ADR% 3.5 to 10, ex Healthcare
+DCR% = Daily Closing Range %
+Trend Base = Price >50SMA, 10WMA >30WMA
+Hybrid RS = a composite score of industry strength, fundamentals, and multi timeframe RS
+VCS = proprietary Volatility Contraction Score
+PP Count = Number of Pocket Pivot occurrences

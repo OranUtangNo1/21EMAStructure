@@ -1,0 +1,190 @@
+
+21EMAScan 2025年12月24日 19:23
+
+
+//@version=6
+indicator('21EMA Scan for Pine Screener', overlay = false, max_bars_back = 253)
+
+// --------------------------------------
+// Inputs
+// --------------------------------------
+len_ema      = input.int(21, title = 'EMA Length (Close)')
+len_sma      = input.int(50, title = 'SMA Length (Close)')
+len_ema_low  = input.int(21, title = 'EMA Length (Low)')
+len_atr      = input.int(14, title = 'ATR Length')
+len_vol_sma  = input.int(50, title = 'Avg Volume Length')
+len_adr      = input.int(20, title = 'ADR Length')
+
+// RS Settings (Simple)
+group_rs     = 'Relative Strength (Simple)'
+rs_benchmark = input.symbol('SPY', title = 'Benchmark Symbol', group = group_rs)
+// Note: Lengths are hardcoded to 5, 21, 63, 126 in the request below as requested.
+
+// IBD RS Rating Settings (Fred6725 Logic)
+group_ibd    = 'IBD Style RS Rating (Fred6725)'
+allowReplay  = input(false, title = 'Use fix values (Replay)', group = group_ibd)
+first2       = input(195.93, title='For 99 stocks' , group = group_ibd)
+scnd2        = input(117.11, title='For 90+ stocks', group = group_ibd)
+thrd2        = input(99.04, title='For 70+ stocks' , group = group_ibd)
+frth2        = input(91.66, title='For 50+ stocks' , group = group_ibd)
+ffth2        = input(80.96, title='For 30+ stocks' , group = group_ibd)
+sxth2        = input(53.64, title='For 10+ stocks' , group = group_ibd)
+svth2        = input(24.86, title='For 1- stocks'  , group = group_ibd)
+
+// --------------------------------------
+// 1. Technical Calculations
+// --------------------------------------
+ema_val     = ta.ema(close, len_ema)
+sma_val     = ta.sma(close, len_sma)
+ema_low_val = ta.ema(low, len_ema_low)
+
+// ATR
+atr_val     = ta.atr(len_atr)
+atr_pct     = (atr_val / close) * 100
+
+// R Multiples
+r_ema = (close - ema_val) / atr_val
+r_sma = (close - sma_val) / atr_val
+
+// Dist
+dist_pct = (close - ema_low_val) / ema_low_val * 100
+
+// ADR
+adr_val     = ta.sma(high - low, len_adr)
+adr_raw_pct = (high - low) / low * 100
+adr_pct     = ta.sma(adr_raw_pct, len_adr)
+
+// Volume
+avg_vol = ta.sma(volume, len_vol_sma)
+
+// --------------------------------------
+// 2. Fundamental & External Data
+// --------------------------------------
+
+// [Request 1] Relative Strength (Simple) - 4 periods in 1 request
+// Calculating PercentRank of the Ratio (Stock/Benchmark) for 5, 21, 63, 126 days
+sym_clean = syminfo.prefix + ":" + syminfo.ticker
+spread_sym = sym_clean + ' / ' + rs_benchmark
+
+// Using a tuple to extract 4 values in a single request slot
+[rs_05, rs_21, rs_63, rs_126] = request.security(spread_sym, timeframe.period, [ta.percentrank(close, 5), ta.percentrank(close, 21), ta.percentrank(close, 63), ta.percentrank(close, 126)], ignore_invalid_symbol = true)
+
+// --------------------------------------
+// 3. IBD Style RS Rating Calculation
+// --------------------------------------
+comparativeTickerId = 'SP:SPX' 
+
+n63      = bar_index < 63  ? bar_index:63 
+n126     = bar_index < 126 ? bar_index:126
+n189     = bar_index < 189 ? bar_index:189
+n252     = bar_index < 252 ? bar_index:252
+
+// [Request 2] Ticker Daily Close
+closeDa    = request.security(syminfo.tickerid,    'D', close)
+// [Request 3] SPX Daily Close
+spxCloseDa = request.security(comparativeTickerId, 'D', close)
+
+perfTicker63   = closeDa/closeDa[n63]
+perfTicker126  = closeDa/closeDa[n126]
+perfTicker189  = closeDa/closeDa[n189]
+perfTicker252  = closeDa/closeDa[n252]
+
+perfComp63     = spxCloseDa/spxCloseDa[n63]
+perfComp126    = spxCloseDa/spxCloseDa[n126]
+perfComp189    = spxCloseDa/spxCloseDa[n189]
+perfComp252    = spxCloseDa/spxCloseDa[n252]
+
+float rs_stock = 0.4*perfTicker63 + 0.2*perfTicker126 + 0.2*perfTicker189 + 0.2*perfTicker252
+float rs_ref   = 0.4*perfComp63   + 0.2*perfComp126   + 0.2*perfComp189   + 0.2*perfComp252
+
+float totalRsScore  = (rs_stock) / (rs_ref) * 100
+float ibdRsRating   = -1.0
+
+// [Request 4] External Seed Data
+curveRsPerf  = request.seed('seed_fred6725_rs_rating', 'RSRATING', close)
+delta  = ta.barssince(na(curveRsPerf) != true)
+var float[] different_values = array.new_float(7)
+var int counter = 0
+
+float first = 0, float scnd = 0, float thrd = 0
+float frth = 0, float ffth = 0, float sxth = 0, float svth = 0
+
+if (not allowReplay)
+    for i = delta to 34+delta
+        close_value = nz(curveRsPerf[i])
+        if (not array.includes(different_values, close_value) and counter < 7 and close_value!=0)
+            array.set(different_values, counter, close_value)
+            counter := counter + 1
+
+    first := array.get(different_values, 0)
+    scnd  := array.get(different_values, 1)
+    thrd  := array.get(different_values, 2)
+    frth  := array.get(different_values, 3)
+    ffth  := array.get(different_values, 4)
+    sxth  := array.get(different_values, 5)
+    svth  := array.get(different_values, 6)
+
+if (allowReplay)
+    first := first2
+    scnd  := scnd2 
+    thrd  := thrd2 
+    frth  := frth2 
+    ffth  := ffth2 
+    sxth  := sxth2 
+    svth  := svth2 
+
+f_attributePercentile(totalRsScore, tallerPerf, smallerPerf, rangeUp, rangeDn, weight) =>
+    sum = totalRsScore + (totalRsScore-smallerPerf)*weight 
+    if(sum > tallerPerf - 1)
+        sum := tallerPerf - 1
+    k1 = smallerPerf/rangeDn
+    k2 = (tallerPerf-1)/rangeUp
+    k3 = (k1-k2)/(tallerPerf-1-smallerPerf)
+    RsRating = sum/(k1-k3*(totalRsScore-smallerPerf))
+    if (RsRating > rangeUp)
+        RsRating := rangeUp
+    if (RsRating < rangeDn)
+        RsRating := rangeDn
+    RsRating
+
+if(totalRsScore >= first)
+    ibdRsRating := 99
+else if(totalRsScore <= svth)
+    ibdRsRating := 1
+else if (totalRsScore < first and totalRsScore >= scnd)
+    ibdRsRating := f_attributePercentile(totalRsScore, first, scnd, 98, 90, 0.33)
+else if (totalRsScore < scnd and totalRsScore >= thrd)
+    ibdRsRating := f_attributePercentile(totalRsScore, scnd, thrd, 89, 70, 2.1)
+else if (totalRsScore < thrd and totalRsScore >= frth)
+    ibdRsRating := f_attributePercentile(totalRsScore, thrd, frth, 69, 50, 0)
+else if (totalRsScore < frth and totalRsScore >= ffth)
+    ibdRsRating := f_attributePercentile(totalRsScore, frth, ffth, 49, 30, 0)
+else if (totalRsScore < ffth and totalRsScore >= sxth)
+    ibdRsRating := f_attributePercentile(totalRsScore, ffth, sxth, 29, 10, 0)
+else if (totalRsScore < sxth and totalRsScore >= svth)
+    ibdRsRating := f_attributePercentile(totalRsScore, sxth, svth, 9, 2, 0)
+
+for i = 0 to 6
+    if (nz(array.get(different_values, i)) == 0 and not allowReplay)
+        ibdRsRating := -1
+
+// --------------------------------------
+// 4. Plots (Data Window Only)
+// --------------------------------------
+plot(avg_vol, 'Avg Volume', display = display.data_window)
+plot(atr_val, 'ATR', display = display.data_window)
+plot(atr_pct, 'ATR %', display = display.data_window)
+plot(adr_val, 'ADR', display = display.data_window)
+plot(adr_pct, 'ADR %', display = display.data_window)
+plot(r_ema, '21EMA ATR', display = display.data_window)
+plot(r_sma, '50SMA ATR', display = display.data_window)
+plot(dist_pct, 'Dist 21EMA Low %', display = display.data_window)
+
+// Simple RS outputs (x4)
+plot(rs_05, 'RS (5)', display = display.data_window)
+plot(rs_21, 'RS (21)', display = display.data_window)
+plot(rs_63, 'RS (63)', display = display.data_window)
+plot(rs_126, 'RS (126)', display = display.data_window)
+
+// IBD RS Rating (1-99)
+plot(ibdRsRating, 'IBD RS Rating', display = display.data_window)

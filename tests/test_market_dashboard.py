@@ -30,8 +30,9 @@ def test_market_dashboard_result_contains_expanded_sections() -> None:
     market_raw = {
         "AAA": _make_history([90.0 + (i * 0.20) for i in range(320)], dates),
         "BBB": _make_history([80.0 + (i * 0.16) for i in range(320)], dates),
+        "LDR": _make_history([120.0 - (i * 0.08) for i in range(320)], dates),
+        "EXT": _make_history([60.0 - (i * 0.05) for i in range(320)], dates),
         "^VIX": _make_history([18.0 - (i * 0.01) for i in range(320)], dates, volume_scale=100_000),
-        "BTC-USD": _make_history([40_000.0 + (i * 25.0) for i in range(320)], dates, volume_scale=10_000),
         "FFF": _make_history([70.0 + (i * 0.18) for i in range(320)], dates),
     }
     market_histories = {ticker: calculator.calculate(history) for ticker, history in market_raw.items()}
@@ -47,10 +48,22 @@ def test_market_dashboard_result_contains_expanded_sections() -> None:
                 {"ticker": "AAA", "name": "Alpha"},
                 {"ticker": "BBB", "name": "Beta"},
             ],
-            "market_snapshot_symbols": [
+            "leadership_etfs": [
+                {"ticker": "LDR", "name": "Leadership"},
+            ],
+            "external_etfs": [
+                {"ticker": "EXT", "name": "External"},
+            ],
+            "factor_etfs": [
+                {"ticker": "FFF", "name": "Factor"},
+            ],
+        }
+    )
+    core_only_config = MarketConditionConfig.from_dict(
+        {
+            "market_condition_etf_universe": [
                 {"ticker": "AAA", "name": "Alpha"},
-                {"ticker": "^VIX", "name": "Volatility"},
-                {"ticker": "BTC-USD", "name": "Bitcoin"},
+                {"ticker": "BBB", "name": "Beta"},
             ],
             "factor_etfs": [
                 {"ticker": "FFF", "name": "Factor"},
@@ -59,14 +72,23 @@ def test_market_dashboard_result_contains_expanded_sections() -> None:
     )
 
     result = MarketConditionScorer(config).score(stock_histories, market_histories, benchmark_history)
+    core_only_result = MarketConditionScorer(core_only_config).score(stock_histories, market_histories, benchmark_history)
 
     assert result.score > 0
+    assert result.score == core_only_result.score
     assert result.score_1w_ago is not None
+    assert result.label_1d_ago is not None
+    assert result.label_1w_ago is not None
     assert "pct_above_sma10" in result.component_scores
     assert "pct_above_sma200" in result.breadth_summary
     assert "% 1M" in result.performance_overview
     assert "S2W HIGH %" in result.high_vix_summary
     assert not result.market_snapshot.empty
+    assert list(result.market_snapshot["TICKER"]) == ["AAA", "BBB"]
+    assert not result.leadership_snapshot.empty
+    assert list(result.leadership_snapshot["TICKER"]) == ["LDR"]
+    assert not result.external_snapshot.empty
+    assert list(result.external_snapshot["TICKER"]) == ["EXT"]
     assert list(result.market_snapshot.columns) == ["TICKER", "NAME", "PRICE", "DAY %", "VOL vs 50D %", "21EMA POS"]
     assert not result.factors_vs_sp500.empty
     assert list(result.factors_vs_sp500.columns) == ["TICKER", "NAME", "REL 1W %", "REL 1M %", "REL 1Y %"]

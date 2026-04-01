@@ -119,6 +119,10 @@ scan:
   club_97_rs21_threshold: 97.0
   vcs_min_threshold: 60.0
   weekly_gainer_threshold: 20.0
+  near_52w_high_threshold_pct: 5.0
+  near_52w_high_hybrid_min: 70.0
+  three_weeks_tight_vcs_min: 50.0
+  rs_acceleration_rs21_min: 70.0
   duplicate_min_count: 3
   high_eps_growth_rank_threshold: 90.0
   earnings_warning_days: 7
@@ -133,6 +137,9 @@ scan:
     - Pocket Pivot
     - PP Count
     - Weekly 20% plus gainers
+    - Near 52W High
+    - Three Weeks Tight
+    - RS Acceleration
   enabled_annotation_filters: []
   annotation_filters:
     - filter_name: Relative Strength 21 > 63
@@ -158,6 +165,12 @@ scan:
       display_name: 3+ Pocket Pivots (30d)
     - scan_name: Weekly 20% plus gainers
       display_name: Weekly 20%+ Gainers
+    - scan_name: Near 52W High
+      display_name: Near 52W High
+    - scan_name: Three Weeks Tight
+      display_name: 3WT
+    - scan_name: RS Acceleration
+      display_name: RS Accel
 
 market:
   component_weights:
@@ -195,37 +208,25 @@ market:
     - { ticker: XLU, name: Utilities }
     - { ticker: XLV, name: Health Care }
     - { ticker: XLY, name: Consumer Discretionary }
-    - { ticker: XBI, name: Biotech }
+  leadership_etfs:
     - { ticker: SMH, name: Semiconductors }
+    - { ticker: SOXX, name: Semiconductors Broad }
     - { ticker: IGV, name: Software }
     - { ticker: FDN, name: Internet }
     - { ticker: HACK, name: Cybersecurity }
+    - { ticker: XBI, name: Biotech }
+    - { ticker: IBB, name: Biotech Large Cap }
     - { ticker: ITA, name: Aerospace and Defense }
     - { ticker: KRE, name: Regional Banks }
     - { ticker: XRT, name: Retail }
     - { ticker: XOP, name: Oil and Gas Exploration }
-    - { ticker: IBB, name: Biotech Large Cap }
     - { ticker: TAN, name: Solar }
     - { ticker: IYT, name: Transportation }
-    - { ticker: SOXX, name: Semiconductors Broad }
-    - { ticker: VUG, name: Growth }
-    - { ticker: VTV, name: Value }
-    - { ticker: VYM, name: High Dividend }
-    - { ticker: MGC, name: Large Cap }
-    - { ticker: VO, name: Mid Cap }
-    - { ticker: VB, name: Small Cap }
-    - { ticker: MTUM, name: Momentum }
     - { ticker: IPO, name: IPOs }
+  external_etfs:
     - { ticker: EEM, name: Emerging Markets }
     - { ticker: FXI, name: China Large Cap }
     - { ticker: KWEB, name: China Internet }
-  market_snapshot_symbols:
-    - { ticker: RSP, name: S&P 500 Equal Weight }
-    - { ticker: QQQE, name: Nasdaq 100 Equal Weight }
-    - { ticker: IWM, name: Russell 2000 }
-    - { ticker: DIA, name: Dow Jones }
-    - { ticker: '^VIX', name: Volatility Index }
-    - { ticker: BTC-USD, name: Bitcoin }
   factor_etfs:
     - { ticker: VUG, name: Growth }
     - { ticker: VTV, name: Value }
@@ -234,7 +235,6 @@ market:
     - { ticker: VO, name: Mid Cap }
     - { ticker: VB, name: Small Cap }
     - { ticker: MTUM, name: Momentum }
-    - { ticker: IPO, name: IPOs }
 
 radar:
   top_movers_count: 3

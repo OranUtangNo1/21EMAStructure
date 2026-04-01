@@ -31,6 +31,33 @@ def test_enabled_scan_rules_can_be_swapped_from_config() -> None:
     assert result["Vol Up"] is True
 
 
+def test_near_52w_high_scan_uses_distance_hybrid_and_trend_filters() -> None:
+    row = pd.Series({"high_52w": 100.0, "close": 95.0, "hybrid_score": 70.0, "trend_base": True})
+    config = ScanConfig(enabled_scan_rules=("Near 52W High",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["Near 52W High"] is True
+
+
+def test_three_weeks_tight_scan_uses_indicator_flag_vcs_and_trend() -> None:
+    row = pd.Series({"three_weeks_tight": True, "vcs": 55.0, "trend_base": True})
+    config = ScanConfig(enabled_scan_rules=("Three Weeks Tight",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["Three Weeks Tight"] is True
+
+
+def test_rs_acceleration_scan_uses_rs_fields_not_rsi_fields() -> None:
+    row = pd.Series({"rs21": 75.0, "rs63": 70.0, "rsi21": 10.0, "rsi63": 90.0, "trend_base": True})
+    config = ScanConfig(enabled_scan_rules=("RS Acceleration",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["RS Acceleration"] is True
+
+
 def test_watchlist_default_sort_prefers_hybrid_score() -> None:
     watchlist = pd.DataFrame(
         {

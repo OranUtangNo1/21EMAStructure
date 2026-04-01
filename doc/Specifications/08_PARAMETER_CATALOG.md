@@ -271,9 +271,11 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 - `vix_score`: `0.05`
 
 ### Universes
-- `market_condition_etf_universe`: 43 ETF/symbol items
-- `market_snapshot_symbols`: `RSP`, `QQQE`, `IWM`, `DIA`, `^VIX`, `BTC-USD`
-- `factor_etfs`: `VUG`, `VTV`, `VYM`, `MGC`, `VO`, `VB`, `MTUM`, `IPO`
+- `market_condition_etf_universe`: Core universe used for `Market Score` with 19 ETF items
+- `leadership_etfs`: display-only leadership universe with 14 ETF items
+- `external_etfs`: display-only external universe with 3 ETF items
+- `factor_etfs`: `VUG`, `VTV`, `VYM`, `MGC`, `VO`, `VB`, `MTUM`
+- `QQQ`, `QQQE`, `RSP`, `DIA`, `IWM`, and the sector ETFs retain direct contact with source fragments; the remaining market-universe additions are implementation-side design decisions
 
 ---
 

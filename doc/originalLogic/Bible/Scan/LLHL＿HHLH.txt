@@ -1,0 +1,71 @@
+Structure Pivot (LL-HL / HH-LH)
+
+27
+oratnek
+oratnek
+December 18, 2025, 11:00 AM
+
+
+Image
+Structure Pivot (LL-HL / HH-LH) — Indicator by oratnek
+Structure Pivot (LL-HL / HH-LH) - Indicator Guide This indic
+www.tradingview.com
+
+Table of Contents
+1. Overview and Key Features
+2. Basic Calculation Methods
+Bullish Structure (LL–HL) - Long Position
+Bearish Structure (HH–LH) - Short Position
+3. Multiple Length Scan
+4. Priority Mode (Priority System)
+A. Tightest Structure (Default)
+B. Longest Length
+C. Shortest Length
+4. Real-Time Logic & Features
+
+Show All
+1. Overview and Key Features
+This indicator detects pivot patterns in chart structures—specifically
+bullish Higher Lows (LL–HL) and bearish Lower Highs (HH–LH)—by simultaneously scanning multiple lengths.
+
+Furthermore, based on “Priority Mode,” it automatically selects the most optimal pattern and plots its structure and breakout/breakdown levels on the chart.
+
+In simple terms, this indicator detects patterns 4 through 8 shown in the image below and displays the Pivot Line and Pivot Price drawn from 6 to 8.
+
+Image
+The Perfect Speculator - Brad Koteshwar
+2. Basic Calculation Method
+Bullish Structure (LL–HL) - Long Position
+LL (Lowest Low)
+  Detects the lowest price within the specified period.
+
+HL (Higher Low)
+  The structure is completed when the next low forms at a higher level than the previous LL.
+
+Pivot Line (Resistance)
+  Detects the highest High that appears between the LL and HL, and uses this as a breakout trigger.
+
+Bearish Structure (HH–LH) - Short Position
+HH (Highest High)
+  Detects the highest price within the specified period.
+
+LH (Lower High)
+  The structure is completed when the next High forms at a lower level than the previous HH.
+
+Pivot Line (Support)
+  Detects the lowest Low that appears between the HH and LH, and uses this as the trigger for a breakdown.
+
+3. Multiple Length Scan
+While general indicators use only a single fixed Length (e.g., Length = 5), this indicator scans multiple Lengths simultaneously.
+
+Settings: Min Length – Max Length
+
+Mechanism:
+　For example, if Min=2 and Max=10,
+　it performs 9 calculations in parallel for Lengths 2 through 10.
+
+This allows the indicator to capture everything from short-term minor pullbacks to larger, more significant structural pivots without the need for manual adjustment.
+
+4. Priority Mode (Priority System)
+Since multiple Lengths are scanned, multiple valid patterns may be detected simultaneously.
+Priority Mode

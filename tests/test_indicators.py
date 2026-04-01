@@ -39,6 +39,27 @@ def test_indicator_formulas_match_docs() -> None:
     assert round(float(latest["atr_pct_from_50sma"]), 6) == round((((12.0 / 11.0) - 1.0) / (2.0 / 12.0)), 6)
 
 
+def test_indicator_calculator_adds_52_week_high_from_daily_highs() -> None:
+    dates = pd.date_range("2025-01-01", periods=252, freq="B")
+    frame = pd.DataFrame(
+        {
+            "open": [90.0] * 252,
+            "high": [100.0] * 251 + [125.0],
+            "low": [89.0] * 252,
+            "close": [95.0] * 252,
+            "adjusted_close": [95.0] * 252,
+            "volume": [1_000_000] * 252,
+        },
+        index=dates,
+    )
+    calculator = IndicatorCalculator(IndicatorConfig(sma_short_period=2, sma_long_period=2, relvol_period=2, enable_3wt=False))
+
+    result = calculator.calculate(frame)
+
+    assert "high_52w" in result.columns
+    assert float(result.iloc[-1]["high_52w"]) == 125.0
+
+
 def test_ema21_low_pct_uses_below_price_branch_when_under_support() -> None:
     dates = pd.date_range("2025-01-01", periods=2, freq="D")
     frame = pd.DataFrame(
