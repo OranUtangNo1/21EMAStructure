@@ -31,7 +31,7 @@ The daily scan path is:
 3. merge profile and fundamental data
 4. apply the local eligible-universe filter
 5. calculate indicators and scores
-6. run the nine scans
+6. run the enabled scans
 
 This separation between weekly discovery and daily scan execution is active in the code.
 

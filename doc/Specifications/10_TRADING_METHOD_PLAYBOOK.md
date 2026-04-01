@@ -25,9 +25,9 @@ Current flow:
 3. load daily price history from Yahoo Finance
 4. apply the local eligible-universe filter
 5. calculate indicators and scores
-6. run nine scan rules
+6. run the enabled scan rules
 7. create the watchlist as the union of scan hits
-8. mark duplicate tickers when a ticker appears in three or more scans
+8. mark duplicate tickers when a ticker appears in `duplicate_min_count` or more enabled scans
 
 ### 2.2 Market Review
 
@@ -63,48 +63,35 @@ This is intended to answer:
 
 ## 3. Active Scan Workflow
 
-### 3.1 Nine Active Scans
+### 3.1 Stable scan workflow and current scan family
 
-The active watchlist is built from these nine scans:
+The watchlist workflow is stable even if the scan family changes over time.
 
-1. 21EMA scan
-2. 4% bullish
-3. Vol Up
-4. Momentum 97
-5. 97 Club
-6. VCS
-7. Pocket Pivot
-8. 3+ Pocket Pivots (30d)
-9. Weekly 20%+ Gainers
+Stable rule:
 
-A ticker becomes a watchlist candidate if it passes at least one of these scans.
+- a ticker becomes a watchlist candidate if it passes at least one enabled scan
+- annotation rules do not create watchlist candidates by themselves
+
+The exact active scan family is documented under `doc/Scan/scan_00_index.md`.
 
 ### 3.2 Duplicate Tickers
 
-Duplicate Tickers are not derived from annotation lists.
+Duplicate Tickers are not derived from annotation rules.
 
 Current implemented rule:
 
-- count how many of the nine scans include the ticker
-- if the ticker appears in three or more scans, mark it as a duplicate ticker
+- count how many enabled scans include the ticker
+- if the ticker appears in `duplicate_min_count` or more enabled scans, mark it as a duplicate ticker
 
 This is the overlap rule used in the application.
 
-### 3.3 Annotation Lists
+### 3.3 Annotation Rules
 
 The system also computes annotation-style lists for additional context.
 
-Current annotations include:
+The current annotation family is documented in `doc/Scan/scan_00_index.md`.
 
-- Momentum 97
-- Volatility Contraction Score
-- 21EMA Watch
-- 4% Gainers
-- Relative Strength 21 > 63
-- Vol Up Gainers
-- High Est. EPS Growth
-
-These do not determine watchlist eligibility. They act as secondary tags on already scanned names.
+These rules do not determine watchlist eligibility. They act as secondary tags on already scanned names.
 
 ## 4. Indicator Guide
 

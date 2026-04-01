@@ -307,32 +307,59 @@ def render_watchlist(
     scan_config: ScanConfig | None = None,
     selected_scan_names: list[str] | None = None,
     duplicate_min_count: int | None = None,
+    selected_annotation_filters: list[str] | None = None,
 ) -> None:
     scan_config = scan_config or ScanConfig()
     watchlist_builder = WatchlistViewModelBuilder(scan_config)
     configured_scan_names = [section.scan_name for section in watchlist_builder.available_card_sections()]
     effective_selected_scan_names = selected_scan_names if selected_scan_names is not None else configured_scan_names
+    effective_selected_annotation_filters = (
+        selected_annotation_filters
+        if selected_annotation_filters is not None
+        else list(scan_config.enabled_annotation_filters)
+    )
     selected_scan_name_set = set(effective_selected_scan_names)
     duplicate_threshold = int(duplicate_min_count if duplicate_min_count is not None else scan_config.duplicate_min_count)
+
+    filtered_watchlist = watchlist_builder.filter_by_annotation_filters(
+        artifacts.watchlist,
+        effective_selected_annotation_filters,
+    )
+    display_watchlist = watchlist_builder.apply_selected_scan_metrics(
+        filtered_watchlist,
+        artifacts.scan_hits,
+        min_count=duplicate_threshold,
+        selected_scan_names=effective_selected_scan_names,
+    )
+    display_cards = watchlist_builder.build_scan_cards(
+        display_watchlist,
+        artifacts.scan_hits,
+        selected_scan_names=effective_selected_scan_names,
+    )
 
     title_col, meta_col = st.columns([4.2, 1.8])
     with title_col:
         st.markdown("<div class='oratek-page-title'>Today's Watchlist</div>", unsafe_allow_html=True)
         st.markdown(f"<div class='oratek-page-subtitle'>{html.escape(_format_trade_date(artifacts))}</div>", unsafe_allow_html=True)
     with meta_col:
+        filter_meta = (
+            f"Post-scan Filters: {len(effective_selected_annotation_filters)}"
+            if effective_selected_annotation_filters
+            else "Post-scan Filters: 0"
+        )
         st.markdown(
-            f"<div class='oratek-page-meta'>Sorted by Hybrid-RS</div><div class='oratek-page-submeta'>Universe Mode: {html.escape(str(artifacts.universe_mode))}<br>Universe Size: {len(artifacts.resolved_symbols)}<br>Cards Selected: {len(effective_selected_scan_names)}<br>Duplicate Threshold: {duplicate_threshold}+</div>",
+            f"<div class='oratek-page-meta'>Sorted by Hybrid-RS</div><div class='oratek-page-submeta'>Universe Mode: {html.escape(str(artifacts.universe_mode))}<br>Universe Size: {len(artifacts.resolved_symbols)}<br>Cards Selected: {len(effective_selected_scan_names)}<br>{html.escape(filter_meta)}<br>Duplicate Threshold: {duplicate_threshold}+</div>",
             unsafe_allow_html=True,
         )
 
     cards: list[tuple[str, list[str], str]] = [
         (card.display_name, _to_ticker_list(card.rows), "No tickers matched this scan.")
-        for card in artifacts.watchlist_cards
+        for card in display_cards
         if card.scan_name in selected_scan_name_set
     ]
 
     duplicate_frame = watchlist_builder.build_duplicate_tickers(
-        artifacts.watchlist,
+        display_watchlist,
         artifacts.scan_hits,
         min_count=duplicate_threshold,
         selected_scan_names=effective_selected_scan_names,
@@ -340,7 +367,10 @@ def render_watchlist(
     duplicate_tickers = _to_ticker_list(duplicate_frame)
 
     if effective_selected_scan_names:
-        duplicate_note = f"Counted from {len(effective_selected_scan_names)} selected cards. A ticker must appear in {duplicate_threshold}+ selected scans."
+        duplicate_note = f"Counted from {len(effective_selected_scan_names)} selected cards"
+        if effective_selected_annotation_filters:
+            duplicate_note += f" after {len(effective_selected_annotation_filters)} post-scan filter(s)"
+        duplicate_note += f". A ticker must appear in {duplicate_threshold}+ selected scans."
         duplicate_empty_text = "No duplicate tickers in the current watchlist for the selected cards."
     else:
         duplicate_note = "No cards are selected. Choose one or more watchlist cards in the sidebar to enable duplicate counting."
@@ -357,6 +387,8 @@ def render_watchlist(
 
     if not effective_selected_scan_names:
         st.caption("No watchlist cards are selected.")
+    elif display_watchlist.empty and effective_selected_annotation_filters:
+        st.caption("No watchlist names passed the selected post-scan filters.")
     elif not cards:
         st.caption("None of the selected cards matched the current universe.")
     else:
@@ -520,6 +552,7 @@ def main() -> None:
     default_config = ROOT / "config" / "default.yaml"
     watchlist_scan_config: ScanConfig | None = None
     selected_watchlist_scans: list[str] | None = None
+    selected_annotation_filters: list[str] | None = None
     duplicate_threshold: int | None = None
 
     with st.sidebar:
@@ -537,8 +570,14 @@ def main() -> None:
         if page == "Today's Watchlist":
             watchlist_scan_config = load_scan_config(config_path)
             card_sections = watchlist_scan_config.card_sections
+            annotation_filters = watchlist_scan_config.annotation_filters
             available_scan_names = [section.scan_name for section in card_sections]
             display_names = {section.scan_name: section.display_name or section.scan_name for section in card_sections}
+            available_annotation_names = [section.filter_name for section in annotation_filters]
+            annotation_display_names = {
+                section.filter_name: section.display_name or section.filter_name
+                for section in annotation_filters
+            }
 
             st.markdown("**Watchlist Controls**")
             selection_key = "watchlist_selected_scan_names"
@@ -554,6 +593,27 @@ def main() -> None:
                 options=available_scan_names,
                 format_func=lambda name: display_names.get(name, name),
                 key=selection_key,
+            )
+
+            annotation_key = "watchlist_selected_annotation_filters"
+            default_annotation_names = [
+                name
+                for name in watchlist_scan_config.enabled_annotation_filters
+                if name in available_annotation_names
+            ]
+            if annotation_key not in st.session_state:
+                st.session_state[annotation_key] = default_annotation_names
+            else:
+                st.session_state[annotation_key] = [
+                    name for name in st.session_state[annotation_key] if name in available_annotation_names
+                ]
+
+            selected_annotation_filters = st.multiselect(
+                "Post-scan filters (AND)",
+                options=available_annotation_names,
+                format_func=lambda name: annotation_display_names.get(name, name),
+                key=annotation_key,
+                help="Filters are applied after scan eligibility. They narrow displayed cards and Duplicate Tickers without changing the underlying scan candidate set.",
             )
 
             threshold_key = "watchlist_duplicate_threshold"
@@ -573,7 +633,7 @@ def main() -> None:
                     help="A ticker is shown in Duplicate Tickers only if it appears in at least this many selected scan cards.",
                 )
             )
-            st.caption("Selected cards are used both for watchlist card display and Duplicate Tickers counting.")
+            st.caption("Selected cards drive card display and Duplicate Tickers. Post-scan filters narrow the displayed watchlist after scan hits are computed.")
 
         refresh = st.button("Refresh", type="primary")
 
@@ -594,6 +654,7 @@ def main() -> None:
             scan_config=watchlist_scan_config,
             selected_scan_names=selected_watchlist_scans,
             duplicate_min_count=duplicate_threshold,
+            selected_annotation_filters=selected_annotation_filters,
         )
     elif page == "RS Radar":
         render_rs_radar(artifacts)

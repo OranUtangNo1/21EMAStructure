@@ -244,8 +244,8 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 
 ### Watchlist and cards
 - `watchlist_sort_mode`: `hybrid_score`
-- `enabled_scan_rules`: active 9 scan family names
-- `enabled_list_rules`: active 7 list-annotation names
+- `enabled_scan_rules`: active scan family names
+- `enabled_list_rules`: active annotation-rule names
 - `card_sections`: scan-based card definitions and display names
 
 ---

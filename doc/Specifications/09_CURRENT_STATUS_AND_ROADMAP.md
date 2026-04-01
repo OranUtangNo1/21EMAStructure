@@ -13,7 +13,7 @@ The current implementation already covers:
 - weekly universe discovery and snapshot persistence
 - daily price loading with cache and data lineage labels
 - local indicator and scoring calculation
-- nine scan rules for candidate extraction
+- configurable scan rules for candidate extraction
 - duplicate ticker detection from scan overlap
 - market, radar, and watchlist Streamlit views
 
@@ -66,7 +66,7 @@ Implemented modules:
 
 Current behavior:
 
-- nine scan rules are executed against the eligible universe
+- enabled scan rules are executed against the eligible universe
 - the watchlist is the union of all scan hits
 - duplicate tickers are determined from scan overlap only
 - list-style annotations are computed separately and do not control watchlist eligibility

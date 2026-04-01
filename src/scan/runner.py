@@ -4,7 +4,13 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from src.scan.rules import ScanConfig, enrich_with_scan_context, evaluate_list_rules, evaluate_scan_rules
+from src.scan.rules import (
+    ScanConfig,
+    annotation_filter_column_name,
+    enrich_with_scan_context,
+    evaluate_annotation_filters,
+    evaluate_scan_rules,
+)
 
 
 @dataclass(slots=True)
@@ -27,38 +33,62 @@ class ScanRunner:
             return ScanRunResult(hits=pd.DataFrame(columns=["ticker", "kind", "name"]), watchlist=empty)
 
         working = enrich_with_scan_context(snapshot)
-        records: list[dict[str, object]] = []
-        for ticker, row in working.iterrows():
-            for name, matched in evaluate_scan_rules(row, self.config).items():
-                if matched:
-                    records.append({"ticker": ticker, "kind": "scan", "name": name})
-            for name, matched in evaluate_list_rules(row, self.config).items():
-                if matched:
-                    records.append({"ticker": ticker, "kind": "list", "name": name})
+        scan_records: list[dict[str, object]] = []
+        annotation_records: dict[str, dict[str, bool]] = {}
+        annotation_filter_names = tuple(section.filter_name for section in self.config.annotation_filters)
 
-        hits = pd.DataFrame(records, columns=["ticker", "kind", "name"])
+        for ticker, row in working.iterrows():
+            scan_results = evaluate_scan_rules(row, self.config)
+            annotation_results = evaluate_annotation_filters(row, self.config)
+            annotation_records[ticker] = annotation_results
+
+            for name, matched in scan_results.items():
+                if matched:
+                    scan_records.append({"ticker": ticker, "kind": "scan", "name": name})
+
+        hits = pd.DataFrame(scan_records, columns=["ticker", "kind", "name"])
         watchlist = working.copy()
+
+        for filter_name in annotation_filter_names:
+            column_name = annotation_filter_column_name(filter_name)
+            watchlist[column_name] = [bool(annotation_records.get(ticker, {}).get(filter_name, False)) for ticker in watchlist.index]
+
+        if annotation_filter_names:
+            annotation_names_by_ticker: dict[str, str] = {}
+            annotation_counts_by_ticker: dict[str, int] = {}
+            for ticker in watchlist.index:
+                matched_names = [name for name in annotation_filter_names if annotation_records.get(ticker, {}).get(name, False)]
+                annotation_names_by_ticker[ticker] = ", ".join(matched_names)
+                annotation_counts_by_ticker[ticker] = len(matched_names)
+            watchlist["annotation_hits"] = pd.Series(annotation_names_by_ticker).reindex(watchlist.index).fillna("")
+            watchlist["annotation_hit_count"] = (
+                pd.Series(annotation_counts_by_ticker).reindex(watchlist.index).fillna(0).astype(int)
+            )
+        else:
+            watchlist["annotation_hits"] = ""
+            watchlist["annotation_hit_count"] = 0
+
         if hits.empty:
             watchlist["hit_scans"] = ""
             watchlist["hit_lists"] = ""
+            watchlist["scan_hit_count"] = 0
             watchlist["overlap_count"] = 0
             watchlist["list_overlap_count"] = 0
+            watchlist["hit_count"] = 0
             watchlist["duplicate_ticker"] = False
+            watchlist = watchlist.iloc[0:0].copy()
             watchlist = self._sort_watchlist(watchlist)
             return ScanRunResult(hits=hits, watchlist=watchlist)
 
-        scan_hits = hits.loc[hits["kind"] == "scan"].groupby("ticker")["name"].agg(lambda values: ", ".join(sorted(values)))
-        list_hits = hits.loc[hits["kind"] == "list"].groupby("ticker")["name"].agg(lambda values: ", ".join(sorted(values)))
-        list_overlap_count = hits.loc[hits["kind"] == "list"].groupby("ticker").size()
-        scan_hit_count = hits.loc[hits["kind"] == "scan"].groupby("ticker").size()
-        hit_count = hits.groupby("ticker").size()
+        scan_hits = hits.groupby("ticker")["name"].agg(lambda values: ", ".join(sorted(values)))
+        scan_hit_count = hits.groupby("ticker").size()
 
         watchlist["hit_scans"] = scan_hits.reindex(watchlist.index).fillna("")
-        watchlist["hit_lists"] = list_hits.reindex(watchlist.index).fillna("")
         watchlist["scan_hit_count"] = scan_hit_count.reindex(watchlist.index).fillna(0).astype(int)
         watchlist["overlap_count"] = watchlist["scan_hit_count"]
-        watchlist["list_overlap_count"] = list_overlap_count.reindex(watchlist.index).fillna(0).astype(int)
-        watchlist["hit_count"] = hit_count.reindex(watchlist.index).fillna(0).astype(int)
+        watchlist["hit_lists"] = watchlist["hit_scans"]
+        watchlist["list_overlap_count"] = watchlist["scan_hit_count"]
+        watchlist["hit_count"] = watchlist["scan_hit_count"]
         watchlist["duplicate_ticker"] = watchlist["scan_hit_count"] >= self.config.duplicate_min_count
         watchlist = watchlist.loc[watchlist["scan_hit_count"] > 0].copy()
         watchlist = self._sort_watchlist(watchlist)

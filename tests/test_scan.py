@@ -3,22 +3,22 @@ from __future__ import annotations
 import pandas as pd
 
 from src.dashboard.watchlist import WatchlistViewModelBuilder
-from src.scan.rules import ScanCardConfig, ScanConfig, evaluate_list_rules, evaluate_scan_rules
+from src.scan.rules import ScanCardConfig, ScanConfig, evaluate_annotation_filters, evaluate_scan_rules
 from src.scan.runner import ScanRunner
 
 
-def test_high_est_eps_growth_uses_rank_threshold() -> None:
+def test_high_est_eps_growth_annotation_uses_rank_threshold() -> None:
     row = pd.Series({"eps_growth": 45.0, "eps_growth_rank": 95.0})
     config = ScanConfig(high_eps_growth_rank_threshold=90.0)
-    result = evaluate_list_rules(row, config)
+    result = evaluate_annotation_filters(row, config)
     assert result["High Est. EPS Growth"] is True
 
 
-def test_relative_strength_list_uses_rsi_not_app_rs() -> None:
+def test_relative_strength_annotation_uses_rsi_not_app_rs() -> None:
     row = pd.Series({"rsi21": 61.0, "rsi63": 55.0, "raw_rs21": 10.0, "raw_rs63": 95.0})
-    config = ScanConfig(enabled_list_rules=("Relative Strength 21 > 63",))
+    config = ScanConfig()
 
-    result = evaluate_list_rules(row, config)
+    result = evaluate_annotation_filters(row, config)
 
     assert result["Relative Strength 21 > 63"] is True
 
@@ -87,17 +87,17 @@ def test_watchlist_cards_follow_configured_card_sections() -> None:
     assert list(cards[0].rows["Ticker"]) == ["BBB"]
 
 
-def test_watchlist_builder_preserves_duplicate_columns() -> None:
+def test_watchlist_builder_surfaces_annotation_columns() -> None:
     raw_watchlist = pd.DataFrame(
         {
             "name": ["Alpha"],
             "hybrid_score": [95.0],
             "overlap_count": [3],
             "scan_hit_count": [3],
-            "list_overlap_count": [1],
+            "annotation_hit_count": [2],
             "duplicate_ticker": [True],
             "hit_scans": ["Vol Up, VCS, 97 Club"],
-            "hit_lists": ["High Est. EPS Growth"],
+            "annotation_hits": ["Relative Strength 21 > 63, High Est. EPS Growth"],
             "vcs": [70.0],
             "earnings_in_7d": [False],
         },
@@ -108,26 +108,35 @@ def test_watchlist_builder_preserves_duplicate_columns() -> None:
 
     assert bool(display.iloc[0]["duplicate_ticker"]) is True
     assert int(display.iloc[0]["scan_hit_count"]) == 3
-    assert int(display.iloc[0]["list_overlap_count"]) == 1
+    assert int(display.iloc[0]["annotation_hit_count"]) == 2
+    assert "Relative Strength 21 > 63" in display.iloc[0]["annotation_hits"]
 
 
-def test_watchlist_has_no_hard_limit_when_no_hits() -> None:
+def test_watchlist_is_empty_when_no_scans_hit_even_if_annotations_exist() -> None:
     snapshot = pd.DataFrame(
         {
-            "weekly_return": [0.0] * 12,
-            "quarterly_return": [0.0] * 12,
-            "hybrid_score": list(range(12)),
-            "vcs": [0.0] * 12,
-            "rs21": [0.0] * 12,
+            "weekly_return": [0.0],
+            "quarterly_return": [0.0],
+            "hybrid_score": [50.0],
+            "vcs": [0.0],
+            "rs21": [0.0],
+            "rsi21": [60.0],
+            "rsi63": [50.0],
+            "eps_growth_rank": [95.0],
+            "trend_base": [False],
+            "rel_volume": [0.1],
+            "daily_change_pct": [-1.0],
+            "from_open_pct": [-1.0],
+            "pp_count_30d": [0],
         },
-        index=[f"T{i:02d}" for i in range(12)],
+        index=["AAA"],
     )
     runner = ScanRunner(ScanConfig())
 
     result = runner.run(snapshot)
 
     assert result.hits.empty
-    assert len(result.watchlist) == 12
+    assert result.watchlist.empty
 
 
 def test_card_sections_reject_list_sources() -> None:
@@ -148,47 +157,13 @@ def test_card_sections_reject_list_sources() -> None:
         raise AssertionError("Expected list-based card sections to be rejected")
 
 
-def test_watchlist_excludes_list_only_symbols() -> None:
-    snapshot = pd.DataFrame(
-        {
-            "weekly_return": [5.0],
-            "quarterly_return": [15.0],
-            "close": [100.0],
-            "ema21_low": [90.0],
-            "ema21_low_pct": [4.0],
-            "atr_21ema_zone": [-2.0],
-            "rel_volume": [0.5],
-            "daily_change_pct": [1.0],
-            "from_open_pct": [1.0],
-            "hybrid_score": [50.0],
-            "vcs": [10.0],
-            "rs21": [60.0],
-            "raw_rs21": [70.0],
-            "raw_rs63": [60.0],
-            "rsi21": [40.0],
-            "rsi63": [45.0],
-            "eps_growth": [99.0],
-            "trend_base": [False],
-            "pp_count_30d": [0],
-        },
-        index=["AAA"],
-    )
-    runner = ScanRunner(ScanConfig(high_eps_growth_rank_threshold=50.0))
-
-    result = runner.run(snapshot)
-
-    assert result.watchlist.empty
-    assert not result.hits.empty
-    assert set(result.hits["kind"]) == {"list"}
-
-
-def test_duplicate_ticker_uses_scan_overlap_not_list_overlap() -> None:
+def test_runner_attaches_annotation_flags_to_scan_hits() -> None:
     snapshot = pd.DataFrame(
         {
             "weekly_return": [1.0],
             "quarterly_return": [1.0],
             "close": [100.0],
-            "sma50": [90.0],
+            "sma50": [110.0],
             "ema21_low": [95.0],
             "ema21_low_pct": [5.0],
             "atr_21ema_zone": [2.0],
@@ -208,6 +183,7 @@ def test_duplicate_ticker_uses_scan_overlap_not_list_overlap() -> None:
             "eps_growth_rank": [95.0],
             "trend_base": [False],
             "pp_count_30d": [0],
+            "pocket_pivot": [False],
         },
         index=["AAA"],
     )
@@ -216,10 +192,15 @@ def test_duplicate_ticker_uses_scan_overlap_not_list_overlap() -> None:
     result = runner.run(snapshot)
 
     assert len(result.watchlist) == 1
+    assert set(result.hits["kind"]) == {"scan"}
     latest = result.watchlist.iloc[0]
+    assert bool(latest["annotation_rsi21_gt_63"]) is True
+    assert bool(latest["annotation_high_eps_growth"]) is True
+    assert int(latest["annotation_hit_count"]) == 2
+    assert "Relative Strength 21 > 63" in latest["annotation_hits"]
     assert int(latest["scan_hit_count"]) == 1
-    assert int(latest["list_overlap_count"]) >= 3
-    assert int(latest["overlap_count"]) == 1
+    assert int(latest["list_overlap_count"]) == 1
+    assert latest["hit_lists"] == latest["hit_scans"]
     assert bool(latest["duplicate_ticker"]) is False
 
 
@@ -229,6 +210,8 @@ def test_duplicate_ticker_builder_uses_scan_hits_only() -> None:
             "hybrid_score": [95.0, 80.0],
             "overlap_count": [3, 1],
             "vcs": [70.0, 60.0],
+            "annotation_rsi21_gt_63": [True, True],
+            "annotation_high_eps_growth": [True, False],
         },
         index=["AAA", "BBB"],
     )
@@ -237,11 +220,7 @@ def test_duplicate_ticker_builder_uses_scan_hits_only() -> None:
             {"ticker": "AAA", "name": "21EMA scan", "kind": "scan"},
             {"ticker": "AAA", "name": "Vol Up", "kind": "scan"},
             {"ticker": "AAA", "name": "VCS", "kind": "scan"},
-            {"ticker": "AAA", "name": "High Est. EPS Growth", "kind": "list"},
             {"ticker": "BBB", "name": "21EMA scan", "kind": "scan"},
-            {"ticker": "BBB", "name": "High Est. EPS Growth", "kind": "list"},
-            {"ticker": "BBB", "name": "Relative Strength 21 > 63", "kind": "list"},
-            {"ticker": "BBB", "name": "Vol Up Gainers", "kind": "list"},
         ]
     )
 
@@ -312,3 +291,48 @@ def test_duplicate_ticker_builder_respects_selected_scans_and_threshold() -> Non
     assert list(duplicate["Ticker"]) == ["AAA"]
     assert int(duplicate.iloc[0]["Scan Hits"]) == 2
     assert float(duplicate.iloc[0]["Hybrid-RS"]) == 95.0
+
+
+def test_annotation_filters_apply_with_and_semantics() -> None:
+    watchlist = pd.DataFrame(
+        {
+            "annotation_rsi21_gt_63": [True, True, False],
+            "annotation_high_eps_growth": [True, False, True],
+        },
+        index=["AAA", "BBB", "CCC"],
+    )
+
+    filtered = WatchlistViewModelBuilder().filter_by_annotation_filters(
+        watchlist,
+        ["Relative Strength 21 > 63", "High Est. EPS Growth"],
+    )
+
+    assert list(filtered.index) == ["AAA"]
+
+
+def test_apply_selected_scan_metrics_zeroes_duplicate_state_when_no_scans_selected() -> None:
+    watchlist = pd.DataFrame(
+        {
+            "hybrid_score": [95.0],
+            "overlap_count": [3],
+            "duplicate_ticker": [True],
+        },
+        index=["AAA"],
+    )
+    hits = pd.DataFrame(
+        [
+            {"ticker": "AAA", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "AAA", "name": "VCS", "kind": "scan"},
+        ]
+    )
+
+    projected = WatchlistViewModelBuilder().apply_selected_scan_metrics(
+        watchlist,
+        hits,
+        min_count=2,
+        selected_scan_names=[],
+    )
+
+    assert int(projected.iloc[0]["selected_scan_hit_count"]) == 0
+    assert int(projected.iloc[0]["overlap_count"]) == 0
+    assert bool(projected.iloc[0]["duplicate_ticker"]) is False

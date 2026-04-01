@@ -22,13 +22,8 @@ DEFAULT_SCAN_RULE_NAMES = (
     "Weekly 20% plus gainers",
 )
 
-DEFAULT_LIST_RULE_NAMES = (
-    "Momentum 97",
-    "Volatility Contraction Score",
-    "21EMA Watch",
-    "4% Gainers",
+DEFAULT_ANNOTATION_FILTER_NAMES = (
     "Relative Strength 21 > 63",
-    "Vol Up Gainers",
     "High Est. EPS Growth",
 )
 
@@ -44,6 +39,14 @@ DEFAULT_CARD_SECTION_PAYLOADS = (
     {"scan_name": "PP Count", "display_name": "3+ Pocket Pivots (30d)"},
     {"scan_name": "Weekly 20% plus gainers", "display_name": "Weekly 20%+ Gainers"},
 )
+DEFAULT_ANNOTATION_FILTER_PAYLOADS = (
+    {"filter_name": "Relative Strength 21 > 63", "display_name": "RSI 21 > 63"},
+    {"filter_name": "High Est. EPS Growth", "display_name": "High Est. EPS Growth"},
+)
+ANNOTATION_FILTER_COLUMN_NAMES = {
+    "Relative Strength 21 > 63": "annotation_rsi21_gt_63",
+    "High Est. EPS Growth": "annotation_high_eps_growth",
+}
 
 
 @dataclass(slots=True)
@@ -77,6 +80,27 @@ class ScanCardConfig:
 
 
 @dataclass(slots=True)
+class AnnotationFilterConfig:
+    """Config for a single post-scan annotation filter."""
+
+    filter_name: str
+    display_name: str | None = None
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, object] | str) -> "AnnotationFilterConfig":
+        if isinstance(payload, str):
+            return cls(filter_name=payload, display_name=payload)
+        filter_name = str(payload.get("filter_name", payload.get("name", ""))).strip()
+        if not filter_name:
+            raise ValueError("annotation_filters items require filter_name")
+        display_name = payload.get("display_name")
+        return cls(
+            filter_name=filter_name,
+            display_name=str(display_name).strip() if display_name is not None else None,
+        )
+
+
+@dataclass(slots=True)
 class ScanConfig:
     """Configurable thresholds, rule selection, and scan-card settings."""
 
@@ -94,26 +118,47 @@ class ScanConfig:
     earnings_warning_days: int = 7
     watchlist_sort_mode: str = "hybrid_score"
     enabled_scan_rules: tuple[str, ...] = field(default_factory=lambda: DEFAULT_SCAN_RULE_NAMES)
-    enabled_list_rules: tuple[str, ...] = field(default_factory=lambda: DEFAULT_LIST_RULE_NAMES)
+    enabled_annotation_filters: tuple[str, ...] = field(default_factory=tuple)
+    annotation_filters: tuple[AnnotationFilterConfig, ...] = field(
+        default_factory=lambda: tuple(AnnotationFilterConfig.from_dict(payload) for payload in DEFAULT_ANNOTATION_FILTER_PAYLOADS)
+    )
     card_sections: tuple[ScanCardConfig, ...] = field(
         default_factory=lambda: tuple(ScanCardConfig.from_dict(payload) for payload in DEFAULT_CARD_SECTION_PAYLOADS)
     )
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> "ScanConfig":
-        base_payload = {key: value for key, value in payload.items() if key in cls.__dataclass_fields__ and key not in {"enabled_scan_rules", "enabled_list_rules", "card_sections"}}
+        base_payload = {
+            key: value
+            for key, value in payload.items()
+            if key in cls.__dataclass_fields__
+            and key not in {"enabled_scan_rules", "enabled_annotation_filters", "annotation_filters", "card_sections"}
+        }
         enabled_scan_rules = tuple(str(name).strip() for name in payload.get("enabled_scan_rules", DEFAULT_SCAN_RULE_NAMES) if str(name).strip())
-        enabled_list_rules = tuple(str(name).strip() for name in payload.get("enabled_list_rules", DEFAULT_LIST_RULE_NAMES) if str(name).strip())
+        if "enabled_annotation_filters" in payload:
+            raw_annotation_names = payload.get("enabled_annotation_filters", ())
+        else:
+            legacy_names = payload.get("enabled_list_rules", ())
+            raw_annotation_names = [name for name in legacy_names if str(name).strip() in DEFAULT_ANNOTATION_FILTER_NAMES]
+        enabled_annotation_filters = tuple(str(name).strip() for name in raw_annotation_names if str(name).strip())
+        annotation_payloads = payload.get("annotation_filters", DEFAULT_ANNOTATION_FILTER_PAYLOADS)
+        annotation_filters = tuple(AnnotationFilterConfig.from_dict(item) for item in annotation_payloads)
         card_payloads = payload.get("card_sections", DEFAULT_CARD_SECTION_PAYLOADS)
         card_sections = tuple(ScanCardConfig.from_dict(item) for item in card_payloads)
         config = cls(
             **base_payload,
             enabled_scan_rules=enabled_scan_rules or DEFAULT_SCAN_RULE_NAMES,
-            enabled_list_rules=enabled_list_rules or DEFAULT_LIST_RULE_NAMES,
+            enabled_annotation_filters=enabled_annotation_filters,
+            annotation_filters=annotation_filters,
             card_sections=card_sections,
         )
         _validate_rule_names(config.enabled_scan_rules, SCAN_RULE_REGISTRY, "scan")
-        _validate_rule_names(config.enabled_list_rules, LIST_RULE_REGISTRY, "list")
+        _validate_rule_names(config.enabled_annotation_filters, ANNOTATION_FILTER_REGISTRY, "annotation filter")
+        _validate_annotation_filters(config.annotation_filters)
+        available_filter_names = {section.filter_name for section in config.annotation_filters}
+        unknown_enabled = [name for name in config.enabled_annotation_filters if name not in available_filter_names]
+        if unknown_enabled:
+            raise ValueError(f"enabled_annotation_filters must be defined in annotation_filters: {', '.join(sorted(unknown_enabled))}")
         _validate_card_sections(config.card_sections)
         return config
 
@@ -135,9 +180,22 @@ def evaluate_scan_rules(row: pd.Series, config: ScanConfig) -> dict[str, bool]:
     return _evaluate_rule_set(row, config.enabled_scan_rules, config, SCAN_RULE_REGISTRY, "scan")
 
 
-def evaluate_list_rules(row: pd.Series, config: ScanConfig) -> dict[str, bool]:
-    """Evaluate the configured working lists used to derive duplicate tickers."""
-    return _evaluate_rule_set(row, config.enabled_list_rules, config, LIST_RULE_REGISTRY, "list")
+def evaluate_annotation_filters(row: pd.Series, config: ScanConfig) -> dict[str, bool]:
+    """Evaluate all configured post-scan annotation filters on a single latest snapshot row."""
+    filter_names = tuple(section.filter_name for section in config.annotation_filters)
+    return _evaluate_rule_set(
+        row,
+        filter_names,
+        config,
+        ANNOTATION_FILTER_REGISTRY,
+        "annotation filter",
+    )
+
+
+def annotation_filter_column_name(filter_name: str) -> str:
+    if filter_name not in ANNOTATION_FILTER_COLUMN_NAMES:
+        raise ValueError(f"Unknown annotation filter: {filter_name}")
+    return ANNOTATION_FILTER_COLUMN_NAMES[filter_name]
 
 
 def _evaluate_rule_set(
@@ -161,6 +219,12 @@ def _validate_card_sections(card_sections: tuple[ScanCardConfig, ...]) -> None:
     unknown = [section.scan_name for section in card_sections if section.scan_name not in SCAN_RULE_REGISTRY]
     if unknown:
         raise ValueError(f"Unknown scan card section(s): {', ' .join(sorted(unknown))}")
+
+
+def _validate_annotation_filters(annotation_filters: tuple[AnnotationFilterConfig, ...]) -> None:
+    unknown = [section.filter_name for section in annotation_filters if section.filter_name not in ANNOTATION_FILTER_REGISTRY]
+    if unknown:
+        raise ValueError(f"Unknown annotation filter section(s): {', '.join(sorted(unknown))}")
 
 
 def _scan_21ema(row: pd.Series, config: ScanConfig) -> bool:
@@ -227,43 +291,13 @@ def _scan_weekly_gainer(row: pd.Series, config: ScanConfig) -> bool:
     return bool(row.get("weekly_return", 0.0) >= config.weekly_gainer_threshold)
 
 
-def _list_momentum_97(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(
-        row.get("weekly_return_rank", 0.0) >= config.momentum_97_weekly_rank
-        and row.get("quarterly_return_rank", 0.0) >= config.momentum_97_quarterly_rank
-    )
-
-
-def _list_vcs(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(row.get("vcs", 0.0) >= config.vcs_min_threshold)
-
-
-def _list_21ema_watch(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(
-        row.get("close", 0.0) >= row.get("ema21_low", float("inf"))
-        and row.get("ema21_low_pct", float("inf")) <= 8.0
-        and -0.5 <= row.get("atr_21ema_zone", float("nan")) <= 1.0
-    )
-
-
-def _list_4pct_gainers(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(row.get("daily_change_pct", 0.0) >= config.daily_gain_bullish_threshold)
-
-
-def _list_rs21_gt_63(row: pd.Series, config: ScanConfig) -> bool:
+def _annotation_rsi21_gt_63(row: pd.Series, config: ScanConfig) -> bool:
     rsi21 = row.get("rsi21", float("nan"))
     rsi63 = row.get("rsi63", float("nan"))
     return bool(pd.notna(rsi21) and pd.notna(rsi63) and float(rsi21) > float(rsi63))
 
 
-def _list_vol_up_gainers(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(
-        row.get("rel_volume", 0.0) >= config.relative_volume_vol_up_threshold
-        and row.get("daily_change_pct", 0.0) > 0.0
-    )
-
-
-def _list_high_eps_growth(row: pd.Series, config: ScanConfig) -> bool:
+def _annotation_high_eps_growth(row: pd.Series, config: ScanConfig) -> bool:
     return bool(row.get("eps_growth_rank", 0.0) >= config.high_eps_growth_rank_threshold)
 
 
@@ -279,14 +313,9 @@ SCAN_RULE_REGISTRY: dict[str, RuleEvaluator] = {
     "Weekly 20% plus gainers": _scan_weekly_gainer,
 }
 
-LIST_RULE_REGISTRY: dict[str, RuleEvaluator] = {
-    "Momentum 97": _list_momentum_97,
-    "Volatility Contraction Score": _list_vcs,
-    "21EMA Watch": _list_21ema_watch,
-    "4% Gainers": _list_4pct_gainers,
-    "Relative Strength 21 > 63": _list_rs21_gt_63,
-    "Vol Up Gainers": _list_vol_up_gainers,
-    "High Est. EPS Growth": _list_high_eps_growth,
+ANNOTATION_FILTER_REGISTRY: dict[str, RuleEvaluator] = {
+    "Relative Strength 21 > 63": _annotation_rsi21_gt_63,
+    "High Est. EPS Growth": _annotation_high_eps_growth,
 }
 
 

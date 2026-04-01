@@ -1,8 +1,31 @@
 # Scan and Watchlist Spec
 
-## 1. Active pre-scan universe filter
+## 1. Purpose
 
-Before any scan rule runs, `UniverseBuilder.filter()` applies the active local universe filter:
+This document defines the stable watchlist-generation workflow.
+
+Important principle:
+
+- the watchlist workflow is stable product behavior
+- the concrete scan family can change over time through config and implementation updates
+- detailed scan definitions are not duplicated in this specification
+- exact per-scan definitions live under `doc/Scan/`
+
+Primary scan reference:
+
+- `doc/Scan/scan_00_index.md`
+
+That index links to one document per scan.
+
+---
+
+## 2. Stable watchlist workflow
+
+### 2.1 Eligible snapshot
+
+Before any scan or annotation rule runs, `UniverseBuilder.filter()` applies the active local universe filter.
+
+Current default filter:
 
 - `market_cap >= 1B`
 - `avg_volume_50d >= 1M`
@@ -10,207 +33,147 @@ Before any scan rule runs, `UniverseBuilder.filter()` applies the active local u
 - `adr_percent` between `3.5` and `10.0`
 - sector exclusion: `Healthcare`
 
-The scan rules themselves run only on this eligible snapshot.
+All scan rules and annotation rules run only on this eligible snapshot.
 
----
+### 2.2 Watchlist eligibility
 
-## 2. Active 9 scan rules
+The watchlist candidate set is determined only by enabled scan rules.
 
-### 2.1 21EMA scan
+Current implemented rule:
 
-`True` when all conditions are met:
+- evaluate all enabled scan rules on the eligible snapshot
+- create `scan_hit_count` for each ticker
+- keep only tickers where `scan_hit_count > 0`
 
-- `weekly_return >= 0.0`
-- `weekly_return <= 15.0`
-- `dcr_percent > 20.0`
-- `-0.5 <= atr_21ema_zone <= 1.0`
-- `0.0 <= atr_50sma_zone <= 3.0`
-- `pp_count_30d > 1`
-- `trend_base == True`
+This means:
 
-### 2.2 4% bullish
+- scan hits create watchlist candidates
+- annotation hits do not create watchlist candidates by themselves
 
-`True` when all conditions are met:
+### 2.3 Supporting annotations
 
-- `rel_volume >= 1.0`
-- `daily_change_pct >= 4.0`
-- `from_open_pct > 0.0`
-- `raw_rs21 > 60.0`
+The application also evaluates configured annotation rules on the same eligible snapshot.
 
-### 2.3 Vol Up
+Current implemented behavior:
 
-`True` when all conditions are met:
+- annotation rules are still evaluated in the scan pipeline
+- annotation results are not used to populate the watchlist overlap aliases
+- `hit_lists` now mirrors `hit_scans` for compatibility
+- `list_overlap_count` now mirrors `scan_hit_count` for compatibility
 
-- `rel_volume >= 1.5`
-- `daily_change_pct > 0.0`
+The current annotation family and scan-to-list relationships are documented in `doc/Scan/scan_00_index.md`.
 
-### 2.4 Momentum 97
+### 2.4 Duplicate tickers
 
-`True` when all conditions are met:
+Backend duplicate logic is based on scan overlap only.
 
-- `weekly_return_rank >= 97.0`
-- `quarterly_return_rank >= 85.0`
-- `trend_base == True`
-
-`weekly_return_rank` and `quarterly_return_rank` are cross-sectional percentile ranks created by `enrich_with_scan_context()`.
-
-### 2.5 97 Club
-
-`True` when all conditions are met:
-
-- `hybrid_score >= 90.0`
-- `raw_rs21 >= 97.0`
-- `trend_base == True`
-
-### 2.6 VCS
-
-`True` when all conditions are met:
-
-- `vcs >= 60.0`
-- `raw_rs21 > 60.0`
-
-### 2.7 Pocket Pivot
-
-`True` when all conditions are met:
-
-- `close > sma50`
-- `pocket_pivot == True`
-
-`pocket_pivot` itself is calculated in the indicator layer as:
-
-- green candle: `close > open`
-- current `volume > max(volume over prior pocket_pivot_lookback days)`
-
-### 2.8 PP Count
-
-`True` when all conditions are met:
-
-- `pp_count_30d > 3`
-- `trend_base == True`
-
-### 2.9 Weekly 20% plus gainers
-
-`True` when:
-
-- `weekly_return >= 20.0`
-
----
-
-## 3. Active 7 list annotations
-
-The 7 lists are evaluated on the same eligible snapshot, but they do not decide watchlist eligibility.
-They are stored as supporting annotations through `hit_lists` and `list_overlap_count`.
-
-### 3.1 List rules currently evaluated
-
-1. `Momentum 97`
-   - `weekly_return_rank >= 97.0`
-   - `quarterly_return_rank >= 85.0`
-
-2. `Volatility Contraction Score`
-   - `vcs >= 60.0`
-
-3. `21EMA Watch`
-   - `close >= ema21_low`
-   - `ema21_low_pct <= 8.0`
-   - `-0.5 <= atr_21ema_zone <= 1.0`
-
-4. `4% Gainers`
-   - `daily_change_pct >= 4.0`
-
-5. `Relative Strength 21 > 63`
-   - `rsi21 > rsi63`
-
-6. `Vol Up Gainers`
-   - `rel_volume >= 1.5`
-   - `daily_change_pct > 0.0`
-
-7. `High Est. EPS Growth`
-   - `eps_growth_rank >= 90.0`
-
-### 3.2 Important distinction
-
-- 9 scans drive watchlist eligibility.
-- 7 lists do not create watchlist candidates by themselves.
-- list-only symbols are excluded from the final watchlist.
-
----
-
-## 4. Duplicate tickers
-
-### 4.1 Current definition
-
-A duplicate ticker is any ticker that appears in `3` or more of the 9 scan rules.
-
-In the active implementation:
+Current implemented rule:
 
 - `scan_hit_count = number of unique scan hits for the ticker`
 - `overlap_count = scan_hit_count`
+- `hit_lists = hit_scans` as a compatibility alias
+- `list_overlap_count = scan_hit_count` as a compatibility alias
 - `duplicate_ticker = scan_hit_count >= duplicate_min_count`
-- current `duplicate_min_count = 3`
 
-### 4.2 What is not used
+The backend duplicate flag is not derived from annotation lists.
 
-Duplicate tickers are not derived from:
+### 2.5 Watchlist sorting
 
-- the 7 list annotations
-- `list_overlap_count`
-- transformed card output rows
-
-The UI priority band is built directly from raw scan hits plus the raw watchlist rows.
-
----
-
-## 5. Watchlist generation flow
-
-1. Resolve the active symbols.
-2. Load prices, profile data, and fundamentals.
-3. Build indicator histories.
-4. Build the latest snapshot.
-5. Apply scoring: RS, Fundamental, Industry, Hybrid, VCS.
-6. Apply the local universe filter.
-7. Evaluate the 9 scans and 7 list annotations.
-8. Keep only symbols with `scan_hit_count > 0`.
-9. Mark duplicate tickers from scan overlap.
-10. Sort the watchlist.
-11. Build scan cards, duplicate band rows, and earnings rows for the UI.
-
----
-
-## 6. Sorting
-
-### 6.1 Active watchlist sort
+The runner sorts the final watchlist after scan eligibility and duplicate marking.
 
 Default config uses `watchlist_sort_mode: hybrid_score`.
 
-This produces the active sort priority:
+This produces the active default sort priority:
 
 1. `hybrid_score`
 2. `overlap_count`
 3. `vcs`
 4. `rs21`
 
-### 6.2 Optional sort mode
-
-If `watchlist_sort_mode` is changed to `overlap_then_hybrid`, the runner sorts by:
+If `watchlist_sort_mode = overlap_then_hybrid`, the sort priority becomes:
 
 1. `overlap_count`
 2. `hybrid_score`
 3. `vcs`
 4. `rs21`
 
-### 6.3 Card-level sort
+---
 
-Each scan card uses `card_sections[*].sort_columns`.
-The current default is:
+## 3. Watchlist UI behavior
 
-1. `hybrid_score`
-2. `overlap_count`
-3. `vcs`
+### 3.1 Card rendering
+
+The Today's Watchlist page renders scan cards only.
+
+Current implemented behavior:
+
+- cards are built from `scan.card_sections`
+- each card corresponds to one configured scan name
+- each card shows the subset of watchlist rows that hit that scan
+- detailed card meaning is defined by the referenced scan document in `doc/Scan/`
+
+### 3.2 Card selection
+
+The UI allows the user to choose which configured scan cards are active in the current view.
+
+Current implemented behavior:
+
+- selected cards control which watchlist cards are displayed
+- this selection does not change the underlying watchlist candidate set
+- unselected cards are hidden from the page, but their symbols remain in the watchlist if they passed any enabled scan
+
+### 3.3 Duplicate band in the UI
+
+The UI duplicate band is a presentation-layer recomputation based on selected cards.
+
+Current implemented behavior:
+
+- the page recomputes duplicate tickers from raw scan hits filtered to the currently selected cards
+- the page allows a user-selected duplicate threshold
+- this UI threshold does not change backend watchlist eligibility
+- this UI threshold does not rewrite the stored `duplicate_ticker` field on raw watchlist rows
+
+Therefore two duplicate concepts coexist:
+
+- backend duplicate flag: fixed by `duplicate_min_count` in the scan config
+- UI duplicate band: recalculated from selected cards plus the current sidebar threshold
 
 ---
 
-## 7. Active watchlist outputs
+## 4. Current scan reference model
+
+The numbered specifications no longer duplicate scan-level formulas.
+
+Instead:
+
+- one scan is documented in one file under `doc/Scan/`
+- `doc/Scan/scan_00_index.md` is the entry point
+- active scan availability is controlled by `enabled_scan_rules`
+- active annotation availability is controlled by `enabled_list_rules`
+
+This structure is intended to reduce maintenance when scan types are added, removed, renamed, or reworked.
+
+---
+
+## 5. Watchlist generation sequence
+
+Current end-to-end sequence:
+
+1. resolve the active symbols
+2. load prices, profile data, and fundamentals
+3. build indicator histories
+4. build the latest snapshot
+5. apply scoring: RS, Fundamental, Industry, Hybrid, VCS
+6. apply the local universe filter
+7. evaluate enabled scan rules and enabled annotation rules
+8. keep only symbols with `scan_hit_count > 0`
+9. mark backend duplicate tickers from scan overlap
+10. sort the watchlist
+11. build scan cards, the duplicate band, and earnings rows for the UI
+
+---
+
+## 6. Active watchlist outputs
 
 The display-oriented watchlist table currently exposes these fields when available:
 
@@ -241,14 +204,16 @@ The display-oriented watchlist table currently exposes these fields when availab
 
 ---
 
-## 8. Configurable areas
+## 7. Configurable areas
 
 The active implementation keeps these areas configurable:
 
 - scan thresholds
 - enabled scan rules
-- enabled list rules
+- enabled annotation rules
 - card sections and their display names
-- duplicate minimum count
+- backend duplicate minimum count
 - watchlist sort mode
 - universe thresholds
+- UI-selected card subset for display and duplicate-band counting
+- UI duplicate threshold for the current page session

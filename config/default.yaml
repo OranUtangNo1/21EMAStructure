@@ -133,14 +133,12 @@ scan:
     - Pocket Pivot
     - PP Count
     - Weekly 20% plus gainers
-  enabled_list_rules:
-    - Momentum 97
-    - Volatility Contraction Score
-    - 21EMA Watch
-    - 4% Gainers
-    - Relative Strength 21 > 63
-    - Vol Up Gainers
-    - High Est. EPS Growth
+  enabled_annotation_filters: []
+  annotation_filters:
+    - filter_name: Relative Strength 21 > 63
+      display_name: RSI 21 > 63
+    - filter_name: High Est. EPS Growth
+      display_name: High Est. EPS Growth
   card_sections:
     - scan_name: 21EMA scan
       display_name: 21EMA

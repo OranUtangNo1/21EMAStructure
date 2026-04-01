@@ -7,7 +7,7 @@ The active screening product is already implemented at the MVP-plus stage. The c
 - weekly universe discovery and persistence
 - daily data loading with cache and lineage tracking
 - full indicator stack required by the active scans
-- nine scan rules and annotation lists
+- configurable scan rules and annotation rules
 - duplicate ticker aggregation from scan overlap
 - Market Dashboard, RS Radar, and Today's Watchlist
 

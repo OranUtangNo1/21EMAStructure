@@ -24,6 +24,11 @@ The sidebar currently exposes:
 - page selection radio
 - `Refresh` button
 
+On `Today's Watchlist`, the sidebar also exposes page-local controls:
+
+- card multiselect used for watchlist-card display
+- duplicate threshold input used for duplicate-band counting
+
 ### 2.2 Shared context and health
 
 All pages can show:
@@ -52,9 +57,11 @@ The page renders a dedicated `Duplicate Tickers` band before the scan cards.
 
 Current logic:
 
-- source: `artifacts.duplicate_tickers`
-- each row is built from raw scan-hit overlap, not list overlap
-- displayed columns available in the artifact:
+- source rows are recomputed in the page layer from raw `watchlist` rows plus raw `scan_hits`
+- only currently selected scan cards are counted in this band
+- the sidebar duplicate threshold is applied to this band only
+- each row is built from scan overlap, not list overlap
+- displayed columns currently include:
   - `Ticker`
   - `Scan Hits`
   - `Hybrid-RS`
@@ -71,6 +78,13 @@ Each card currently shows:
 - ticker count
 - a ticker grid built from the card rows
 
+Current card behavior:
+
+- only selected scan cards are shown
+- card selection does not change the underlying watchlist candidate set
+- only scan-based cards are supported by config
+- detailed scan meaning is documented under `doc/Scan/`
+
 Card rows are built from the matching scan-hit subset and currently expose:
 
 - `Ticker`
@@ -80,8 +94,6 @@ Card rows are built from the matching scan-hit subset and currently expose:
 - `VCS`
 - `Duplicate`
 - `Earnings`
-
-Only scan-based cards are supported by config.
 
 ### 3.4 Earnings for today
 
