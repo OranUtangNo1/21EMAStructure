@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from src.scan.rules import ScanCardConfig, ScanConfig
+from src.scan.rules import AnnotationFilterConfig, ScanCardConfig, ScanConfig, annotation_filter_column_name
 
 
 @dataclass(slots=True)
@@ -24,6 +24,9 @@ class WatchlistViewModelBuilder:
 
     def available_card_sections(self) -> tuple[ScanCardConfig, ...]:
         return self.config.card_sections
+
+    def available_annotation_filters(self) -> tuple[AnnotationFilterConfig, ...]:
+        return self.config.annotation_filters
 
     def build(self, watchlist: pd.DataFrame) -> pd.DataFrame:
         if watchlist.empty:
@@ -45,10 +48,10 @@ class WatchlistViewModelBuilder:
             "rs5",
             "overlap_count",
             "scan_hit_count",
-            "list_overlap_count",
+            "annotation_hit_count",
             "duplicate_ticker",
             "hit_scans",
-            "hit_lists",
+            "annotation_hits",
             "vcs",
             "earnings",
             "pp_count_30d",
@@ -68,6 +71,64 @@ class WatchlistViewModelBuilder:
         numeric_columns = display.select_dtypes(include="number").columns
         display.loc[:, numeric_columns] = display.loc[:, numeric_columns].round(2)
         return display
+
+    def filter_by_annotation_filters(
+        self,
+        watchlist: pd.DataFrame,
+        selected_filter_names: Iterable[str] | None = None,
+    ) -> pd.DataFrame:
+        if watchlist.empty:
+            return watchlist.copy()
+
+        selected_names = self._normalize_selected_annotation_filter_names(selected_filter_names)
+        if not selected_names:
+            return watchlist.copy()
+
+        filtered = watchlist.copy()
+        for filter_name in selected_names:
+            column_name = annotation_filter_column_name(filter_name)
+            if column_name not in filtered.columns:
+                filtered[column_name] = False
+            filtered = filtered.loc[filtered[column_name].fillna(False)].copy()
+            if filtered.empty:
+                break
+        return filtered
+
+    def apply_selected_scan_metrics(
+        self,
+        watchlist: pd.DataFrame,
+        hits: pd.DataFrame,
+        min_count: int,
+        selected_scan_names: Iterable[str] | None = None,
+    ) -> pd.DataFrame:
+        if watchlist.empty:
+            return watchlist.copy()
+
+        frame = watchlist.copy()
+        scan_hits = self._scan_hits_frame(hits)
+        selected_names = self._normalize_selected_scan_names(selected_scan_names)
+        if selected_names is not None:
+            if not selected_names:
+                frame["selected_scan_hit_count"] = 0
+                frame["selected_overlap_count"] = 0
+                frame["duplicate_ticker"] = False
+                frame["overlap_count"] = 0
+                return frame
+            scan_hits = scan_hits.loc[scan_hits["name"].isin(selected_names)].copy()
+
+        if scan_hits.empty:
+            frame["selected_scan_hit_count"] = 0
+            frame["selected_overlap_count"] = 0
+            frame["duplicate_ticker"] = False
+            frame["overlap_count"] = 0
+            return frame
+
+        scan_counts = scan_hits.groupby("ticker")["name"].nunique()
+        frame["selected_scan_hit_count"] = scan_counts.reindex(frame.index).fillna(0).astype(int)
+        frame["selected_overlap_count"] = frame["selected_scan_hit_count"]
+        frame["duplicate_ticker"] = frame["selected_scan_hit_count"] >= int(min_count)
+        frame["overlap_count"] = frame["selected_overlap_count"]
+        return frame
 
     def build_scan_cards(
         self,
@@ -120,27 +181,10 @@ class WatchlistViewModelBuilder:
         if watchlist.empty or hits.empty:
             return pd.DataFrame(columns=["Ticker", "Scan Hits", "Hybrid-RS", "Overlap", "VCS"])
 
-        scan_hits = hits.loc[hits["kind"] == "scan"].copy()
-        selected_names = self._normalize_selected_scan_names(selected_scan_names)
-        if selected_names is not None:
-            if not selected_names:
-                return pd.DataFrame(columns=["Ticker", "Scan Hits", "Hybrid-RS", "Overlap", "VCS"])
-            scan_hits = scan_hits.loc[scan_hits["name"].isin(selected_names)].copy()
-        if scan_hits.empty:
-            return pd.DataFrame(columns=["Ticker", "Scan Hits", "Hybrid-RS", "Overlap", "VCS"])
-
-        scan_counts = scan_hits.groupby("ticker")["name"].nunique()
-        duplicate_symbols = scan_counts.loc[scan_counts >= int(min_count)].index.tolist()
-        if not duplicate_symbols:
-            return pd.DataFrame(columns=["Ticker", "Scan Hits", "Hybrid-RS", "Overlap", "VCS"])
-
-        frame = watchlist.loc[watchlist.index.intersection(duplicate_symbols)].copy()
+        frame = self.apply_selected_scan_metrics(watchlist, hits, min_count=min_count, selected_scan_names=selected_scan_names)
+        frame = frame.loc[frame["duplicate_ticker"].fillna(False)].copy()
         if frame.empty:
             return pd.DataFrame(columns=["Ticker", "Scan Hits", "Hybrid-RS", "Overlap", "VCS"])
-
-        frame["selected_scan_hit_count"] = scan_counts.reindex(frame.index).fillna(0).astype(int)
-        frame["selected_overlap_count"] = frame["selected_scan_hit_count"]
-        frame["duplicate_ticker"] = frame["selected_scan_hit_count"] >= int(min_count)
 
         hybrid_column = "hybrid_score" if "hybrid_score" in frame.columns else "H" if "H" in frame.columns else None
         vcs_column = "vcs" if "vcs" in frame.columns else "VCS" if "VCS" in frame.columns else None
@@ -171,7 +215,8 @@ class WatchlistViewModelBuilder:
         return display
 
     def _build_single_card(self, section: ScanCardConfig, watchlist: pd.DataFrame, hits: pd.DataFrame) -> ScanCardViewModel | None:
-        section_hits = hits.loc[(hits["kind"] == "scan") & (hits["name"] == section.scan_name), "ticker"].drop_duplicates().tolist()
+        scan_hits = self._scan_hits_frame(hits)
+        section_hits = scan_hits.loc[scan_hits["name"] == section.scan_name, "ticker"].drop_duplicates().tolist()
         if not section_hits:
             return None
         frame = watchlist.loc[watchlist.index.intersection(section_hits)].copy()
@@ -228,6 +273,28 @@ class WatchlistViewModelBuilder:
             )
         )
         return names
+
+    def _normalize_selected_annotation_filter_names(
+        self,
+        selected_filter_names: Iterable[str] | None,
+    ) -> tuple[str, ...]:
+        if selected_filter_names is None:
+            return tuple()
+        valid_names = {section.filter_name for section in self.config.annotation_filters}
+        return tuple(
+            dict.fromkeys(
+                str(name).strip()
+                for name in selected_filter_names
+                if str(name).strip() and str(name).strip() in valid_names
+            )
+        )
+
+    def _scan_hits_frame(self, hits: pd.DataFrame) -> pd.DataFrame:
+        if hits.empty:
+            return hits.copy()
+        if "kind" not in hits.columns:
+            return hits.copy()
+        return hits.loc[hits["kind"] == "scan"].copy()
 
 
 class WatchlistCardGridBuilder(WatchlistViewModelBuilder):

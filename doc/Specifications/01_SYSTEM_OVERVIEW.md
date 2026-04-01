@@ -57,7 +57,7 @@ The application executes nine active scan rules. Any ticker that passes at least
 
 ### 4.6 Duplicate Highlighting
 
-A ticker is marked as a duplicate ticker when it appears in three or more of the nine active scans.
+A ticker is marked as a duplicate ticker when it appears in `duplicate_min_count` or more enabled scans.
 
 ### 4.7 Dashboard Rendering
 

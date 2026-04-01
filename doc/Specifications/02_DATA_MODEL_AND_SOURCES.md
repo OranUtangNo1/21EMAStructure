@@ -74,7 +74,7 @@ After price histories and indicators are available, `UniverseBuilder.filter()` a
 - `adr_percent <= 10.0`
 - `sector != Healthcare`
 
-This filtered set is the actual input to the 9 scans.
+This filtered set is the actual input to the enabled scan rules and configured annotation rules.
 
 ---
 
@@ -172,6 +172,8 @@ The active scan pipeline produces:
 
 - `scan_hits` with `ticker`, `kind`, and `name`
 - watchlist candidate rows with `hit_scans`, `hit_lists`, `scan_hit_count`, `list_overlap_count`, `overlap_count`, and `duplicate_ticker`
+
+In the current implementation, `hit_lists` and `list_overlap_count` are compatibility fields that mirror scan-derived values rather than annotation-derived values.
 - scan-card view models for the UI
 - duplicate-ticker rows for the watchlist priority band
 

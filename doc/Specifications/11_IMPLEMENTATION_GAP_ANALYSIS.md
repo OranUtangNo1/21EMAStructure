@@ -16,7 +16,7 @@ The largest remaining gaps are no longer about removing out-of-scope entry logic
 | --- | --- | --- |
 | Screening-only product scope | Implemented | Active app is limited to Market Dashboard, RS Radar, and Today's Watchlist |
 | Watchlist card grid | Implemented | Scan-card UI with duplicate ticker band and earnings card |
-| Duplicate ticker logic | Implemented | Based on overlap across the nine active scans |
+| Duplicate ticker logic | Implemented | Based on overlap across enabled scans |
 | RS Radar | Implemented | Sector and industry ETF tables plus top RS movers |
 | Market Dashboard | Implemented | Composite score, breadth, snapshot, factors, and S5TH |
 | Weekly universe snapshot | Implemented | Finviz discovery with local persistence |
@@ -44,7 +44,7 @@ Resolved:
 
 - duplicate tickers are now derived from scan overlap
 - the duplicate list is built directly from scan-hit artifacts
-- annotation lists no longer control duplicate eligibility
+- annotation rules no longer control duplicate eligibility
 
 ### 3.3 Dashboard Alignment
 

@@ -33,10 +33,11 @@ Entry evaluation, chart-based structure review, position sizing, and trade manag
    - VCS
 
 4. `04_SCAN_AND_WATCHLIST_SPEC.md`
-   - 9 scan rules
-   - 7 list annotations
+   - stable watchlist workflow
+   - scan / annotation evaluation model
    - duplicate ticker logic
    - watchlist generation flow
+   - references to per-scan documents under `doc/Scan/`
 
 5. `05_DASHBOARD_UI_SPEC.md`
    - Market Dashboard
@@ -74,6 +75,15 @@ Entry evaluation, chart-based structure review, position sizing, and trade manag
     - universe discovery strategy
     - refresh cadence
     - current provider decisions
+
+---
+
+## Scan References
+
+- `doc/Scan/scan_00_index.md`
+  - entry point for per-scan reference documents
+  - one scan per document
+  - exact scan-specific thresholds and formulas live there instead of in the numbered specifications
 
 ---
 
