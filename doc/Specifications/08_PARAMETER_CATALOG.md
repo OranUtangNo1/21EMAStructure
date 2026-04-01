@@ -193,6 +193,8 @@ Archived entry, structure, sizing, and trade-management parameters are out of sc
 - `rs_strong_threshold`: `80`
 - `rs_weak_threshold`: `39`
 
+When `rs_normalization_method = percentile`, the current implementation uses the trailing-window percentrank of the symbol's own `price_ratio = close / SPY` series.
+
 ### Fundamental
 - `eps_weight`: `1.0`
 - `revenue_weight`: `1.0`
@@ -216,8 +218,10 @@ Archived entry, structure, sizing, and trade-management parameters are out of sc
 - `len_short`: `13`
 - `len_long`: `63`
 - `len_volume`: `50`
+- `hl_lookback`: `63`
 - `sensitivity`: `2.0`
 - `trend_penalty_weight`: `1.0`
+- `penalty_factor`: `0.75`
 - `bonus_max`: `15.0`
 
 ---

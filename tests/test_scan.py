@@ -250,3 +250,65 @@ def test_duplicate_ticker_builder_uses_scan_hits_only() -> None:
     assert list(duplicate["Ticker"]) == ["AAA"]
     assert int(duplicate.iloc[0]["Scan Hits"]) == 3
 
+
+
+def test_watchlist_cards_can_be_filtered_by_selected_scan_names() -> None:
+    raw_watchlist = pd.DataFrame(
+        {
+            "name": ["Alpha", "Beta"],
+            "hybrid_score": [95.0, 80.0],
+            "overlap_count": [2, 1],
+            "vcs": [70.0, 60.0],
+            "earnings_in_7d": [False, True],
+        },
+        index=["AAA", "BBB"],
+    )
+    hits = pd.DataFrame(
+        [
+            {"ticker": "AAA", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "BBB", "name": "Vol Up", "kind": "scan"},
+        ]
+    )
+    config = ScanConfig(
+        card_sections=(
+            ScanCardConfig(scan_name="21EMA scan", display_name="21EMA"),
+            ScanCardConfig(scan_name="Vol Up", display_name="Vol Up"),
+        )
+    )
+
+    cards = WatchlistViewModelBuilder(config).build_scan_cards(raw_watchlist, hits, selected_scan_names=["21EMA scan"])
+
+    assert len(cards) == 1
+    assert cards[0].scan_name == "21EMA scan"
+    assert list(cards[0].rows["Ticker"]) == ["AAA"]
+
+
+def test_duplicate_ticker_builder_respects_selected_scans_and_threshold() -> None:
+    watchlist = pd.DataFrame(
+        {
+            "H": [95.0, 80.0],
+            "overlap_count": [3, 2],
+            "vcs": [70.0, 60.0],
+        },
+        index=["AAA", "BBB"],
+    )
+    hits = pd.DataFrame(
+        [
+            {"ticker": "AAA", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "AAA", "name": "Vol Up", "kind": "scan"},
+            {"ticker": "AAA", "name": "VCS", "kind": "scan"},
+            {"ticker": "BBB", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "BBB", "name": "97 Club", "kind": "scan"},
+        ]
+    )
+
+    duplicate = WatchlistViewModelBuilder().build_duplicate_tickers(
+        watchlist,
+        hits,
+        min_count=2,
+        selected_scan_names=["21EMA scan", "VCS"],
+    )
+
+    assert list(duplicate["Ticker"]) == ["AAA"]
+    assert int(duplicate.iloc[0]["Scan Hits"]) == 2
+    assert float(duplicate.iloc[0]["Hybrid-RS"]) == 95.0

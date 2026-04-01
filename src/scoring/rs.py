@@ -31,7 +31,7 @@ class RSConfig:
 
 
 class RSScorer:
-    """Score symbols versus a benchmark using percentile rank within each symbol's own ratio history."""
+    """Score symbols versus a benchmark using Pine-style percentile rank within each symbol's own ratio history."""
 
     def __init__(self, config: RSConfig) -> None:
         self.config = config
@@ -97,7 +97,12 @@ class RSScorer:
     def _score_ratio_window(self, ratio: pd.Series, lookback: int) -> float:
         if len(ratio) < lookback:
             return float("nan")
-        window = ratio.tail(lookback)
+        window = ratio.tail(lookback).dropna()
+        if window.empty:
+            return float("nan")
+        if self.config.rs_normalization_method == "percentile":
+            current = float(window.iloc[-1])
+            return float((window.le(current).sum() / len(window)) * 100.0)
         ranked = normalize_series(window, self.config.rs_normalization_method)
         if ranked.empty:
             return float("nan")
