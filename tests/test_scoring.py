@@ -5,6 +5,7 @@ import pandas as pd
 from src.scoring.fundamental import FundamentalScoreConfig, FundamentalScorer
 from src.scoring.hybrid import HybridScoreCalculator, HybridScoreConfig
 from src.scoring.rs import RSConfig, RSScorer
+from src.scoring.vcs import VCSCalculator, VCSConfig
 
 
 def test_hybrid_score_renormalizes_missing_weights() -> None:
@@ -71,3 +72,52 @@ def test_rs_scorer_uses_symbol_own_ratio_history_percentile() -> None:
     assert abs(result.loc["BBB", "rs21"] - ((1.0 / 21.0) * 100.0)) < 1e-12
     assert result.loc["AAA", "raw_rs5"] == result.loc["AAA", "rs5"]
     assert result.loc["BBB", "raw_rs21"] == result.loc["BBB", "rs21"]
+
+
+
+def test_rs_scorer_uses_less_or_equal_count_for_tied_windows() -> None:
+    dates = pd.date_range("2025-02-01", periods=5, freq="D")
+    benchmark_history = pd.DataFrame({"close": [100.0] * 5}, index=dates)
+    histories = {
+        "AAA": pd.DataFrame({"close": [1.0, 1.0, 1.0, 1.0, 1.0]}, index=dates),
+        "BBB": pd.DataFrame({"close": [2.0, 1.0, 1.0, 1.0, 1.0]}, index=dates),
+    }
+    snapshot = pd.DataFrame(index=["AAA", "BBB"])
+
+    scorer = RSScorer(RSConfig(rs_lookbacks=(5,)))
+    result = scorer.score(snapshot, histories, benchmark_history)
+
+    assert result.loc["AAA", "rs5"] == 100.0
+    assert result.loc["BBB", "rs5"] == 80.0
+
+
+
+def test_vcs_penalizes_broken_higher_low_against_shifted_structure_base() -> None:
+    dates = pd.date_range("2025-01-01", periods=80, freq="D")
+    base = pd.Series([100.0 + (i * 0.1) for i in range(80)], index=dates, dtype=float)
+    low = base - 1.5
+    high = base + 1.5
+    close = base
+    volume = pd.Series([1_200_000] * 80, index=dates, dtype=float)
+
+    healthy_history = pd.DataFrame({"high": high, "low": low, "close": close, "volume": volume}, index=dates)
+    broken_low = low.copy()
+    broken_low.iloc[-5:] = broken_low.iloc[-5:] - 6.0
+    broken_history = pd.DataFrame({"high": high, "low": broken_low, "close": close, "volume": volume}, index=dates)
+
+    calculator = VCSCalculator(
+        VCSConfig(
+            len_short=10,
+            len_long=20,
+            len_volume=20,
+            hl_lookback=20,
+            penalty_factor=0.75,
+            bonus_max=15.0,
+        )
+    )
+    healthy_score = float(calculator.calculate_series(healthy_history).iloc[-1])
+    broken_score = float(calculator.calculate_series(broken_history).iloc[-1])
+
+    assert 0.0 <= healthy_score <= 100.0
+    assert 0.0 <= broken_score <= 100.0
+    assert healthy_score > broken_score

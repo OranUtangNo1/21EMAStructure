@@ -103,8 +103,10 @@ scoring:
     len_short: 13
     len_long: 63
     len_volume: 50
+    hl_lookback: 63
     sensitivity: 2.0
     trend_penalty_weight: 1.0
+    penalty_factor: 0.75
     bonus_max: 15.0
 
 scan:

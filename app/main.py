@@ -11,7 +11,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
+from src.configuration import load_settings
+from src.dashboard.watchlist import WatchlistViewModelBuilder
 from src.pipeline import PlatformArtifacts, ResearchPlatform
+from src.scan.rules import ScanConfig
 
 
 st.set_page_config(page_title="Growth Trading Screener", layout="wide")
@@ -268,6 +271,11 @@ def load_artifacts(config_path: str, symbols: list[str], force_universe_refresh:
     return platform.run(symbols or None, force_universe_refresh=force_universe_refresh)
 
 
+def load_scan_config(config_path: str) -> ScanConfig:
+    settings = load_settings(config_path)
+    return ScanConfig.from_dict(settings.get("scan", {}))
+
+
 def render_data_health_banner(artifacts: PlatformArtifacts) -> None:
     summary = artifacts.data_health_summary
     if summary.get("sample_count", 0) > 0:
@@ -294,39 +302,66 @@ def _format_trade_date(artifacts: PlatformArtifacts) -> str:
     return trade_date.strftime("%B %d, %Y")
 
 
-def render_watchlist(artifacts: PlatformArtifacts) -> None:
+def render_watchlist(
+    artifacts: PlatformArtifacts,
+    scan_config: ScanConfig | None = None,
+    selected_scan_names: list[str] | None = None,
+    duplicate_min_count: int | None = None,
+) -> None:
+    scan_config = scan_config or ScanConfig()
+    watchlist_builder = WatchlistViewModelBuilder(scan_config)
+    configured_scan_names = [section.scan_name for section in watchlist_builder.available_card_sections()]
+    effective_selected_scan_names = selected_scan_names if selected_scan_names is not None else configured_scan_names
+    selected_scan_name_set = set(effective_selected_scan_names)
+    duplicate_threshold = int(duplicate_min_count if duplicate_min_count is not None else scan_config.duplicate_min_count)
+
     title_col, meta_col = st.columns([4.2, 1.8])
     with title_col:
         st.markdown("<div class='oratek-page-title'>Today's Watchlist</div>", unsafe_allow_html=True)
         st.markdown(f"<div class='oratek-page-subtitle'>{html.escape(_format_trade_date(artifacts))}</div>", unsafe_allow_html=True)
     with meta_col:
         st.markdown(
-            f"<div class='oratek-page-meta'>Sorted by Hybrid-RS</div><div class='oratek-page-submeta'>Universe Mode: {html.escape(str(artifacts.universe_mode))}<br>Universe Size: {len(artifacts.resolved_symbols)}</div>",
+            f"<div class='oratek-page-meta'>Sorted by Hybrid-RS</div><div class='oratek-page-submeta'>Universe Mode: {html.escape(str(artifacts.universe_mode))}<br>Universe Size: {len(artifacts.resolved_symbols)}<br>Cards Selected: {len(effective_selected_scan_names)}<br>Duplicate Threshold: {duplicate_threshold}+</div>",
             unsafe_allow_html=True,
         )
 
     cards: list[tuple[str, list[str], str]] = [
         (card.display_name, _to_ticker_list(card.rows), "No tickers matched this scan.")
         for card in artifacts.watchlist_cards
+        if card.scan_name in selected_scan_name_set
     ]
 
-    duplicate_frame = artifacts.duplicate_tickers.copy()
+    duplicate_frame = watchlist_builder.build_duplicate_tickers(
+        artifacts.watchlist,
+        artifacts.scan_hits,
+        min_count=duplicate_threshold,
+        selected_scan_names=effective_selected_scan_names,
+    )
     duplicate_tickers = _to_ticker_list(duplicate_frame)
+
+    if effective_selected_scan_names:
+        duplicate_note = f"Counted from {len(effective_selected_scan_names)} selected cards. A ticker must appear in {duplicate_threshold}+ selected scans."
+        duplicate_empty_text = "No duplicate tickers in the current watchlist for the selected cards."
+    else:
+        duplicate_note = "No cards are selected. Choose one or more watchlist cards in the sidebar to enable duplicate counting."
+        duplicate_empty_text = "No cards selected."
 
     render_priority_ticker_band(
         "Duplicate Tickers",
         duplicate_tickers,
-        "Overlap count and Hybrid-RS priority are already resolved upstream. This band highlights the strongest names repeated across multiple scan cards.",
-        "No duplicate tickers in the current watchlist.",
+        duplicate_note,
+        duplicate_empty_text,
     )
 
     earnings_frame = artifacts.earnings_today.sort_values("Hybrid-RS", ascending=False) if not artifacts.earnings_today.empty and "Hybrid-RS" in artifacts.earnings_today.columns else artifacts.earnings_today
 
-    if not cards:
-        st.caption("No scan cards are configured or no scan rules matched the current universe.")
+    if not effective_selected_scan_names:
+        st.caption("No watchlist cards are selected.")
+    elif not cards:
+        st.caption("None of the selected cards matched the current universe.")
     else:
-        for start in range(0, len(cards), 3):
-            batch = cards[start : start + 3]
+        for start_offset in range(0, len(cards), 3):
+            batch = cards[start_offset : start_offset + 3]
             columns = st.columns(3)
             for column, (title, tickers, empty_text) in zip(columns, batch):
                 with column:
@@ -483,6 +518,9 @@ def render_market_dashboard(artifacts: PlatformArtifacts) -> None:
 def main() -> None:
     inject_global_styles()
     default_config = ROOT / "config" / "default.yaml"
+    watchlist_scan_config: ScanConfig | None = None
+    selected_watchlist_scans: list[str] | None = None
+    duplicate_threshold: int | None = None
 
     with st.sidebar:
         st.markdown("<div class='oratek-sidebar-title'>Growth Trading Screener</div>", unsafe_allow_html=True)
@@ -495,6 +533,48 @@ def main() -> None:
         symbols_raw = st.text_area("Manual Symbols (optional)", value="", height=120, placeholder="Leave blank to use weekly universe snapshot")
         force_universe_refresh = st.checkbox("Force Weekly Universe Refresh", value=False)
         page = st.radio("Page", ["Today's Watchlist", "RS Radar", "Market Dashboard"])
+
+        if page == "Today's Watchlist":
+            watchlist_scan_config = load_scan_config(config_path)
+            card_sections = watchlist_scan_config.card_sections
+            available_scan_names = [section.scan_name for section in card_sections]
+            display_names = {section.scan_name: section.display_name or section.scan_name for section in card_sections}
+
+            st.markdown("**Watchlist Controls**")
+            selection_key = "watchlist_selected_scan_names"
+            if selection_key not in st.session_state:
+                st.session_state[selection_key] = available_scan_names
+            else:
+                st.session_state[selection_key] = [
+                    name for name in st.session_state[selection_key] if name in available_scan_names
+                ]
+
+            selected_watchlist_scans = st.multiselect(
+                "Cards used for display and Duplicate counting",
+                options=available_scan_names,
+                format_func=lambda name: display_names.get(name, name),
+                key=selection_key,
+            )
+
+            threshold_key = "watchlist_duplicate_threshold"
+            max_threshold = max(1, len(selected_watchlist_scans)) if selected_watchlist_scans else 1
+            if threshold_key not in st.session_state:
+                st.session_state[threshold_key] = min(int(watchlist_scan_config.duplicate_min_count), max_threshold)
+            else:
+                st.session_state[threshold_key] = max(1, min(int(st.session_state[threshold_key]), max_threshold))
+
+            duplicate_threshold = int(
+                st.number_input(
+                    "Duplicate threshold",
+                    min_value=1,
+                    max_value=max_threshold,
+                    step=1,
+                    key=threshold_key,
+                    help="A ticker is shown in Duplicate Tickers only if it appears in at least this many selected scan cards.",
+                )
+            )
+            st.caption("Selected cards are used both for watchlist card display and Duplicate Tickers counting.")
+
         refresh = st.button("Refresh", type="primary")
 
     symbols = parse_symbols(symbols_raw)
@@ -509,7 +589,12 @@ def main() -> None:
     render_data_health_banner(artifacts)
 
     if page == "Today's Watchlist":
-        render_watchlist(artifacts)
+        render_watchlist(
+            artifacts,
+            scan_config=watchlist_scan_config,
+            selected_scan_names=selected_watchlist_scans,
+            duplicate_min_count=duplicate_threshold,
+        )
     elif page == "RS Radar":
         render_rs_radar(artifacts)
     else:

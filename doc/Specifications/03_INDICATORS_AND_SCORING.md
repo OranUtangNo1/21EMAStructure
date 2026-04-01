@@ -230,8 +230,10 @@ Current implementation behavior:
 - align stock close and benchmark close on date index
 - compute `price_ratio = stock_close / benchmark_close`
 - for each lookback window, take the trailing ratio window
-- normalize that window with the configured normalization method
-- use the most recent normalized value as the score for that lookback
+- when `rs_normalization_method = percentile`, score the window with Pine-style percentrank semantics:
+  `count(window values <= current value) / window length * 100`
+- for other normalization methods, normalize the trailing window and use the most recent normalized value as the score for that lookback
+- there is no cross-sectional RS normalization at this stage; the score is derived from the symbol's own ratio history
 
 In the current implementation, `rs*` is equal to `raw_rs*`.
 
@@ -339,13 +341,38 @@ Implemented field:
 
 Current default behavior:
 
-- compute short and long volatility from close-to-close returns
-- compute short and long average range from `(high - low) / close`
-- compute short and long average volume
-- reward contraction in volatility and range
-- add a volume bonus when short-term volume is quieter than long-term volume
-- apply a trend penalty when `close < sma50`
-- clip the result to `[0, 100]`
+- follow the published Pine VCS workflow
+- use variable-length windows in early bars:
+  `len_short = min(bar_count, configured len_short)`,
+  `len_long = min(bar_count, configured len_long)`,
+  `len_volume = min(bar_count, configured len_volume)`
+- compute `true_range = max(high - low, abs(high - prev_close), abs(low - prev_close))`
+- compute `ratio_atr = sma(true_range, len_short) / sma(true_range, len_long)`
+- compute `ratio_std = stdev(close, len_short) / stdev(close, len_long)`
+- compute `vol_ratio = sma(volume, 5) / sma(volume, len_volume)`
+- compute `efficiency = abs(close - close[len_short]) / sum(true_range, len_short)`
+- compute `trend_factor = max(0, 1 - efficiency * trend_penalty_weight)`
+- compute the structural higher-low test with:
+  - `low_recent = lowest(low, len_short)`
+  - `low_base = lowest(low, hl_lookback)[len_short]`
+  - `is_higher_low = low_recent >= low_base` once enough history exists
+- build the raw score as:
+  - `s_atr = max(0, 1 - ratio_atr) * sensitivity`
+  - `s_std = max(0, 1 - ratio_std) * sensitivity`
+  - `s_vol = max(0, 1 - vol_ratio)`
+  - `raw_score = s_atr * 0.4 + s_std * 0.4 + s_vol * 0.2`
+- convert to physics and consistency layers:
+  - `filtered_score = raw_score * trend_factor`
+  - `physics_score = min(100, filtered_score * 100)`
+  - `smooth_physics = ema(physics_score, 3)`
+  - `days_tight = consecutive count of smooth_physics >= 70`
+  - `weighted_physics_score = smooth_physics * ((100 - bonus_max) / 100)`
+  - `consistency_score = min(bonus_max, days_tight)`
+  - `total_score = weighted_physics_score + consistency_score`
+- apply the higher-low penalty:
+  - `final_score = total_score` when `is_higher_low`
+  - `final_score = total_score * penalty_factor` otherwise
+- fill missing values with `0` and clip the final score to `[0, 100]`
 
 Default parameters:
 
@@ -354,8 +381,10 @@ Default parameters:
 - `len_short = 13`
 - `len_long = 63`
 - `len_volume = 50`
+- `hl_lookback = 63`
 - `sensitivity = 2.0`
 - `trend_penalty_weight = 1.0`
+- `penalty_factor = 0.75`
 - `bonus_max = 15.0`
 
 ## 9. Interpretation Notes
@@ -363,5 +392,6 @@ Default parameters:
 Important distinctions in the active codebase:
 
 - RSI is a price-momentum oscillator and is separate from SPY-relative RS
+- RS percentile scoring is time-series based and uses each symbol's own benchmark-relative ratio history
 - raw RS and normalized RS currently collapse to the same value because the scorer returns the normalized ratio-window endpoint directly
 - fundamental, industry, hybrid, and VCS are configurable research layers, not fixed external standards

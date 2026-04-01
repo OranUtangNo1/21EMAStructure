@@ -151,6 +151,7 @@ Implemented indicators:
 Use in workflow:
 
 - raw RS is used by the scan layer to compare stock performance versus SPY across horizons
+- the default RS score is the trailing-window percentrank of each symbol's own `close / SPY` ratio history
 - normalized RS is used in ranking and dashboard summaries
 - RSI is used as a separate momentum-style oscillator and is not the same thing as the SPY-relative RS calculation
 
@@ -168,7 +169,7 @@ Use in workflow:
 - fundamental score summarizes earnings and revenue growth inputs
 - industry score reflects the relative strength of grouped peers
 - hybrid score combines RS, fundamental, and industry components
-- VCS estimates contraction quality and maturity
+- VCS estimates contraction quality and maturity using the published Pine workflow: true-range contraction, close stdev contraction, short-vs-long volume contraction, efficiency-based trend penalty, structural higher-low validation, EMA smoothing, and a consistency bonus
 
 ## 5. What The User Should Treat As Research Output
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 import pandas as pd
@@ -20,6 +21,9 @@ class WatchlistViewModelBuilder:
 
     def __init__(self, config: ScanConfig | None = None) -> None:
         self.config = config or ScanConfig()
+
+    def available_card_sections(self) -> tuple[ScanCardConfig, ...]:
+        return self.config.card_sections
 
     def build(self, watchlist: pd.DataFrame) -> pd.DataFrame:
         if watchlist.empty:
@@ -65,12 +69,17 @@ class WatchlistViewModelBuilder:
         display.loc[:, numeric_columns] = display.loc[:, numeric_columns].round(2)
         return display
 
-    def build_scan_cards(self, watchlist: pd.DataFrame, hits: pd.DataFrame) -> list[ScanCardViewModel]:
+    def build_scan_cards(
+        self,
+        watchlist: pd.DataFrame,
+        hits: pd.DataFrame,
+        selected_scan_names: Iterable[str] | None = None,
+    ) -> list[ScanCardViewModel]:
         if watchlist.empty or hits.empty:
             return []
 
         cards: list[ScanCardViewModel] = []
-        for section in self.config.card_sections:
+        for section in self._iter_card_sections(selected_scan_names):
             card = self._build_single_card(section, watchlist, hits)
             if card is not None:
                 cards.append(card)
@@ -101,11 +110,22 @@ class WatchlistViewModelBuilder:
             display["Hybrid-RS"] = display["Hybrid-RS"].round(2)
         return display
 
-    def build_duplicate_tickers(self, watchlist: pd.DataFrame, hits: pd.DataFrame, min_count: int) -> pd.DataFrame:
+    def build_duplicate_tickers(
+        self,
+        watchlist: pd.DataFrame,
+        hits: pd.DataFrame,
+        min_count: int,
+        selected_scan_names: Iterable[str] | None = None,
+    ) -> pd.DataFrame:
         if watchlist.empty or hits.empty:
             return pd.DataFrame(columns=["Ticker", "Scan Hits", "Hybrid-RS", "Overlap", "VCS"])
 
         scan_hits = hits.loc[hits["kind"] == "scan"].copy()
+        selected_names = self._normalize_selected_scan_names(selected_scan_names)
+        if selected_names is not None:
+            if not selected_names:
+                return pd.DataFrame(columns=["Ticker", "Scan Hits", "Hybrid-RS", "Overlap", "VCS"])
+            scan_hits = scan_hits.loc[scan_hits["name"].isin(selected_names)].copy()
         if scan_hits.empty:
             return pd.DataFrame(columns=["Ticker", "Scan Hits", "Hybrid-RS", "Overlap", "VCS"])
 
@@ -118,19 +138,33 @@ class WatchlistViewModelBuilder:
         if frame.empty:
             return pd.DataFrame(columns=["Ticker", "Scan Hits", "Hybrid-RS", "Overlap", "VCS"])
 
-        frame["scan_hit_count"] = scan_counts.reindex(frame.index).fillna(0).astype(int)
-        if "overlap_count" not in frame.columns:
-            frame["overlap_count"] = frame["scan_hit_count"]
-        frame["duplicate_ticker"] = frame["scan_hit_count"] >= int(min_count)
-        sort_columns = [column for column in ["scan_hit_count", "hybrid_score", "overlap_count", "vcs"] if column in frame.columns]
-        if sort_columns:
-            frame = frame.sort_values(sort_columns, ascending=[False] * len(sort_columns))
+        frame["selected_scan_hit_count"] = scan_counts.reindex(frame.index).fillna(0).astype(int)
+        frame["selected_overlap_count"] = frame["selected_scan_hit_count"]
+        frame["duplicate_ticker"] = frame["selected_scan_hit_count"] >= int(min_count)
+
+        hybrid_column = "hybrid_score" if "hybrid_score" in frame.columns else "H" if "H" in frame.columns else None
+        vcs_column = "vcs" if "vcs" in frame.columns else "VCS" if "VCS" in frame.columns else None
+
+        sort_columns: list[str] = ["selected_scan_hit_count"]
+        if hybrid_column:
+            sort_columns.append(hybrid_column)
+        sort_columns.append("selected_overlap_count")
+        if vcs_column:
+            sort_columns.append(vcs_column)
+        frame = frame.sort_values(sort_columns, ascending=[False] * len(sort_columns))
 
         display = frame.reset_index(names="Ticker").copy()
-        columns = ["Ticker", "scan_hit_count", "hybrid_score", "overlap_count", "vcs"]
-        available = [column for column in columns if column in display.columns]
-        display = display[available].copy()
-        display = display.rename(columns={"scan_hit_count": "Scan Hits", "hybrid_score": "Hybrid-RS", "overlap_count": "Overlap", "vcs": "VCS"})
+        selected_columns = ["Ticker", "selected_scan_hit_count"]
+        rename_map = {"selected_scan_hit_count": "Scan Hits", "selected_overlap_count": "Overlap"}
+        if hybrid_column:
+            selected_columns.append(hybrid_column)
+            rename_map[hybrid_column] = "Hybrid-RS"
+        selected_columns.append("selected_overlap_count")
+        if vcs_column:
+            selected_columns.append(vcs_column)
+            rename_map[vcs_column] = "VCS"
+
+        display = display[selected_columns].copy().rename(columns=rename_map)
         for column in ["Hybrid-RS", "VCS"]:
             if column in display.columns:
                 display[column] = display[column].round(2)
@@ -174,6 +208,26 @@ class WatchlistViewModelBuilder:
             if column in display.columns:
                 display[column] = display[column].round(2)
         return display
+
+    def _iter_card_sections(self, selected_scan_names: Iterable[str] | None) -> tuple[ScanCardConfig, ...]:
+        selected_names = self._normalize_selected_scan_names(selected_scan_names)
+        if selected_names is None:
+            return self.config.card_sections
+        selected_name_set = set(selected_names)
+        return tuple(section for section in self.config.card_sections if section.scan_name in selected_name_set)
+
+    def _normalize_selected_scan_names(self, selected_scan_names: Iterable[str] | None) -> tuple[str, ...] | None:
+        if selected_scan_names is None:
+            return None
+        valid_names = {section.scan_name for section in self.config.card_sections}
+        names = tuple(
+            dict.fromkeys(
+                str(name).strip()
+                for name in selected_scan_names
+                if str(name).strip() and str(name).strip() in valid_names
+            )
+        )
+        return names
 
 
 class WatchlistCardGridBuilder(WatchlistViewModelBuilder):
