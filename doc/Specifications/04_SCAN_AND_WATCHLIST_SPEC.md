@@ -60,6 +60,8 @@ Current implemented behavior:
 - annotation results are not used to populate the watchlist overlap aliases
 - `hit_lists` now mirrors `hit_scans` for compatibility
 - `list_overlap_count` now mirrors `scan_hit_count` for compatibility
+- the default annotation family currently includes `RS 21 >= 63` and `High Est. EPS Growth`
+- `RS 21 >= 63` uses the app RS field and currently means `rs21 >= 63`
 
 The current annotation family and scan-to-list relationships are documented in `doc/Scan/scan_00_index.md`.
 
@@ -134,13 +136,15 @@ Current implemented behavior:
 
 - the page recomputes duplicate tickers from raw scan hits filtered to the currently selected cards
 - the page allows a user-selected duplicate threshold
+- the page allows duplicate-only sidebar subfilters after duplicate rows are formed
+- `Top3 HybridRS` keeps only the three highest `hybrid_score` duplicate rows
 - this UI threshold does not change backend watchlist eligibility
 - this UI threshold does not rewrite the stored `duplicate_ticker` field on raw watchlist rows
 
 Therefore two duplicate concepts coexist:
 
 - backend duplicate flag: fixed by `duplicate_min_count` in the scan config
-- UI duplicate band: recalculated from selected cards plus the current sidebar threshold
+- UI duplicate band: recalculated from selected cards plus the current sidebar threshold and any duplicate-only subfilters
 
 ---
 
@@ -226,3 +230,4 @@ The active implementation keeps these areas configurable:
 - universe thresholds
 - UI-selected card subset for display and duplicate-band counting
 - UI duplicate threshold for the current page session
+- UI duplicate-only subfilters for the current page session

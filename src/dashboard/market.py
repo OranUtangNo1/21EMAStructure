@@ -92,6 +92,9 @@ DEFAULT_COMPONENT_WEIGHTS = {
     "vix_score": 0.05,
 }
 
+VALID_MARKET_CALCULATION_MODES = frozenset({"etf", "active_symbols", "blended"})
+DEFAULT_MARKET_CALCULATION_MODE = "etf"
+
 
 @dataclass(slots=True)
 class MarketConditionConfig:
@@ -102,6 +105,9 @@ class MarketConditionConfig:
     external_etfs: tuple[MarketUniverseItem, ...] = field(default_factory=lambda: DEFAULT_EXTERNAL_ETFS)
     factor_etfs: tuple[MarketUniverseItem, ...] = field(default_factory=lambda: DEFAULT_FACTOR_ETFS)
     component_weights: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_COMPONENT_WEIGHTS))
+    calculation_mode: str = DEFAULT_MARKET_CALCULATION_MODE
+    etf_weight: float = 0.5
+    active_symbols_weight: float = 0.5
     bullish_threshold: float = 80.0
     positive_threshold: float = 60.0
     neutral_threshold: float = 40.0
@@ -119,12 +125,26 @@ class MarketConditionConfig:
         factor_items = tuple(MarketUniverseItem.from_payload(item) for item in factor_payload) if factor_payload else DEFAULT_FACTOR_ETFS
         component_weights = dict(DEFAULT_COMPONENT_WEIGHTS)
         component_weights.update({str(key): float(value) for key, value in dict(payload.get("component_weights", {})).items()})
+        calculation_mode = str(payload.get("calculation_mode", DEFAULT_MARKET_CALCULATION_MODE)).strip().lower() or DEFAULT_MARKET_CALCULATION_MODE
+        if calculation_mode not in VALID_MARKET_CALCULATION_MODES:
+            raise ValueError(
+                f"Unsupported market calculation_mode: {calculation_mode!r}. Expected one of {sorted(VALID_MARKET_CALCULATION_MODES)!r}."
+            )
+        etf_weight = float(payload.get("etf_weight", 0.5))
+        active_symbols_weight = float(payload.get("active_symbols_weight", 0.5))
+        if etf_weight < 0 or active_symbols_weight < 0:
+            raise ValueError("Market blend weights must be non-negative.")
+        if calculation_mode == "blended" and (etf_weight + active_symbols_weight) <= 0:
+            raise ValueError("Blended market calculation_mode requires a positive total weight.")
         return cls(
             condition_etfs=condition_items,
             leadership_etfs=leadership_items,
             external_etfs=external_items,
             factor_etfs=factor_items,
             component_weights=component_weights,
+            calculation_mode=calculation_mode,
+            etf_weight=etf_weight,
+            active_symbols_weight=active_symbols_weight,
             bullish_threshold=float(payload.get("bullish_threshold", 80.0)),
             positive_threshold=float(payload.get("positive_threshold", 60.0)),
             neutral_threshold=float(payload.get("neutral_threshold", 40.0)),
@@ -284,12 +304,12 @@ class MarketConditionScorer:
         if benchmark_history.empty or "close" not in benchmark_history.columns:
             return self._empty_result()
 
-        latest_components = self._component_scores_at_offset(market_histories, 0)
+        latest_components = self._component_scores_at_offset(stock_histories, market_histories, 0)
         score = self._score_from_components(latest_components)
-        score_1d_ago = self._rounded_score_at_offset(market_histories, 1)
-        score_1w_ago = self._rounded_score_at_offset(market_histories, 5)
-        score_1m_ago = self._rounded_score_at_offset(market_histories, 21)
-        score_3m_ago = self._rounded_score_at_offset(market_histories, 63)
+        score_1d_ago = self._rounded_score_at_offset(stock_histories, market_histories, 1)
+        score_1w_ago = self._rounded_score_at_offset(stock_histories, market_histories, 5)
+        score_1m_ago = self._rounded_score_at_offset(stock_histories, market_histories, 21)
+        score_3m_ago = self._rounded_score_at_offset(stock_histories, market_histories, 63)
         performance_overview = self._performance_overview(benchmark_history)
         vix_history = market_histories.get("^VIX", pd.DataFrame())
         vix_close = self._latest_close(vix_history)
@@ -354,16 +374,53 @@ class MarketConditionScorer:
             update_time=datetime.now().isoformat(timespec="seconds"),
         )
 
-    def _component_scores_at_offset(self, market_histories: dict[str, pd.DataFrame], offset: int) -> dict[str, float]:
+    def _component_scores_at_offset(
+        self,
+        stock_histories: dict[str, pd.DataFrame],
+        market_histories: dict[str, pd.DataFrame],
+        offset: int,
+    ) -> dict[str, float]:
+        vix_history = market_histories.get("^VIX", pd.DataFrame())
+        etf_components, etf_count = self._component_scores_for_histories(
+            [market_histories.get(item.ticker, pd.DataFrame()) for item in self.config.condition_etfs],
+            vix_history,
+            offset,
+        )
+        active_components, active_count = self._component_scores_for_histories(
+            list(stock_histories.values()),
+            vix_history,
+            offset,
+        )
+
+        if self.config.calculation_mode == "etf":
+            return etf_components
+        if self.config.calculation_mode == "active_symbols":
+            return active_components
+        if etf_count == 0:
+            return active_components
+        if active_count == 0:
+            return etf_components
+        return self._blend_components(
+            etf_components,
+            active_components,
+            self.config.etf_weight,
+            self.config.active_symbols_weight,
+        )
+
+    def _component_scores_for_histories(
+        self,
+        histories: list[pd.DataFrame],
+        vix_history: pd.DataFrame,
+        offset: int,
+    ) -> tuple[dict[str, float], int]:
         rows: list[dict[str, float]] = []
-        for item in self.config.condition_etfs:
-            history = market_histories.get(item.ticker, pd.DataFrame())
+        for history in histories:
             feature_row = self._feature_row(history, offset)
             if feature_row is not None:
                 rows.append(feature_row)
         frame = pd.DataFrame(rows)
         if frame.empty:
-            return {key: 0.0 for key in self.config.component_weights}
+            return self._empty_components(), 0
 
         components = {
             "pct_above_sma10": float((frame["close"] >= frame["sma10"]).mean() * 100.0),
@@ -378,8 +435,35 @@ class MarketConditionScorer:
             "pct_positive_ytd": float((frame["ret_ytd"] > 0).mean() * 100.0),
             "pct_2w_high": float(frame["is_2w_high"].mean() * 100.0),
         }
-        components["vix_score"] = self._vix_score(market_histories.get("^VIX", pd.DataFrame()), offset)
-        return components
+        components["vix_score"] = self._vix_score(vix_history, offset)
+        return components, len(rows)
+
+    def _empty_components(self) -> dict[str, float]:
+        component_names = set(self.config.component_weights)
+        component_names.update({"pct_positive_1w", "pct_positive_1y"})
+        return {name: 0.0 for name in component_names}
+
+    def _blend_components(
+        self,
+        etf_components: dict[str, float],
+        active_components: dict[str, float],
+        etf_weight: float,
+        active_symbols_weight: float,
+    ) -> dict[str, float]:
+        total_weight = etf_weight + active_symbols_weight
+        if total_weight <= 0:
+            return dict(etf_components)
+        component_names = set(etf_components) | set(active_components)
+        return {
+            name: float(
+                (
+                    etf_components.get(name, 0.0) * etf_weight
+                    + active_components.get(name, 0.0) * active_symbols_weight
+                )
+                / total_weight
+            )
+            for name in component_names
+        }
 
     def _feature_row(self, history: pd.DataFrame, offset: int) -> dict[str, float] | None:
         if history.empty or "close" not in history.columns:
@@ -440,8 +524,13 @@ class MarketConditionScorer:
     def _score_from_components(self, components: dict[str, float]) -> float:
         return float(sum(components.get(name, 50.0) * weight for name, weight in self.config.component_weights.items()))
 
-    def _rounded_score_at_offset(self, market_histories: dict[str, pd.DataFrame], offset: int) -> float | None:
-        components = self._component_scores_at_offset(market_histories, offset)
+    def _rounded_score_at_offset(
+        self,
+        stock_histories: dict[str, pd.DataFrame],
+        market_histories: dict[str, pd.DataFrame],
+        offset: int,
+    ) -> float | None:
+        components = self._component_scores_at_offset(stock_histories, market_histories, offset)
         if not components:
             return None
         return round(self._score_from_components(components), 2)

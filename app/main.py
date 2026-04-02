@@ -15,6 +15,7 @@ from src.configuration import load_settings
 from src.dashboard.watchlist import WatchlistViewModelBuilder
 from src.pipeline import PlatformArtifacts, ResearchPlatform
 from src.scan.rules import ScanConfig
+from src.ui_preferences import UserPreferenceStore
 
 
 st.set_page_config(page_title="Growth Trading Screener", layout="wide")
@@ -342,6 +343,26 @@ def load_scan_config(config_path: str) -> ScanConfig:
     return ScanConfig.from_dict(settings.get("scan", {}))
 
 
+def load_user_preference_store(config_path: str) -> UserPreferenceStore:
+    settings = load_settings(config_path)
+    app_settings = settings.get("app", {}) if isinstance(settings.get("app", {}), dict) else {}
+    configured_path = str(app_settings.get("user_preferences_path", "")).strip()
+    if configured_path:
+        preference_path = Path(configured_path).expanduser()
+        if not preference_path.is_absolute():
+            preference_path = ROOT / preference_path
+    else:
+        cache_dir = Path(str(app_settings.get("cache_dir", "data_cache"))).expanduser()
+        if not cache_dir.is_absolute():
+            cache_dir = ROOT / cache_dir
+        preference_path = cache_dir / "user_preferences.yaml"
+    return UserPreferenceStore(preference_path)
+
+
+def watchlist_preference_namespace(config_path: str) -> str:
+    return str(Path(config_path).expanduser().resolve(strict=False))
+
+
 def render_data_health_banner(artifacts: PlatformArtifacts) -> None:
     summary = artifacts.data_health_summary
     if summary.get("sample_count", 0) > 0:
@@ -374,6 +395,7 @@ def render_watchlist(
     selected_scan_names: list[str] | None = None,
     duplicate_min_count: int | None = None,
     selected_annotation_filters: list[str] | None = None,
+    selected_duplicate_subfilters: list[str] | None = None,
 ) -> None:
     scan_config = scan_config or ScanConfig()
     watchlist_builder = WatchlistViewModelBuilder(scan_config)
@@ -383,6 +405,9 @@ def render_watchlist(
         selected_annotation_filters
         if selected_annotation_filters is not None
         else list(scan_config.enabled_annotation_filters)
+    )
+    effective_selected_duplicate_subfilters = (
+        selected_duplicate_subfilters if selected_duplicate_subfilters is not None else []
     )
     selected_scan_name_set = set(effective_selected_scan_names)
     duplicate_threshold = int(duplicate_min_count if duplicate_min_count is not None else scan_config.duplicate_min_count)
@@ -413,8 +438,13 @@ def render_watchlist(
             if effective_selected_annotation_filters
             else "Post-scan Filters: 0"
         )
+        duplicate_subfilter_meta = (
+            f"Duplicate Subfilters: {len(effective_selected_duplicate_subfilters)}"
+            if effective_selected_duplicate_subfilters
+            else "Duplicate Subfilters: 0"
+        )
         st.markdown(
-            f"<div class='oratek-page-meta'>Sorted by Hybrid-RS</div><div class='oratek-page-submeta'>Universe Mode: {html.escape(str(artifacts.universe_mode))}<br>Universe Size: {len(artifacts.resolved_symbols)}<br>Cards Selected: {len(effective_selected_scan_names)}<br>{html.escape(filter_meta)}<br>Duplicate Threshold: {duplicate_threshold}+</div>",
+            f"<div class='oratek-page-meta'>Sorted by Hybrid-RS</div><div class='oratek-page-submeta'>Universe Mode: {html.escape(str(artifacts.universe_mode))}<br>Universe Size: {len(artifacts.resolved_symbols)}<br>Cards Selected: {len(effective_selected_scan_names)}<br>{html.escape(filter_meta)}<br>{html.escape(duplicate_subfilter_meta)}<br>Duplicate Threshold: {duplicate_threshold}+</div>",
             unsafe_allow_html=True,
         )
 
@@ -429,6 +459,7 @@ def render_watchlist(
         artifacts.scan_hits,
         min_count=duplicate_threshold,
         selected_scan_names=effective_selected_scan_names,
+        selected_duplicate_subfilters=effective_selected_duplicate_subfilters,
     )
     duplicate_tickers = _to_ticker_list(duplicate_frame)
 
@@ -437,6 +468,8 @@ def render_watchlist(
         if effective_selected_annotation_filters:
             duplicate_note += f" after {len(effective_selected_annotation_filters)} post-scan filter(s)"
         duplicate_note += f". A ticker must appear in {duplicate_threshold}+ selected scans."
+        if effective_selected_duplicate_subfilters:
+            duplicate_note += f" Duplicate subfilters: {', '.join(effective_selected_duplicate_subfilters)}."
         duplicate_empty_text = "No duplicate tickers in the current watchlist for the selected cards."
     else:
         duplicate_note = "No cards are selected. Choose one or more watchlist cards in the sidebar to enable duplicate counting."
@@ -724,6 +757,9 @@ def main() -> None:
     selected_watchlist_scans: list[str] | None = None
     selected_annotation_filters: list[str] | None = None
     duplicate_threshold: int | None = None
+    watchlist_preference_store: UserPreferenceStore | None = None
+    watchlist_preferences: dict[str, object] = {}
+    watchlist_preferences_namespace: str | None = None
 
     with st.sidebar:
         st.markdown("<div class='oratek-sidebar-title'>Growth Trading Screener</div>", unsafe_allow_html=True)
@@ -739,8 +775,12 @@ def main() -> None:
 
         if page == "Today's Watchlist":
             watchlist_scan_config = load_scan_config(config_path)
+            watchlist_preference_store = load_user_preference_store(config_path)
+            watchlist_preferences_namespace = watchlist_preference_namespace(config_path)
+            watchlist_preferences = watchlist_preference_store.load_group("watchlist_controls", watchlist_preferences_namespace)
             card_sections = watchlist_scan_config.card_sections
             annotation_filters = watchlist_scan_config.annotation_filters
+            available_duplicate_subfilters = list(WatchlistViewModelBuilder(watchlist_scan_config).available_duplicate_subfilters())
             available_scan_names = [section.scan_name for section in card_sections]
             display_names = {section.scan_name: section.display_name or section.scan_name for section in card_sections}
             available_annotation_names = [section.filter_name for section in annotation_filters]
@@ -753,17 +793,27 @@ def main() -> None:
             selection_key = "watchlist_selected_scan_names"
             selection_defaults_key = "watchlist_selected_scan_names_defaults"
             default_selected_scan_names = list(watchlist_scan_config.startup_selected_scan_names())
+            persisted_selected_scan_names = watchlist_preferences.get("selected_scan_names", default_selected_scan_names)
+            if not isinstance(persisted_selected_scan_names, list):
+                persisted_selected_scan_names = default_selected_scan_names
+            persisted_selected_scan_names = [
+                str(name) for name in persisted_selected_scan_names if str(name) in available_scan_names
+            ]
             selection_defaults_signature = (
-                str(config_path),
+                watchlist_preferences_namespace,
                 tuple(available_scan_names),
                 tuple(default_selected_scan_names),
             )
+            current_selected_scan_names = st.session_state.get(
+                selection_key,
+                persisted_selected_scan_names,
+            )
             if st.session_state.get(selection_defaults_key) != selection_defaults_signature:
-                st.session_state[selection_key] = default_selected_scan_names
+                st.session_state[selection_key] = persisted_selected_scan_names
                 st.session_state[selection_defaults_key] = selection_defaults_signature
             else:
                 st.session_state[selection_key] = [
-                    name for name in st.session_state[selection_key] if name in available_scan_names
+                    name for name in current_selected_scan_names if name in available_scan_names
                 ]
 
             selected_watchlist_scans = st.multiselect(
@@ -774,16 +824,29 @@ def main() -> None:
             )
 
             annotation_key = "watchlist_selected_annotation_filters"
+            annotation_defaults_key = "watchlist_selected_annotation_filters_defaults"
             default_annotation_names = [
                 name
                 for name in watchlist_scan_config.enabled_annotation_filters
                 if name in available_annotation_names
             ]
-            if annotation_key not in st.session_state:
-                st.session_state[annotation_key] = default_annotation_names
+            persisted_annotation_names = watchlist_preferences.get("selected_annotation_filters", default_annotation_names)
+            if not isinstance(persisted_annotation_names, list):
+                persisted_annotation_names = default_annotation_names
+            persisted_annotation_names = [
+                str(name) for name in persisted_annotation_names if str(name) in available_annotation_names
+            ]
+            annotation_defaults_signature = (
+                watchlist_preferences_namespace,
+                tuple(available_annotation_names),
+                tuple(default_annotation_names),
+            )
+            if st.session_state.get(annotation_defaults_key) != annotation_defaults_signature:
+                st.session_state[annotation_key] = persisted_annotation_names
+                st.session_state[annotation_defaults_key] = annotation_defaults_signature
             else:
                 st.session_state[annotation_key] = [
-                    name for name in st.session_state[annotation_key] if name in available_annotation_names
+                    name for name in st.session_state.get(annotation_key, persisted_annotation_names) if name in available_annotation_names
                 ]
 
             selected_annotation_filters = st.multiselect(
@@ -794,12 +857,58 @@ def main() -> None:
                 help="Filters are applied after scan eligibility. They narrow displayed cards and Duplicate Tickers without changing the underlying scan candidate set.",
             )
 
-            threshold_key = "watchlist_duplicate_threshold"
-            max_threshold = max(1, len(selected_watchlist_scans)) if selected_watchlist_scans else 1
-            if threshold_key not in st.session_state:
-                st.session_state[threshold_key] = min(int(watchlist_scan_config.duplicate_min_count), max_threshold)
+            duplicate_subfilter_key = "watchlist_selected_duplicate_subfilters"
+            duplicate_subfilter_defaults_key = "watchlist_selected_duplicate_subfilters_defaults"
+            default_duplicate_subfilters: list[str] = []
+            persisted_duplicate_subfilters = watchlist_preferences.get(
+                "selected_duplicate_subfilters",
+                default_duplicate_subfilters,
+            )
+            if not isinstance(persisted_duplicate_subfilters, list):
+                persisted_duplicate_subfilters = default_duplicate_subfilters
+            persisted_duplicate_subfilters = [
+                str(name) for name in persisted_duplicate_subfilters if str(name) in available_duplicate_subfilters
+            ]
+            duplicate_subfilter_defaults_signature = (
+                watchlist_preferences_namespace,
+                tuple(available_duplicate_subfilters),
+                tuple(default_duplicate_subfilters),
+            )
+            if st.session_state.get(duplicate_subfilter_defaults_key) != duplicate_subfilter_defaults_signature:
+                st.session_state[duplicate_subfilter_key] = persisted_duplicate_subfilters
+                st.session_state[duplicate_subfilter_defaults_key] = duplicate_subfilter_defaults_signature
             else:
-                st.session_state[threshold_key] = max(1, min(int(st.session_state[threshold_key]), max_threshold))
+                st.session_state[duplicate_subfilter_key] = [
+                    name
+                    for name in st.session_state.get(duplicate_subfilter_key, persisted_duplicate_subfilters)
+                    if name in available_duplicate_subfilters
+                ]
+
+            selected_duplicate_subfilters = st.multiselect(
+                "Duplicate subfilters",
+                options=available_duplicate_subfilters,
+                key=duplicate_subfilter_key,
+                help="Applied only to Duplicate Tickers after duplicate thresholding. Top3 HybridRS keeps the three highest hybrid_score names among duplicate candidates.",
+            )
+
+            threshold_key = "watchlist_duplicate_threshold"
+            threshold_defaults_key = "watchlist_duplicate_threshold_defaults"
+            max_threshold = max(1, len(selected_watchlist_scans)) if selected_watchlist_scans else 1
+            persisted_duplicate_threshold = watchlist_preferences.get(
+                "duplicate_threshold",
+                int(watchlist_scan_config.duplicate_min_count),
+            )
+            try:
+                persisted_duplicate_threshold_int = int(persisted_duplicate_threshold)
+            except (TypeError, ValueError):
+                persisted_duplicate_threshold_int = int(watchlist_scan_config.duplicate_min_count)
+            persisted_duplicate_threshold_int = max(1, min(persisted_duplicate_threshold_int, max_threshold))
+            threshold_defaults_signature = (watchlist_preferences_namespace, max_threshold)
+            if st.session_state.get(threshold_defaults_key) != threshold_defaults_signature:
+                st.session_state[threshold_key] = persisted_duplicate_threshold_int
+                st.session_state[threshold_defaults_key] = threshold_defaults_signature
+            else:
+                st.session_state[threshold_key] = max(1, min(int(st.session_state.get(threshold_key, persisted_duplicate_threshold_int)), max_threshold))
 
             duplicate_threshold = int(
                 st.number_input(
@@ -811,7 +920,18 @@ def main() -> None:
                     help="A ticker is shown in Duplicate Tickers only if it appears in at least this many selected scan cards.",
                 )
             )
-            st.caption("Selected cards drive card display and Duplicate Tickers. Post-scan filters narrow the displayed watchlist after scan hits are computed.")
+            if watchlist_preference_store is not None and watchlist_preferences_namespace is not None:
+                watchlist_preference_store.save_group(
+                    "watchlist_controls",
+                    watchlist_preferences_namespace,
+                    {
+                        "selected_scan_names": list(selected_watchlist_scans),
+                        "selected_annotation_filters": list(selected_annotation_filters),
+                        "selected_duplicate_subfilters": list(selected_duplicate_subfilters),
+                        "duplicate_threshold": duplicate_threshold,
+                    },
+                )
+            st.caption("Selected cards drive card display and Duplicate Tickers. Post-scan filters narrow the displayed watchlist after scan hits are computed. Duplicate subfilters apply only inside Duplicate Tickers.")
 
         refresh = st.button("Refresh", type="primary")
 
@@ -833,6 +953,7 @@ def main() -> None:
             selected_scan_names=selected_watchlist_scans,
             duplicate_min_count=duplicate_threshold,
             selected_annotation_filters=selected_annotation_filters,
+            selected_duplicate_subfilters=selected_duplicate_subfilters,
         )
     elif page == "RS Radar":
         render_rs_radar(artifacts)

@@ -29,9 +29,13 @@ DEFAULT_SCAN_RULE_NAMES = (
 )
 
 DEFAULT_ANNOTATION_FILTER_NAMES = (
-    "Relative Strength 21 > 63",
+    "RS 21 >= 63",
     "High Est. EPS Growth",
 )
+
+ANNOTATION_FILTER_NAME_ALIASES = {
+    "Relative Strength 21 > 63": "RS 21 >= 63",
+}
 
 DEFAULT_CARD_SORT_COLUMNS = ("hybrid_score", "overlap_count", "vcs")
 DEFAULT_CARD_SECTION_PAYLOADS = (
@@ -52,11 +56,11 @@ DEFAULT_CARD_SECTION_PAYLOADS = (
     {"scan_name": "RS Acceleration", "display_name": "RS Accel"},
 )
 DEFAULT_ANNOTATION_FILTER_PAYLOADS = (
-    {"filter_name": "Relative Strength 21 > 63", "display_name": "RSI 21 > 63"},
+    {"filter_name": "RS 21 >= 63", "display_name": "RS 21 >= 63"},
     {"filter_name": "High Est. EPS Growth", "display_name": "High Est. EPS Growth"},
 )
 ANNOTATION_FILTER_COLUMN_NAMES = {
-    "Relative Strength 21 > 63": "annotation_rsi21_gt_63",
+    "RS 21 >= 63": "annotation_rs21_gte_63",
     "High Est. EPS Growth": "annotation_high_eps_growth",
 }
 
@@ -101,8 +105,9 @@ class AnnotationFilterConfig:
     @classmethod
     def from_dict(cls, payload: dict[str, object] | str) -> "AnnotationFilterConfig":
         if isinstance(payload, str):
-            return cls(filter_name=payload, display_name=payload)
-        filter_name = str(payload.get("filter_name", payload.get("name", ""))).strip()
+            canonical_name = _canonical_annotation_filter_name(payload)
+            return cls(filter_name=canonical_name, display_name=canonical_name)
+        filter_name = _canonical_annotation_filter_name(str(payload.get("filter_name", payload.get("name", ""))).strip())
         if not filter_name:
             raise ValueError("annotation_filters items require filter_name")
         display_name = payload.get("display_name")
@@ -168,8 +173,8 @@ class ScanConfig:
             raw_annotation_names = payload.get("enabled_annotation_filters", ())
         else:
             legacy_names = payload.get("enabled_list_rules", ())
-            raw_annotation_names = [name for name in legacy_names if str(name).strip() in DEFAULT_ANNOTATION_FILTER_NAMES]
-        enabled_annotation_filters = _normalize_name_tuple(raw_annotation_names)
+            raw_annotation_names = [name for name in legacy_names if _canonical_annotation_filter_name(name) in ANNOTATION_FILTER_REGISTRY]
+        enabled_annotation_filters = _normalize_annotation_name_tuple(raw_annotation_names)
         annotation_payloads = payload.get("annotation_filters", DEFAULT_ANNOTATION_FILTER_PAYLOADS)
         annotation_filters = tuple(AnnotationFilterConfig.from_dict(item) for item in annotation_payloads)
         card_payloads = payload.get("card_sections", DEFAULT_CARD_SECTION_PAYLOADS)
@@ -238,9 +243,15 @@ def evaluate_annotation_filters(row: pd.Series, config: ScanConfig) -> dict[str,
 
 
 def annotation_filter_column_name(filter_name: str) -> str:
-    if filter_name not in ANNOTATION_FILTER_COLUMN_NAMES:
+    canonical_name = _canonical_annotation_filter_name(filter_name)
+    if canonical_name not in ANNOTATION_FILTER_COLUMN_NAMES:
         raise ValueError(f"Unknown annotation filter: {filter_name}")
-    return ANNOTATION_FILTER_COLUMN_NAMES[filter_name]
+    return ANNOTATION_FILTER_COLUMN_NAMES[canonical_name]
+
+
+def _canonical_annotation_filter_name(name: object) -> str:
+    cleaned = str(name).strip()
+    return ANNOTATION_FILTER_NAME_ALIASES.get(cleaned, cleaned)
 
 
 def _normalize_name_tuple(raw_names: object) -> tuple[str, ...]:
@@ -254,6 +265,25 @@ def _normalize_name_tuple(raw_names: object) -> tuple[str, ...]:
         except TypeError:
             items = [raw_names]
     return tuple(dict.fromkeys(str(name).strip() for name in items if str(name).strip()))
+
+
+def _normalize_annotation_name_tuple(raw_names: object) -> tuple[str, ...]:
+    if raw_names is None:
+        return tuple()
+    if isinstance(raw_names, str):
+        items = [raw_names]
+    else:
+        try:
+            items = list(raw_names)
+        except TypeError:
+            items = [raw_names]
+    return tuple(
+        dict.fromkeys(
+            canonical
+            for canonical in (_canonical_annotation_filter_name(name) for name in items)
+            if canonical
+        )
+    )
 
 
 def _evaluate_rule_set(
@@ -280,7 +310,11 @@ def _validate_card_sections(card_sections: tuple[ScanCardConfig, ...]) -> None:
 
 
 def _validate_annotation_filters(annotation_filters: tuple[AnnotationFilterConfig, ...]) -> None:
-    unknown = [section.filter_name for section in annotation_filters if section.filter_name not in ANNOTATION_FILTER_REGISTRY]
+    unknown = [
+        section.filter_name
+        for section in annotation_filters
+        if _canonical_annotation_filter_name(section.filter_name) not in ANNOTATION_FILTER_REGISTRY
+    ]
     if unknown:
         raise ValueError(f"Unknown annotation filter section(s): {', '.join(sorted(unknown))}")
 
@@ -406,10 +440,9 @@ def _scan_rs_acceleration(row: pd.Series, config: ScanConfig) -> bool:
     )
 
 
-def _annotation_rsi21_gt_63(row: pd.Series, config: ScanConfig) -> bool:
-    rsi21 = row.get("rsi21", float("nan"))
-    rsi63 = row.get("rsi63", float("nan"))
-    return bool(pd.notna(rsi21) and pd.notna(rsi63) and float(rsi21) > float(rsi63))
+def _annotation_rs21_gte_63(row: pd.Series, config: ScanConfig) -> bool:
+    rs21 = _raw_rs(row, 21)
+    return bool(pd.notna(rs21) and float(rs21) >= 63.0)
 
 
 def _annotation_high_eps_growth(row: pd.Series, config: ScanConfig) -> bool:
@@ -435,7 +468,7 @@ SCAN_RULE_REGISTRY: dict[str, RuleEvaluator] = {
 }
 
 ANNOTATION_FILTER_REGISTRY: dict[str, RuleEvaluator] = {
-    "Relative Strength 21 > 63": _annotation_rsi21_gt_63,
+    "RS 21 >= 63": _annotation_rs21_gte_63,
     "High Est. EPS Growth": _annotation_high_eps_growth,
 }
 

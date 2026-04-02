@@ -58,9 +58,9 @@ matched = bool(
 - Both fields are self-relative (within the symbol's own history), not cross-sectional.
 - `trend_base = (close > sma50) & (wma10_weekly > wma30_weekly)`
 
-## Relationship to List 5 (Relative Strength 21 > 63)
+## Relationship to Annotation Filter (RS 21 >= 63)
 
-List 5 (`_list_rs21_gt_63`) currently compares `rsi21 > rsi63` (RSI, not RS ratio rank) due to a naming collision. This scan uses `rs21` and `rs63` (the ratio-based percentile rank fields from `RSScorer`), which more precisely represents relative strength acceleration. The two are complementary and intentionally distinct.
+The annotation filter `RS 21 >= 63` uses the app's RS field (`rs21`) and checks a simple floor: `rs21 >= 63`. This scan remains distinct because it requires both `rs21 > rs63` and `rs21 >= rs_acceleration_rs21_min`, plus `trend_base`. The filter is a broad strength gate. This scan is an acceleration-and-trend condition.
 
 ## New Config Key Required
 

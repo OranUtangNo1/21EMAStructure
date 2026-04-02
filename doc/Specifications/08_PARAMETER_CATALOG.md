@@ -30,6 +30,10 @@ Archived entry, structure, sizing, and trade-management parameters are out of sc
 ### app.snapshot_dir
 - current default: `data_runs`
 
+### app.user_preferences_path
+- current default: `data_cache/user_preferences.yaml`
+- stores persisted page-local UI setup such as watchlist control selections
+
 ### app.use_sample_data_if_fetch_fails
 - current default: `false`
 
