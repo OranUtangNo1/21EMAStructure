@@ -58,8 +58,8 @@ scan:
   - RS Acceleration
   enabled_annotation_filters: []
   annotation_filters:
-  - filter_name: Relative Strength 21 > 63
-    display_name: RSI 21 > 63
+  - filter_name: RS 21 >= 63
+    display_name: RS 21 >= 63
   - filter_name: High Est. EPS Growth
     display_name: High Est. EPS Growth
   card_sections:

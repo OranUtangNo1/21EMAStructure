@@ -39,99 +39,75 @@ radar:
   - ticker: XLI
     name: Industrials
   industry_etfs:
-  - ticker: ICLN
-    name: Clean Energy
-    major_stocks:
-    - FSLR
-    - NXT
-    - BE
-  - ticker: UFO
-    name: Space
-    major_stocks:
-    - RKLB
-    - PL
-    - VSAT
-  - ticker: XOP
-    name: Oil and Gas Exploration
-    major_stocks:
-    - COP
-    - EOG
-    - OXY
-  - ticker: CIBR
-    name: Cybersecurity
-    major_stocks:
-    - CRWD
-    - PANW
-    - ZS
-  - ticker: POWR
-    name: Power Grid
-    major_stocks:
-    - GEV
-    - PWR
-    - NEE
-  - ticker: BOAT
-    name: Marine Shipping
-    major_stocks:
-    - ZIM
-    - SBLK
-    - GOGL
-  - ticker: IPO
-    name: IPOs
-    major_stocks:
-    - ARM
-    - UBER
-    - DUOL
-  - ticker: IGV
-    name: Software
-    major_stocks:
-    - MSFT
-    - ORCL
-    - CRM
-  - ticker: TAN
-    name: Solar
-    major_stocks:
-    - FSLR
-    - ENPH
-    - NXT
-  - ticker: MOO
-    name: Agribusiness
-    major_stocks:
-    - DE
-    - NTR
-    - CF
+  - ticker: SLX
+    name: Steel
+  - ticker: IBB
+    name: Biotechnology
+  - ticker: KRE
+    name: Regional Bank
   - ticker: XBI
     name: Biotech
-    major_stocks:
-    - VRTX
-    - REGN
-    - ARGX
+  - ticker: PEJ
+    name: Leisure
+  - ticker: LIT
+    name: Lithium
+  - ticker: UFO
+    name: Space
+  - ticker: JETS
+    name: Global Jets
   - ticker: SMH
-    name: Semiconductors
-    major_stocks:
-    - NVDA
-    - AVGO
-    - AMD
-  - ticker: FINX
-    name: FinTech
-    major_stocks:
-    - COIN
-    - SOFI
-    - SQ
-  - ticker: WGMI
-    name: Bitcoin Miners
-    major_stocks:
-    - IREN
-    - CIFR
-    - HUT
+    name: Semiconductor
+  - ticker: IYT
+    name: Transportation
+  - ticker: MOO
+    name: Agribusiness
+  - ticker: KARS
+    name: Electric Cars
+  - ticker: TAN
+    name: Solar
+  - ticker: WOOD
+    name: Timber
+  - ticker: COPX
+    name: Copper Miners
+  - ticker: QTUM
+    name: Quantum-Tech
+  - ticker: URA
+    name: Uranium
+  - ticker: IAI
+    name: Broker-Dealers
+  - ticker: ICLN
+    name: Clean Energy
+  - ticker: XOP
+    name: Oil & Gas Exp.
+  - ticker: GDX
+    name: Gold Miners
+  - ticker: XRT
+    name: Retail
+  - ticker: SIL
+    name: Silver Miners
+  - ticker: IPO
+    name: IPO
+  - ticker: REMX
+    name: Rare Earth
+  - ticker: KIE
+    name: Insurance
+  - ticker: ITA
+    name: Aerospace
+  - ticker: CIBR
+    name: Cybersecurity
+  - ticker: ITB
+    name: Home Construction
   - ticker: BLOK
     name: Blockchain
-    major_stocks:
-    - COIN
-    - MSTR
-    - HOOD
-  - ticker: QTUM
-    name: Quantum and AI
-    major_stocks:
-    - IONQ
-    - IBM
-    - GOOGL
+  - ticker: WGMI
+    name: Bitcoin Miners
+  - ticker: IGV
+    name: Tech-Software
+  - ticker: KWEB
+    name: China Internet
+  - ticker: IPAY
+    name: Mobile Payments
+  - ticker: IHI
+    name: Med. Devices
+  - ticker: FINX
+    name: FinTech

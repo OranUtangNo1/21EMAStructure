@@ -1,4 +1,7 @@
 market:
+  calculation_mode: etf
+  etf_weight: 0.5
+  active_symbols_weight: 0.5
   component_weights:
     pct_above_sma10: 0.12
     pct_above_sma20: 0.12

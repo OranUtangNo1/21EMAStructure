@@ -13,5 +13,6 @@ app:
   price_period: 1y
   cache_dir: data_cache
   snapshot_dir: data_runs
+  user_preferences_path: data_cache/user_preferences.yaml
   use_sample_data_if_fetch_fails: false
   refresh_on_start: true

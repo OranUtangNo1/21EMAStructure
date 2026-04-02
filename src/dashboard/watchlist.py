@@ -7,6 +7,9 @@ import pandas as pd
 
 from src.scan.rules import AnnotationFilterConfig, ScanCardConfig, ScanConfig, annotation_filter_column_name
 
+DUPLICATE_SUBFILTER_TOP3_HYBRID_RS = "Top3 HybridRS"
+AVAILABLE_DUPLICATE_SUBFILTERS = (DUPLICATE_SUBFILTER_TOP3_HYBRID_RS,)
+
 
 @dataclass(slots=True)
 class ScanCardViewModel:
@@ -27,6 +30,9 @@ class WatchlistViewModelBuilder:
 
     def available_annotation_filters(self) -> tuple[AnnotationFilterConfig, ...]:
         return self.config.annotation_filters
+
+    def available_duplicate_subfilters(self) -> tuple[str, ...]:
+        return AVAILABLE_DUPLICATE_SUBFILTERS
 
     def build(self, watchlist: pd.DataFrame) -> pd.DataFrame:
         if watchlist.empty:
@@ -69,8 +75,14 @@ class WatchlistViewModelBuilder:
             "data_quality_score",
             "data_warning",
         ]
+        annotation_columns = [
+            annotation_filter_column_name(section.filter_name)
+            for section in self.config.annotation_filters
+            if annotation_filter_column_name(section.filter_name) in table.columns
+        ]
         available_columns = [column for column in columns if column in table.columns]
-        display = table[available_columns].copy()
+        display_columns = list(dict.fromkeys([*available_columns, *annotation_columns]))
+        display = table[display_columns].copy()
         numeric_columns = display.select_dtypes(include="number").columns
         display.loc[:, numeric_columns] = display.loc[:, numeric_columns].round(2)
         return display
@@ -180,6 +192,7 @@ class WatchlistViewModelBuilder:
         hits: pd.DataFrame,
         min_count: int,
         selected_scan_names: Iterable[str] | None = None,
+        selected_duplicate_subfilters: Iterable[str] | None = None,
     ) -> pd.DataFrame:
         if watchlist.empty or hits.empty:
             return pd.DataFrame(columns=["Ticker", "Scan Hits", "Hybrid-RS", "Overlap", "VCS"])
@@ -191,6 +204,14 @@ class WatchlistViewModelBuilder:
 
         hybrid_column = "hybrid_score" if "hybrid_score" in frame.columns else "H" if "H" in frame.columns else None
         vcs_column = "vcs" if "vcs" in frame.columns else "VCS" if "VCS" in frame.columns else None
+        frame = self._apply_selected_duplicate_subfilters(
+            frame,
+            selected_duplicate_subfilters,
+            hybrid_column=hybrid_column,
+            vcs_column=vcs_column,
+        )
+        if frame.empty:
+            return pd.DataFrame(columns=["Ticker", "Scan Hits", "Hybrid-RS", "Overlap", "VCS"])
 
         sort_columns: list[str] = ["selected_scan_hit_count"]
         if hybrid_column:
@@ -291,6 +312,47 @@ class WatchlistViewModelBuilder:
                 if str(name).strip() and str(name).strip() in valid_names
             )
         )
+
+    def _normalize_selected_duplicate_subfilter_names(
+        self,
+        selected_subfilter_names: Iterable[str] | None,
+    ) -> tuple[str, ...]:
+        if selected_subfilter_names is None:
+            return tuple()
+        valid_names = set(self.available_duplicate_subfilters())
+        return tuple(
+            dict.fromkeys(
+                str(name).strip()
+                for name in selected_subfilter_names
+                if str(name).strip() and str(name).strip() in valid_names
+            )
+        )
+
+    def _apply_selected_duplicate_subfilters(
+        self,
+        frame: pd.DataFrame,
+        selected_subfilter_names: Iterable[str] | None,
+        *,
+        hybrid_column: str | None,
+        vcs_column: str | None,
+    ) -> pd.DataFrame:
+        selected_names = self._normalize_selected_duplicate_subfilter_names(selected_subfilter_names)
+        if not selected_names or hybrid_column is None:
+            return frame
+
+        filtered = frame.copy()
+        if DUPLICATE_SUBFILTER_TOP3_HYBRID_RS in selected_names:
+            sort_columns = [hybrid_column]
+            ascending = [False]
+            for column in ("selected_scan_hit_count", "selected_overlap_count"):
+                if column in filtered.columns:
+                    sort_columns.append(column)
+                    ascending.append(False)
+            if vcs_column and vcs_column in filtered.columns:
+                sort_columns.append(vcs_column)
+                ascending.append(False)
+            filtered = filtered.sort_values(sort_columns, ascending=ascending).head(3).copy()
+        return filtered
 
     def _scan_hits_frame(self, hits: pd.DataFrame) -> pd.DataFrame:
         if hits.empty:

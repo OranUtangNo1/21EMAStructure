@@ -14,13 +14,13 @@ def test_high_est_eps_growth_annotation_uses_rank_threshold() -> None:
     assert result["High Est. EPS Growth"] is True
 
 
-def test_relative_strength_annotation_uses_rsi_not_app_rs() -> None:
-    row = pd.Series({"rsi21": 61.0, "rsi63": 55.0, "raw_rs21": 10.0, "raw_rs63": 95.0})
+def test_relative_strength_annotation_uses_app_rs_threshold() -> None:
+    row = pd.Series({"rs21": 63.0, "raw_rs21": 63.0, "rsi21": 10.0, "rsi63": 90.0})
     config = ScanConfig()
 
     result = evaluate_annotation_filters(row, config)
 
-    assert result["Relative Strength 21 > 63"] is True
+    assert result["RS 21 >= 63"] is True
 
 
 def test_enabled_scan_rules_can_be_swapped_from_config() -> None:
@@ -169,7 +169,9 @@ def test_watchlist_builder_surfaces_annotation_columns() -> None:
             "annotation_hit_count": [2],
             "duplicate_ticker": [True],
             "hit_scans": ["Vol Up, VCS, 97 Club"],
-            "annotation_hits": ["Relative Strength 21 > 63, High Est. EPS Growth"],
+            "annotation_hits": ["RS 21 >= 63, High Est. EPS Growth"],
+            "annotation_rs21_gte_63": [True],
+            "annotation_high_eps_growth": [True],
             "vcs": [70.0],
             "earnings_in_7d": [False],
         },
@@ -181,7 +183,9 @@ def test_watchlist_builder_surfaces_annotation_columns() -> None:
     assert bool(display.iloc[0]["duplicate_ticker"]) is True
     assert int(display.iloc[0]["scan_hit_count"]) == 3
     assert int(display.iloc[0]["annotation_hit_count"]) == 2
-    assert "Relative Strength 21 > 63" in display.iloc[0]["annotation_hits"]
+    assert "RS 21 >= 63" in display.iloc[0]["annotation_hits"]
+    assert bool(display.iloc[0]["annotation_rs21_gte_63"]) is True
+    assert bool(display.iloc[0]["annotation_high_eps_growth"]) is True
 
 
 def test_watchlist_builder_includes_new_scan_output_fields_when_available() -> None:
@@ -272,7 +276,7 @@ def test_runner_attaches_annotation_flags_to_scan_hits() -> None:
             "from_open_pct": [1.0],
             "hybrid_score": [80.0],
             "vcs": [10.0],
-            "rs21": [60.0],
+            "rs21": [70.0],
             "raw_rs21": [70.0],
             "raw_rs63": [60.0],
             "rsi21": [60.0],
@@ -292,10 +296,10 @@ def test_runner_attaches_annotation_flags_to_scan_hits() -> None:
     assert len(result.watchlist) == 1
     assert set(result.hits["kind"]) == {"scan"}
     latest = result.watchlist.iloc[0]
-    assert bool(latest["annotation_rsi21_gt_63"]) is True
+    assert bool(latest["annotation_rs21_gte_63"]) is True
     assert bool(latest["annotation_high_eps_growth"]) is True
     assert int(latest["annotation_hit_count"]) == 2
-    assert "Relative Strength 21 > 63" in latest["annotation_hits"]
+    assert "RS 21 >= 63" in latest["annotation_hits"]
     assert int(latest["scan_hit_count"]) == 1
     assert int(latest["list_overlap_count"]) == 1
     assert latest["hit_lists"] == latest["hit_scans"]
@@ -308,7 +312,7 @@ def test_duplicate_ticker_builder_uses_scan_hits_only() -> None:
             "hybrid_score": [95.0, 80.0],
             "overlap_count": [3, 1],
             "vcs": [70.0, 60.0],
-            "annotation_rsi21_gt_63": [True, True],
+            "annotation_rs21_gte_63": [True, True],
             "annotation_high_eps_growth": [True, False],
         },
         index=["AAA", "BBB"],
@@ -391,10 +395,44 @@ def test_duplicate_ticker_builder_respects_selected_scans_and_threshold() -> Non
     assert float(duplicate.iloc[0]["Hybrid-RS"]) == 95.0
 
 
+def test_duplicate_ticker_builder_can_apply_top3_hybridrs_subfilter() -> None:
+    watchlist = pd.DataFrame(
+        {
+            "hybrid_score": [95.0, 99.0, 88.0, 97.0],
+            "overlap_count": [2, 2, 2, 2],
+            "vcs": [70.0, 80.0, 65.0, 75.0],
+        },
+        index=["AAA", "BBB", "CCC", "DDD"],
+    )
+    hits = pd.DataFrame(
+        [
+            {"ticker": "AAA", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "AAA", "name": "VCS", "kind": "scan"},
+            {"ticker": "BBB", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "BBB", "name": "VCS", "kind": "scan"},
+            {"ticker": "CCC", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "CCC", "name": "VCS", "kind": "scan"},
+            {"ticker": "DDD", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "DDD", "name": "VCS", "kind": "scan"},
+        ]
+    )
+
+    duplicate = WatchlistViewModelBuilder().build_duplicate_tickers(
+        watchlist,
+        hits,
+        min_count=2,
+        selected_scan_names=["21EMA scan", "VCS"],
+        selected_duplicate_subfilters=["Top3 HybridRS"],
+    )
+
+    assert list(duplicate["Ticker"]) == ["BBB", "DDD", "AAA"]
+    assert list(duplicate["Hybrid-RS"]) == [99.0, 97.0, 95.0]
+
+
 def test_annotation_filters_apply_with_and_semantics() -> None:
     watchlist = pd.DataFrame(
         {
-            "annotation_rsi21_gt_63": [True, True, False],
+            "annotation_rs21_gte_63": [True, True, False],
             "annotation_high_eps_growth": [True, False, True],
         },
         index=["AAA", "BBB", "CCC"],
@@ -402,7 +440,7 @@ def test_annotation_filters_apply_with_and_semantics() -> None:
 
     filtered = WatchlistViewModelBuilder().filter_by_annotation_filters(
         watchlist,
-        ["Relative Strength 21 > 63", "High Est. EPS Growth"],
+        ["RS 21 >= 63", "High Est. EPS Growth"],
     )
 
     assert list(filtered.index) == ["AAA"]

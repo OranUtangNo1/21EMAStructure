@@ -27,8 +27,11 @@ The sidebar currently exposes:
 On `Today's Watchlist`, the sidebar also exposes page-local controls:
 
 - card multiselect used for watchlist-card display
+- post-scan annotation filter multiselect
+- duplicate subfilter multiselect used only for duplicate-band output
 - duplicate threshold input used for duplicate-band counting
-- initial card multiselect state sourced from `scan.default_selected_scan_names` and falls back to all cards when omitted
+- the watchlist control values are persisted per config path in the user-preferences store and restored on the next app start
+- initial fallbacks still come from scan config defaults when no persisted value exists
 
 ### 2.2 Shared context and health
 
@@ -61,6 +64,8 @@ Current logic:
 - source rows are recomputed in the page layer from raw `watchlist` rows plus raw `scan_hits`
 - only currently selected scan cards are counted in this band
 - the sidebar duplicate threshold is applied to this band only
+- duplicate-only subfilters are applied after duplicate rows are formed
+- `Top3 HybridRS` keeps the three highest `hybrid_score` duplicate rows
 - each row is built from scan overlap, not list overlap
 - displayed columns currently include:
   - `Ticker`

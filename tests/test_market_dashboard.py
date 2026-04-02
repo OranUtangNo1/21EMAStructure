@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from src.dashboard.market import MarketConditionConfig, MarketConditionScorer
 from src.indicators.core import IndicatorCalculator, IndicatorConfig
@@ -94,3 +95,52 @@ def test_market_dashboard_result_contains_expanded_sections() -> None:
     assert list(result.factors_vs_sp500.columns) == ["TICKER", "NAME", "REL 1W %", "REL 1M %", "REL 1Y %"]
     assert not result.s5th_series.empty
     assert list(result.s5th_series.columns) == ["date", "pct_above_sma200"]
+
+
+
+def test_market_dashboard_supports_etf_active_and_blended_modes() -> None:
+    dates = pd.date_range("2024-01-01", periods=320, freq="B")
+    calculator = IndicatorCalculator(IndicatorConfig())
+
+    benchmark_history = calculator.calculate(_make_history([100.0 + (i * 0.10) for i in range(320)], dates))
+    market_histories = {
+        "AAA": calculator.calculate(_make_history([220.0 - (i * 0.35) for i in range(320)], dates)),
+        "BBB": calculator.calculate(_make_history([180.0 - (i * 0.28) for i in range(320)], dates)),
+        "^VIX": calculator.calculate(_make_history([15.0 for _ in range(320)], dates, volume_scale=100_000)),
+    }
+    stock_histories = {
+        "UP1": calculator.calculate(_make_history([40.0 + (i * 0.22) for i in range(320)], dates)),
+        "UP2": calculator.calculate(_make_history([55.0 + (i * 0.18) for i in range(320)], dates)),
+    }
+
+    common_config = {
+        "market_condition_etf_universe": [
+            {"ticker": "AAA", "name": "Alpha"},
+            {"ticker": "BBB", "name": "Beta"},
+        ],
+    }
+    etf_result = MarketConditionScorer(
+        MarketConditionConfig.from_dict({**common_config, "calculation_mode": "etf"})
+    ).score(stock_histories, market_histories, benchmark_history)
+    active_result = MarketConditionScorer(
+        MarketConditionConfig.from_dict({**common_config, "calculation_mode": "active_symbols"})
+    ).score(stock_histories, market_histories, benchmark_history)
+    blended_result = MarketConditionScorer(
+        MarketConditionConfig.from_dict(
+            {
+                **common_config,
+                "calculation_mode": "blended",
+                "etf_weight": 0.25,
+                "active_symbols_weight": 0.75,
+            }
+        )
+    ).score(stock_histories, market_histories, benchmark_history)
+
+    assert etf_result.breadth_summary["pct_above_sma200"] == pytest.approx(0.0)
+    assert active_result.breadth_summary["pct_above_sma200"] == pytest.approx(100.0)
+    assert blended_result.breadth_summary["pct_above_sma200"] == pytest.approx(75.0)
+    assert etf_result.breadth_summary["pct_above_sma10"] == pytest.approx(0.0)
+    assert active_result.breadth_summary["pct_above_sma10"] == pytest.approx(100.0)
+    assert blended_result.breadth_summary["pct_above_sma10"] == pytest.approx(75.0)
+    assert etf_result.score < blended_result.score < active_result.score
+    assert blended_result.component_scores["pct_positive_ytd"] == pytest.approx(75.0)
