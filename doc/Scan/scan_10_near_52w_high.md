@@ -13,7 +13,7 @@
 ## Evaluation Context
 
 - Evaluated on one latest row after `enrich_with_scan_context()`.
-- Reads precomputed indicator fields and a new field `high_52w` added to `IndicatorCalculator`.
+- Reads precomputed indicator fields and scan-layer scores.
 - All conditions are combined with `AND`.
 
 ## Canonical Boolean Definition
@@ -32,47 +32,21 @@ matched = bool(
 
 | Field | Producer | Missing/default used by scan | Scan use |
 |---|---|---|---|
-| `high_52w` | `src/indicators/core.py::IndicatorCalculator.calculate` | `float("nan")` | price >= high_52w * (1 - threshold_pct / 100) |
-| `close` | `src/indicators/core.py::IndicatorCalculator.calculate` | `0.0` | compared against high_52w threshold |
+| `high_52w` | `src/indicators/core.py::IndicatorCalculator.calculate` | `float("nan")` and `0.0` | must be present and positive; used for the 52-week-high distance check |
+| `close` | `src/indicators/core.py::IndicatorCalculator.calculate` | `0.0` | compared against the thresholded `high_52w` value |
 | `hybrid_score` | `src/scoring/hybrid.py::HybridScoreCalculator.score` | `0.0` | `>= near_52w_high_hybrid_min` |
 | `trend_base` | `src/indicators/core.py::IndicatorCalculator.calculate` | `False` | must be `True` |
 
 ## Direct Config Dependencies
 
-| Config key | Location | Default | Scan use |
-|---|---|---|---|
-| `near_52w_high_threshold_pct` | `config/default.yaml::scan` | `5.0` | price distance allowance from 52W high (%) |
-| `near_52w_high_hybrid_min` | `config/default.yaml::scan` | `70.0` | minimum hybrid score to pass |
+| Config key | Default | Used as |
+|---|---|---|
+| `scan.near_52w_high_threshold_pct` | `5.0` | max distance from the 52-week high (%) |
+| `scan.near_52w_high_hybrid_min` | `70.0` | minimum hybrid score |
 
 ## Upstream Field Definitions
 
-- `high_52w = high.rolling(252).max()` — rolling 252-session high of the `high` column, computed in `IndicatorCalculator.calculate()`. **This field does not yet exist and must be added.**
-- `hybrid_score` — weighted average of `[rs21, rs63, rs126, fundamental_score, industry_score]` with weights `[1, 2, 2, 2, 3]`; NaN filled with `50.0`
+- `high_52w = high.rolling(252).max()`
+- `close` is the latest daily close from the indicator history
+- `hybrid_score` is the configured weighted composite of RS, fundamental, and industry components
 - `trend_base = (close > sma50) & (wma10_weekly > wma30_weekly)`
-
-## New Field Required: `high_52w`
-
-`high_52w` is not currently produced by `IndicatorCalculator`. The following line must be added to `IndicatorCalculator.calculate()` after `sma200` is computed:
-
-```python
-df["high_52w"] = df["high"].rolling(252).mean()
-```
-
-No new config key is required for the rolling window; 252 is the conventional trading-year constant and is hard-coded.
-
-## New Config Keys Required
-
-Add to `config/default.yaml` under the `scan:` block:
-
-```yaml
-scan:
-  near_52w_high_threshold_pct: 5.0
-  near_52w_high_hybrid_min: 70.0
-```
-
-Add to `ScanConfig` dataclass in `src/scan/rules.py`:
-
-```python
-near_52w_high_threshold_pct: float = 5.0
-near_52w_high_hybrid_min: float = 70.0
-```

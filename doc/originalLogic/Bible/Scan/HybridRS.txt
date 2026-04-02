@@ -1,0 +1,21 @@
+
+
+Hybrid RS
+Date is pulled from the yfinance and FMP APIs. The subscription only costs a few dozen dollars right now, so it’s not an issue, but I’m open to switching if there’s a better API out there.
+
+For Hybrid RS, I’m combining RS (3 timeframes) + Fundamental RS + Industry RS. Current weighting is 5 (1:2:2) : 2 : 3. Still testing.
+
+Once I get something I’m reasonably confident in, I plan to restart posting my watchlist.
+I pick up tickers that appear in multiple of those 7 lists.
+
+Momentum 97
+Volatility Contraction Score
+21EMA Watch
+4% Gainers
+Relative Strength 21 > 63
+Vol Up Gainers
+High Est. EPS Growth
+
+Specifically, I post stocks that appear three times or more across those lists as “duplicate tickers in the watchlists.”
+
+The reason is that tickers from 4% Gainers and Vol Up Gainers often overlap.

@@ -1,0 +1,32 @@
+From the indicators introduced in the note above, I have combined the following two:
+
+Swing Data – ADR% / RVol / PVol / Float % / Avg $ Vol
+
+ATR% multiple from 50-MA
+
+Since I wanted to keep the amount of information on the chart as simple as possible, I am currently using this combined indicator.
+
+For the “Swing Data – ADR% / RVol / PVol / Float % / Avg $ Vol” indicator, I narrowed it down to only the elements I personally wanted to monitor and removed the unnecessary parts.
+Additionally, since I wanted the values from the “ATR% multiple from 50-MA” indicator displayed in the same area, I have combined the two.
+
+Furthermore, the existing ATR% multiple from 50-MA indicator was designed to display a dot above the candlestick when it reached “10,” but since I wanted dots to appear in stages starting at “7,” I readjusted it to display dots in five stages.
+It is also freely customizable so that dots can be displayed not only at 7–11 but also at 5 or 6.
+
+Note that I generally do not make new entries when the ATR% multiple is 7 or higher.
+I try to look for stocks that are breaking out within the range of “3 to 5” as much as possible.
+I’ll explain using $ALAB as an example.
+First, when the ATR% multiple relative to the 50-MA reaches 7, a light green dot appears above the candlestick.
+After that, as the multiple rises, the dot’s color gradually changes from “green → blue,” and when it reaches 10 or higher, it is treated as “Maximum Overheating.”
+
+Note that I do not use red because it personally makes me feel anxious, and even when it reaches 10, it is not a time to take full profits; however, the color settings are customizable. Please adjust them to your preference.
+
+For reference, on the current chart (October 11, 2025), the ATR% multiple from the 50-MA is 0.57, indicating no signs of overheating and a state of convergence.
+
+Here is the code. Feel free to experiment with it.
+
+//@version=6
+indicator(title=‘Swing v2 (Complete)’, shorttitle=‘Swing v2’, overlay=true, max_bars_back=253)
+
+// ====================== Inputs ======================
+show_empty_row    = input(true,  title=‘Add an empty row above the displayed values’, tooltip=‘Prevents pane icons from overlapping the table when multiple panes are shown and the chart pane is hovered’, group=‘Table’)
+add_empty_row_dn  = input.int(0,  title=‘Add empty rows under the displayed values’, tooltip=‘Prevents the table from being overlapped at the bottom-right’, minval=0, maxval=5, step=1, group='

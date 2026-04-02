@@ -1,0 +1,83 @@
+
+indicator('Simple MA Cloud', shorttitle='MA Cloud', overlay=true)
+
+// === MOVING AVERAGE SETTINGS (CLOUD) ===
+inputLength = input.int(21, title='MA Length (Daily)', minval=1, group='MA Cloud Settings')
+inputTypeDaily = input.string('EMA', title='MA Type (Daily)', options=['SMA', 'EMA'], group='MA Cloud Settings')
+
+inputWeeklyLength = input.int(10, title='MA Length (Weekly)', minval=1, group='MA Cloud Settings')
+inputTypeWeekly = input.string('SMA', title='MA Type (Weekly)', options=['SMA', 'EMA'], group='MA Cloud Settings')
+
+
+// === CUSTOM CLOUD COLORS ===
+// Set colors as input.color() so user can customize them in settings
+cloudUpColor      = input.color(color.new(color.green, 64), title='Cloud Color (Price Above)', group='MA Cloud Visuals')
+cloudNeutralColor = input.color(color.new(color.gray, 64), title='Cloud Color (Price Inside)', group='MA Cloud Visuals')
+cloudDownColor    = input.color(color.new(color.red, 64), title='Cloud Color (Price Below)', group='MA Cloud Visuals')
+
+
+// === ADDITIONAL MA SETTINGS ===
+// MA 1
+grp_ma1 = 'Additional MA 1'
+showMA1 = input.bool(true, title='Show MA 1', group=grp_ma1)
+lenMA1  = input.int(10, title='Length', minval=1, group=grp_ma1)
+typeMA1 = input.string('SMA', title='Type', options=['SMA', 'EMA'], group=grp_ma1)
+colMA1  = input.color(#fff9c4, title='Color', group=grp_ma1)
+
+// MA 2
+grp_ma2 = 'Additional MA 2'
+showMA2 = input.bool(true, title='Show MA 2', group=grp_ma2)
+lenMA2  = input.int(21, title='Length', minval=1, group=grp_ma2)
+typeMA2 = input.string('EMA', title='Type', options=['SMA', 'EMA'], group=grp_ma2)
+colMA2  = input.color(#9c9c9c, title='Color', group=grp_ma2)
+
+// MA 3
+grp_ma3 = 'Additional MA 3'
+showMA3 = input.bool(true, title='Show MA 3', group=grp_ma3)
+lenMA3  = input.int(50, title='Length', minval=1, group=grp_ma3)
+typeMA3 = input.string('SMA', title='Type', options=['SMA', 'EMA'], group=grp_ma3)
+colMA3  = input.color(#faa1a4, title='Color', group=grp_ma3)
+
+
+// === FUNCTION TO CALCULATE MA ===
+getMa(src, length, maType) =>
+    switch maType
+        'SMA' => ta.sma(src, length)
+        'EMA' => ta.ema(src, length)
+        => ta.ema(src, length) // default
+
+// === TIMEFRAME SELECTION ===
+isWeeklyChart = timeframe.isweekly
+currentLength = isWeeklyChart ? inputWeeklyLength : inputLength
+currentType = isWeeklyChart ? inputTypeWeekly : inputTypeDaily
+
+// === MA CALCULATIONS (CLOUD) ===
+MAHigh   = getMa(high, currentLength, currentType)
+MALow    = getMa(low, currentLength, currentType)
+
+// === MA CALCULATIONS (ADDITIONAL) ===
+ma1Val = getMa(close, lenMA1, typeMA1)
+ma2Val = getMa(close, lenMA2, typeMA2)
+ma3Val = getMa(close, lenMA3, typeMA3)
+
+// === CALCULATE CLOUD COLOR BASED ON PRICE POSITION ===
+var color currentCloudColor = cloudNeutralColor
+if close > MAHigh
+    currentCloudColor := cloudUpColor
+else if close < MALow
+    currentCloudColor := cloudDownColor
+else
+    currentCloudColor := cloudNeutralColor
+
+
+// === PLOT MAs (CLOUD) ===
+pHigh  = plot(MAHigh,  title='MA Cloud High',  color=color.gray, linewidth=1)
+pLow   = plot(MALow,   title='MA Cloud Low',   color=color.gray, linewidth=1)
+
+// === PRICE-BASED COLORED CLOUD ===
+fill(pHigh, pLow, color=currentCloudColor, title='Price-Based Cloud')
+
+// === PLOT ADDITIONAL MAs ===
+plot(showMA1 ? ma1Val : na, title='MA 1', color=colMA1, linewidth=1)
+plot(showMA2 ? ma2Val : na, title='MA 2', color=colMA2, linewidth=1)
+plot(showMA3 ? ma3Val : na, title='MA 3', color=colMA3, linewidth=1)

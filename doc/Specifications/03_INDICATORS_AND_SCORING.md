@@ -84,7 +84,40 @@ Supporting field:
 
 - `avg_volume_50d = rolling_mean(volume, 50)`
 
-### 2.7 RSI
+### 2.7 52-Week Distance Fields
+
+Implemented fields:
+
+- `high_52w = rolling_max(high, 252)`
+- `low_52w = rolling_min(low, 252)`
+- `dist_from_52w_high = ((close / high_52w) - 1.0) * 100`
+- `dist_from_52w_low = ((close / low_52w) - 1.0) * 100`
+
+Interpretation:
+
+- `dist_from_52w_high` is zero at the 52-week high and negative below it
+- `dist_from_52w_low` is zero at the 52-week low and positive above it
+- both distance fields use the current close relative to the rolling 252-session extreme
+
+### 2.8 Up/Down Volume Ratio
+
+Implemented field:
+
+- `ud_volume_ratio`
+
+Formula:
+
+- `up_volume = volume` when `close >= prev_close`, else `0`
+- `down_volume = volume` when `close < prev_close`, else `0`
+- `sum_up = rolling_sum(up_volume, ud_volume_period)`
+- `sum_down = rolling_sum(down_volume, ud_volume_period)`
+- `ud_volume_ratio = sum_up / max(sum_down, 1.0)`
+
+Default parameter:
+
+- `ud_volume_period = 50`
+
+### 2.9 RSI
 
 Implemented fields:
 
@@ -101,7 +134,7 @@ Default parameters:
 - `rsi_short_period = 21`
 - `rsi_long_period = 63`
 
-### 2.8 Return Horizons And Daily Change
+### 2.10 Return Horizons And Daily Change
 
 Implemented fields:
 

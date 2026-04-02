@@ -1,0 +1,35 @@
+VCS
+VCS public script post (314 likes, many replies): Official name: Volatility Contraction Score (VCS)
+Scale: 0–100
+Purpose: Quantifies volatility contraction. An indicator inspired by Minervini’s VCP (Volatility Contraction Pattern).
+Important Note:  This does not detect chart patterns
+It does not generate entry signals
+It merely measures the “structural mechanism” of compression and identifies conditions where expansion is likely to occur
+
+Components (Combination): Short-term vs Long-term ATR compression
+Standard deviation contraction
+Volume dry-up
+Higher-low structure filter
+Persistence bonus
+
+Score Interpretation: 80 or higher → Critical compression
+60–80 → Developing setup
+Less than 60 → Expansion phase
+
+High VCS = Volatility is contracting, and energy is building up (does not indicate direction).
+If VCS exceeds 80, focus on the consolidation range and confirm with a clear breakout accompanied by volume. Example of use on a screen: Filter at VCS > 60 or 70
+Confirm liquidity with Avg Volume
+
+Prioritize market leaders by combining with Relative Strength (RS)
+
+Volatility Contraction Score (VCS)
+
+Overview
+
+Volatility Contraction Score (VCS) is a technical indicator inspired by Mark Minervini’s Volatility Contraction Pattern (VCP) concept. It is designed to quantify volatility compression and supply-demand equilibrium on a scale from 0 to 100.
+
+This indicator does not detect VCP patterns directly. Instead, it measures the structural characteristics commonly observed in VCP bases, such as price range contraction and volume dry-up, and converts them into a numerical score.
+
+A high score indicates that price volatility is compressed and energy is being stored within the structure. While this condition often precedes significant price expansion, it does not predict direction.
+
+S

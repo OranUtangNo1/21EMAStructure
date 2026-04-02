@@ -1,0 +1,80 @@
+//@version=5
+indicator("5ma + O’Neil & Minervini Buy Condition", overlay=true)
+
+// === User Inputs ===
+ma_type1       = input.string("SMA", "MA1 Type", options=["SMA","EMA","WMA","VWMA"], group="Settings")
+ma_type2       = input.string("SMA", "MA2 Type", options=["SMA","EMA","WMA","VWMA"], group="Settings")
+ma_type3       = input.string("SMA", "MA3 Type", options=["SMA","EMA","WMA","VWMA"], group="Settings")
+ma_type4       = input.string("SMA", "MA4 Type", options=["SMA","EMA","WMA","VWMA"], group="Settings")
+ma_type5       = input.string("SMA", "MA5 Type", options=["SMA","EMA","WMA","VWMA"], group="Settings")
+source         = input.source(close, "Source", group="Settings")
+length1        = input.int(10,   "Length 1", minval=1, group="Settings")
+length2        = input.int(21,   "Length 2", minval=1, group="Settings")
+length3        = input.int(50,   "Length 3", minval=1, group="Settings")
+length4        = input.int(200,  "Length 4", minval=1, group="Settings")
+length5        = input.int(325,  "Length 5", minval=1, group="Settings")
+
+// === Style Inputs ===
+oneilBgColor      = input.color(color.new(color.green, 85),  "O'Neil Buy Condition",    group="Style")
+minerviniBgColor = input.color(color.new(color.blue, 85),   "Minervini Buy Condition", group="Style")
+combinedBgColor  = input.color(color.new(color.purple, 85), "Both Conditions",         group="Style")
+
+// === Moving Average Calculation Function ===
+f_ma(_type, _src, _len) =>
+    switch _type
+        "SMA"  => ta.sma(_src, _len)
+        "EMA"  => ta.ema(_src, _len)
+        "WMA"  => ta.wma(_src, _len)
+        "VWMA" => ta.vwma(_src, _len)
+
+// === Calculate Custom Moving Averages ===
+ma1 = f_ma(ma_type1, source, length1)
+ma2 = f_ma(ma_type2, source, length2)
+ma3 = f_ma(ma_type3, source, length3)
+ma4 = f_ma(ma_type4, source, length4)
+ma5 = f_ma(ma_type5, source, length5)
+
+// === Fixed O'Neil Moving Averages (50 & 200 SMA) ===
+oneil50  = ta.sma(source, 50)
+oneil200 = ta.sma(source, 200)
+
+// === 52-week High/Low ===
+highest52 = ta.highest(high, 252)
+lowest52  = ta.lowest(low, 252)
+
+// === O'Neil Buy Condition ===
+oneilMaCond   = close > oneil50 and close > oneil200 and oneil50 > oneil50[1] and oneil200 > oneil200[1]
+oneilHighCond = close >= highest52 * 0.85
+oneilCond     = oneilMaCond and oneilHighCond
+
+// === Fixed Minervini Moving Averages (10, 21, 50 SMA) ===
+min10 = ta.sma(source, 10)
+min21 = ta.sma(source, 21)
+min50 = ta.sma(source, 50)
+
+// === Minervini Buy Condition ===
+minMaCond     = min10 > min21 and min21 > min50 and min10 > min10[1] and min21 > min21[1]
+minHighCond   = close >= highest52 * 0.75
+minLowCond    = close >= lowest52 * 1.25
+minerviniCond = minMaCond and minHighCond and minLowCond
+
+// === Combined Buy Condition ===
+combinedCond = oneilCond and minerviniCond
+
+// === Background Highlight ===
+bgcolor(oneilCond      ? oneilBgColor      : na, title="O'Neil Buy Condition")
+bgcolor(minerviniCond ? minerviniBgColor : na, title="Minervini Buy Condition")
+bgcolor(combinedCond   ? combinedBgColor   : na, title="Both Conditions")
+
+// === Plot Moving Averages ===
+plot(ma1, "MA1", color=color.new(color.fuchsia, 50), linewidth=2)
+plot(ma2, "MA2", color=color.green,                linewidth=2)
+plot(ma3, "MA3", color=color.red,                  linewidth=2)
+plot(ma4, "MA4", color=color.black,                linewidth=2)
+plot(ma5, "MA5", color=color.new(color.blue, 50),  linewidth=2)
+
+// === Legend Notes ===
+// MA1–MA5 correspond to selected type and period.
+// O'Neil condition: Price > 50 & 200 SMA (rising) and within 15% of 52-week high.
+// Minervini condition: 10 > 21 > 50 SMA (rising) and within 25% of 52-week high and >=25% above 52-week low.
+// Both Conditions: both O'Neil and Minervini buy conditions true. 

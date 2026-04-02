@@ -1,0 +1,303 @@
+//@version=6
+indicator("Darvas Lines/Box", overlay = true, max_bars_back = 5000)
+
+// — Inputs —
+// Base Settings
+string lineSource = input.string("Wicks", "Line Source", options = ["Wicks", "Body"], group = "Base Settings", tooltip = "Defines the high/low reference for the lines (Wicks or Body).")
+rangeLen = input.int(10, "Bars to Define Range", minval = 1, group = "Base Settings")
+cooldownBars = input.int(13, "Cooldown Bars After Breakout", minval = 1, group = "Base Settings")
+string displayMode = input.string("Lines", "Display Mode", options = ["Lines", "Box"], group = "Base Settings")
+
+// Line Style
+string lineStyleStr = input.string("Solid", "Style", options = ["Solid", "Dotted", "Dashed"], group = "Line Style")
+int finalLineWidth = input.int(1, "Width", minval = 1, group = "Line Style")
+
+// Waiting Line Color
+color waitUpColor = input.color(color.gray, "Upper Waiting Line Color", group = "Waiting Line Color")
+color waitDnColor = input.color(color.gray, "Lower Waiting Line Color", group = "Waiting Line Color")
+
+// Line Color
+color upLineColor = input.color(color.green, "Upper Line Color", group = "Line Color")
+color dnLineColor = input.color(color.red, "Lower Line Color", group = "Line Color")
+
+// Bullish Box Color
+color bullBoxBorderColor = input.color(color.new(color.green, 20), "Border Color", group = "Bullish Box Color")
+color bullBoxBgColor = input.color(color.new(color.green, 85), "Background Color", group = "Bullish Box Color")
+
+// Bearish Box Color
+color bearBoxBorderColor = input.color(color.new(color.red, 20), "Border Color", group = "Bearish Box Color")
+color bearBoxBgColor = input.color(color.new(color.red, 85), "Background Color", group = "Bearish Box Color")
+
+// High/Low Price Labels
+showHLPriceLabels = input.bool(true, "Show High/Low Price Labels (At Start)", group = "Price Label Settings")
+showBoxPeriod = input.bool(true, "Show Box Period (Number)", group = "Price Label Settings", tooltip = "If checked, displays the number of bars the box lasted next to the price.")
+color priceLabelColor = input.color(color.white, "Price Label Color", group = "Price Label Settings")
+string priceLabelSize = input.string(size.small, "Price Label Size", options = [size.tiny, size.small, size.normal, size.large, size.huge], group = "Price Label Settings")
+float atrOffsetMult = input.float(1.0, "Price Label Offset", step = 0.1, group = "Price Label Settings", tooltip = "Offset distance for labels from the line, based on ATR.")
+
+// Progress Label Settings
+showProgressLabels = input.bool(true, "Show Progress Labels", group = "Progress Label Settings")
+color progressLabelBgColor = input.color(color.new(color.gray, 80), "Background Color", group = "Progress Label Settings")
+color progressLabelTextColor = input.color(color.black, "Text Color", group = "Progress Label Settings")
+
+// ATR Settings
+atrLen = input.int(14, "ATR: Length", group = "ATR Settings")
+maxAtrMult = input.float(3.0, "Max Box Height", step = 0.1, group = "ATR Settings")
+
+// — Retest Settings —
+showRetest = input.bool(true, "Show Retest Check", group = "Retest Settings")
+retestBars = input.int(20, "Retest Lookback Bars (Phase 3)", minval = 1, group = "Retest Settings", tooltip = "Max bars to check for retest during the cooldown phase.")
+retestMaxGap = input.float(1.0, "Max Gap for Retest (%)", minval = 0.0, step = 0.001, group = "Retest Settings", tooltip = "Max percentage distance from the line to consider a retest (1.0% default for swing/pos trading).")
+color retestColor = input.color(color.blue, "Retest Line Color", group = "Retest Settings")
+
+// — Alert Settings —
+bool enableAlert = input.bool(true, "Enable Alerts", group = "Alert Settings")
+
+
+// — State —
+var int phase = 0
+var int armedStart = na
+var int cooldownStart = na
+var float rangeHigh = na
+var float rangeLow = na
+var line topActiveLine = na
+var line botActiveLine = na
+var line leftActiveLine = na
+var line rightActiveLine= na
+var box activeBox = na
+var line topLine = na 
+var line botLine = na 
+var label topProgressLabel = na 
+var label botProgressLabel = na 
+var int phase0Bar = na 
+
+var int highBarIndex = na
+var int lowBarIndex = na
+var float finalHighPrice = na
+var float finalLowPrice = na
+
+var bool breakoutUp = false
+var bool breakoutDn = false
+var bool isRetested = false 
+var string alertText = "" 
+var bool retestTriggerCondition = false 
+
+
+// — Calculations —
+float sourceHigh = lineSource == "Wicks" ? high : math.max(open, close)
+float sourceLow = lineSource == "Wicks" ? low : math.min(open, close)
+hh = ta.highest(sourceHigh, rangeLen)
+ll = ta.lowest(sourceLow, rangeLen)
+float atrVal = ta.atr(atrLen) 
+// Map Line Style String to Pine Script Constant
+string finalLineStyle = switch lineStyleStr
+    "Dotted" => line.style_dotted
+    "Dashed" => line.style_dashed
+    => line.style_solid 
+
+// — Phase 0: Define range —
+if phase == 0
+    float currentHH = hh
+    float currentLL = ll
+    highBarIndex := bar_index - ta.highestbars(sourceHigh, rangeLen)
+    lowBarIndex := bar_index - ta.lowestbars(sourceLow, rangeLen)
+    rangeHigh := currentHH
+    rangeLow := currentLL
+
+    float boxHeight = currentHH - currentLL
+    bool isBoxSizeValid = boxHeight <= (atrVal * maxAtrMult)
+
+    if isBoxSizeValid
+        armedStart := bar_index - rangeLen + 1
+        finalHighPrice := currentHH
+        finalLowPrice := currentLL
+
+        // Draw waiting lines
+        line.delete(topLine)
+        line.delete(botLine)
+        topLine := line.new(armedStart, rangeHigh, bar_index, rangeHigh, color = waitUpColor, width = 1, style = line.style_dashed)
+        botLine := line.new(armedStart, rangeLow, bar_index, rangeLow, color = waitDnColor, width = 1, style = line.style_dashed)
+        phase0Bar := bar_index 
+        phase := 1 
+        
+// — Phase 1: Wait one bar after definition —
+if phase == 1 and bar_index > phase0Bar
+    phase := 2
+
+
+// — Phase 2: Wait for breakout and EXTEND range —
+if phase == 2
+    label.delete(topProgressLabel) 
+    label.delete(botProgressLabel)
+
+    // 1. Breakout Check (Close based)
+    breakoutUp := close > rangeHigh
+    breakoutDn := close < rangeLow
+    breakout = breakoutUp or breakoutDn
+
+    if breakout
+        // --- Breakout Occurred ---
+        
+        line.delete(topLine)
+        line.delete(botLine)
+
+        if displayMode == "Lines"
+            topActiveLine := line.new(armedStart, rangeHigh, bar_index, rangeHigh, 
+                 color = upLineColor, width = finalLineWidth, style = finalLineStyle)
+            botActiveLine := line.new(armedStart, rangeLow, bar_index, rangeLow, 
+                 color = dnLineColor, width = finalLineWidth, style = finalLineStyle)
+
+        else if displayMode == "Box"
+            color finalBoxBorderColor = breakoutUp ? bullBoxBorderColor : bearBoxBorderColor
+            color finalBoxBgColor = breakoutUp ? bullBoxBgColor : bearBoxBgColor
+            
+            topActiveLine := line.new(armedStart, rangeHigh, bar_index, rangeHigh, color = finalBoxBorderColor, width = finalLineWidth, style = finalLineStyle)
+            botActiveLine := line.new(armedStart, rangeLow, bar_index, rangeLow, color = finalBoxBorderColor, width = finalLineWidth, style = finalLineStyle)
+
+            activeBox := box.new(armedStart, rangeHigh, bar_index, rangeLow, 
+                 border_color = na, bgcolor = finalBoxBgColor)
+            line.new(armedStart, rangeLow, armedStart, rangeHigh, color = finalBoxBorderColor, width = finalLineWidth, style = finalLineStyle)
+            line.new(bar_index, rangeLow, bar_index, rangeHigh, color = finalBoxBorderColor, width = finalLineWidth, style = finalLineStyle)
+            
+        if showHLPriceLabels
+            // Box Period Calculation and Text Formatting
+            string highText = str.tostring(finalHighPrice, format.mintick)
+            string lowText = str.tostring(finalLowPrice, format.mintick)
+            
+            // Add period only to highText if enabled
+            if showBoxPeriod
+                int boxPeriod = bar_index - armedStart + 1
+                string periodText = str.tostring(boxPeriod)
+                highText := highText + " (" + periodText + ")"
+            
+            float labelOffset = atrVal * atrOffsetMult
+
+            // Upper Label (Left Edge Locked)
+            label.new(armedStart, rangeHigh + labelOffset, highText,
+                 xloc = xloc.bar_index, yloc = yloc.price,
+                 style = label.style_label_left, 
+                 textalign = text.align_center,
+                 color = color.new(color.white, 100), 
+                 textcolor = priceLabelColor,
+                 size = priceLabelSize)
+
+            // Lower Label (Left Edge Locked)
+            label.new(armedStart, rangeLow - labelOffset, lowText,
+                 xloc = xloc.bar_index, yloc = yloc.price,
+                 style = label.style_label_left, 
+                 textalign = text.align_center,
+                 color = color.new(color.white, 100), 
+                 textcolor = priceLabelColor,
+                 size = size.small)
+        // End Label Drawing
+            
+        // Move to Cooldown
+        cooldownStart := bar_index
+        phase := 3
+        isRetested := false 
+
+    else
+        // --- NO Breakout: 2. Extend Range Check (Wicks) ---
+        bool extended = false
+        if sourceHigh > rangeHigh
+            rangeHigh := sourceHigh
+            finalHighPrice := sourceHigh
+            extended := true
+
+        if sourceLow < rangeLow
+            rangeLow := sourceLow
+            finalLowPrice := sourceLow
+            extended := true
+
+        if extended
+            // Update waiting lines
+            line.set_y1(topLine, rangeHigh)
+            line.set_y2(topLine, rangeHigh)
+            line.set_y1(botLine, rangeLow)
+            line.set_y2(botLine, rangeLow)
+            
+        int labelX = bar_index + 3 
+        line.set_x2(topLine, labelX)
+        line.set_x2(botLine, labelX)
+        
+        // 3. Draw Progress Labels
+        if showProgressLabels
+            float percentFromHigh = rangeHigh > 0 ? 100 * (rangeHigh - close) / rangeHigh : na
+            float percentFromLow = close > 0 ? 100 * (close - rangeLow) / close : na
+            
+            string topText = str.tostring(rangeHigh, format.mintick) + "\n" + (na(percentFromHigh) ? "" : str.tostring(percentFromHigh, "#.00") + "%")
+            string botText = str.tostring(rangeLow, format.mintick) + "\n" + (na(percentFromLow) ? "" : str.tostring(percentFromLow, "#.00") + "%")
+            
+            label.delete(topProgressLabel)
+            label.delete(botProgressLabel)
+            
+            topProgressLabel := label.new(labelX, rangeHigh, topText,
+                 style = label.style_label_left, textalign = text.align_center,
+                 color = progressLabelBgColor, textcolor = progressLabelTextColor, size = size.small)
+
+            botProgressLabel := label.new(labelX, rangeLow, botText,
+                 style = label.style_label_left, textalign = text.align_center,
+                 color = progressLabelBgColor, textcolor = progressLabelTextColor, size = size.small)
+
+
+// — Phase 3: Cooldown before restart —
+if phase == 3
+    
+    // ▼ Retest Logic ▼
+    int lookback = bar_index - cooldownStart
+    
+    retestTriggerCondition := false 
+    
+    if showRetest and not isRetested and lookback > 0
+        int safeLookback = math.min(retestBars, lookback)
+        float breakoutLinePrice = breakoutUp[1] ? rangeHigh[1] : rangeLow[1]
+        float retestGap = breakoutLinePrice * retestMaxGap / 100.0
+        
+        bool retestOccurred = false
+        
+        // Check for Retest (Wick based)
+        if breakoutUp[1] // Upside Breakout (Checking for Support Retest)
+            float lowestPriceSinceBreak = ta.lowest(low, safeLookback)
+            if lowestPriceSinceBreak >= (breakoutLinePrice - retestGap) and lowestPriceSinceBreak < breakoutLinePrice
+                retestOccurred := true
+
+        else if breakoutDn[1] // Downside Breakout (Checking for Resistance Retest)
+            float highestPriceSinceBreak = ta.highest(high, safeLookback)
+            if highestPriceSinceBreak <= (breakoutLinePrice + retestGap) and highestPriceSinceBreak > breakoutLinePrice
+                retestOccurred := true
+        
+        if retestOccurred
+            isRetested := true
+            retestTriggerCondition := true 
+            
+            // Extend and recolor the line
+            if breakoutUp[1] and not na(topActiveLine)
+                line.set_x2(topActiveLine, bar_index)
+                line.set_color(topActiveLine, retestColor)
+            else if breakoutDn[1] and not na(botActiveLine)
+                line.set_x2(botActiveLine, bar_index)
+                line.set_color(botActiveLine, retestColor)
+    
+    
+    if bar_index - cooldownStart >= cooldownBars
+        phase := 0
+        isRetested := false 
+
+// =========================================================================================
+// ▼ ▼ ▼ Alert Conditions (Public Triggers) ▼ ▼ ▼
+// =========================================================================================
+
+// Individual Triggers
+bool isBreakoutUpTrigger = (phase[1] == 2 and phase == 3 and breakoutUp)
+bool isBreakoutDownTrigger = (phase[1] == 2 and phase == 3 and breakoutDn)
+bool isRetestConfirmedTrigger = retestTriggerCondition and not retestTriggerCondition[1] and phase == 3 
+
+// Consolidated Trigger
+bool isAnyDarvasEvent = isBreakoutUpTrigger or isBreakoutDownTrigger or isRetestConfirmedTrigger
+
+
+// Using alertcondition() (User selectable in the Alert panel)
+alertcondition(isAnyDarvasEvent, title="1. ANY DARVAS EVENT (Consolidated)", message="ANY DARVAS EVENT TRIGGERED")
+alertcondition(isBreakoutUpTrigger, title="2. BULLISH BREAKOUT (Individual)", message="BULLISH BREAKOUT")
+alertcondition(isBreakoutDownTrigger, title="3. BEARISH BREAKOUT (Individual)", message="BEARISH BREAKOUT")
+alertcondition(isRetestConfirmedTrigger, title="4. RETEST CONFIRMED (Individual)", message="RETEST CONFIRMED (Support/Resistance)")

@@ -1,0 +1,137 @@
+radar:
+  top_movers_count: 3
+  overall_rs_weights:
+  - 1.0
+  - 2.0
+  - 2.0
+  near_high_threshold_pct: 0.5
+  sector_etfs:
+  - ticker: QQQ
+    name: Nasdaq 100
+  - ticker: QQQE
+    name: Nasdaq 100 Equal Weight
+  - ticker: RSP
+    name: S&P 500 Equal Weight
+  - ticker: DIA
+    name: Dow Jones
+  - ticker: IWM
+    name: Russell 2000
+  - ticker: XLV
+    name: Health Care
+  - ticker: XLE
+    name: Energy
+  - ticker: XLF
+    name: Financials
+  - ticker: XLRE
+    name: Real Estate
+  - ticker: XLB
+    name: Materials
+  - ticker: XLP
+    name: Consumer Staples
+  - ticker: XLU
+    name: Utilities
+  - ticker: XLY
+    name: Consumer Discretionary
+  - ticker: XLK
+    name: Technology
+  - ticker: XLC
+    name: Communication Services
+  - ticker: XLI
+    name: Industrials
+  industry_etfs:
+  - ticker: ICLN
+    name: Clean Energy
+    major_stocks:
+    - FSLR
+    - NXT
+    - BE
+  - ticker: UFO
+    name: Space
+    major_stocks:
+    - RKLB
+    - PL
+    - VSAT
+  - ticker: XOP
+    name: Oil and Gas Exploration
+    major_stocks:
+    - COP
+    - EOG
+    - OXY
+  - ticker: CIBR
+    name: Cybersecurity
+    major_stocks:
+    - CRWD
+    - PANW
+    - ZS
+  - ticker: POWR
+    name: Power Grid
+    major_stocks:
+    - GEV
+    - PWR
+    - NEE
+  - ticker: BOAT
+    name: Marine Shipping
+    major_stocks:
+    - ZIM
+    - SBLK
+    - GOGL
+  - ticker: IPO
+    name: IPOs
+    major_stocks:
+    - ARM
+    - UBER
+    - DUOL
+  - ticker: IGV
+    name: Software
+    major_stocks:
+    - MSFT
+    - ORCL
+    - CRM
+  - ticker: TAN
+    name: Solar
+    major_stocks:
+    - FSLR
+    - ENPH
+    - NXT
+  - ticker: MOO
+    name: Agribusiness
+    major_stocks:
+    - DE
+    - NTR
+    - CF
+  - ticker: XBI
+    name: Biotech
+    major_stocks:
+    - VRTX
+    - REGN
+    - ARGX
+  - ticker: SMH
+    name: Semiconductors
+    major_stocks:
+    - NVDA
+    - AVGO
+    - AMD
+  - ticker: FINX
+    name: FinTech
+    major_stocks:
+    - COIN
+    - SOFI
+    - SQ
+  - ticker: WGMI
+    name: Bitcoin Miners
+    major_stocks:
+    - IREN
+    - CIFR
+    - HUT
+  - ticker: BLOK
+    name: Blockchain
+    major_stocks:
+    - COIN
+    - MSTR
+    - HOOD
+  - ticker: QTUM
+    name: Quantum and AI
+    major_stocks:
+    - IONQ
+    - IBM
+    - GOOGL

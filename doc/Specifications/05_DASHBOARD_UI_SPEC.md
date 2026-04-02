@@ -28,6 +28,7 @@ On `Today's Watchlist`, the sidebar also exposes page-local controls:
 
 - card multiselect used for watchlist-card display
 - duplicate threshold input used for duplicate-band counting
+- initial card multiselect state sourced from `scan.default_selected_scan_names` and falls back to all cards when omitted
 
 ### 2.2 Shared context and health
 
@@ -165,60 +166,96 @@ Current `Industry Leaders` columns:
 
 ## 5. Market Dashboard
 
-### 5.1 Header and top stats
+### 5.1 Header
 
-The page header is centered and shows the update time.
+The page header is centered and shows:
 
-The top stat cards currently show:
+- title: `Market Dashboard`
+- `Updated: HH:MM:SS`
 
-- `Market Score`
-- `Label`
-- `1W Ago`
-- `1M Ago`
-- `VIX`
+### 5.2 Top layout
 
-### 5.2 Market Conditions block
+The page now uses a three-part top layout instead of the former stat-card row.
 
-The Market Conditions section currently renders:
+Current rendered areas:
 
-- current score
-- current label
-- a progress bar from `score / 100`
-- a short explanatory panel
+- `Market Conditions` hero panel with explanatory copy
+- current score chip using the current market label
+- semicircle score gauge derived from `score`
+- four prior-score cards: `1D Ago`, `1W Ago`, `1M Ago`, `3M Ago`
+- `Breadth & Trend Metrics` metric card grid
+- `Performance Overview` metric card grid
+- `High & VIX` metric card grid
 
-### 5.3 Score timeline
+The page no longer renders the old top stat cards or the separate `Component Scores` table.
 
-The page renders a table with:
+### 5.3 Market Conditions hero
 
-- `Now`
+The hero panel currently shows:
+
+- a short explanation of how market conditions are determined
+- the current `label`
+- the current `score`
+- a semicircle gauge filled from `score / 100`
+
+The prior-score stack currently shows one card each for:
+
 - `1D Ago`
 - `1W Ago`
 - `1M Ago`
 - `3M Ago`
 
-### 5.4 Summary tables
+Each prior-score card shows:
 
-The current Market Dashboard renders separate tables for:
+- the rounded prior score
+- the label computed for that historical score
 
-- `Breadth & Trend Metrics`
-- `Performance Overview`
-- `High & VIX`
-- `Component Scores`
+### 5.4 Summary metric panels
 
-### 5.5 Market Snapshot
+The Market Dashboard now renders compact metric cards instead of tables.
 
-The page renders a `Market Snapshot` table sourced from configured symbols.
+Current `Breadth & Trend Metrics` items:
 
-Current columns:
+- `SMA 10`
+- `SMA 20`
+- `SMA 50`
+- `SMA 200`
+- `20 > 50`
+- `50 > 200`
 
-- `TICKER`
-- `NAME`
+Current `Performance Overview` items:
+
+- `% YTD`
+- `% 1W`
+- `% 1M`
+- `% 1Y`
+
+Current `High & VIX` items:
+
+- `S2W High`
+- `VIX`
+
+### 5.5 Core / Leadership / External
+
+The page renders three snapshot sections using the same card layout:
+
+- `Core`
+- `Leadership`
+- `External`
+
+`Core` is the only universe used for `Market Score`.
+`Leadership` and `External` are display-only sections and do not feed the score.
+
+Each card currently shows:
+
+- configured symbol name
+- `21EMA POS` badge
+- display ticker
 - `PRICE`
 - `DAY %`
 - `VOL vs 50D %`
-- `21EMA POS`
 
-The current 21EMA position labels are:
+The underlying 21EMA position labels are still sourced from the market snapshot builder:
 
 - `below 21EMA Low`
 - `inside 21EMA Cloud`
@@ -227,19 +264,22 @@ The current 21EMA position labels are:
 
 ### 5.6 Factors vs SP500
 
-The page renders a `Factors vs SP500` table.
+The page renders `Factors vs SP500` as stacked factor cards instead of a table and uses the configured factors-only universe.
 
-Current columns:
+Each factor row currently shows:
 
-- `TICKER`
-- `NAME`
+- factor name
+- factor ticker
 - `REL 1W %`
 - `REL 1M %`
-- `REL 1Y %`
+- mini bars for the 1W and 1M values
+
+The page does not render `REL 1Y %` in this panel even though the underlying result frame still includes it.
 
 ### 5.7 S5TH chart
 
-The page renders a line chart from `result.s5th_series` using the `pct_above_sma200` series.
+The page no longer renders the S5TH chart.
+The underlying result object may still carry `result.s5th_series`, but the active Market Dashboard does not display it.
 
 ---
 

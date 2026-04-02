@@ -1,0 +1,25 @@
+indicators:
+  ema_period: 21
+  sma_short_period: 50
+  sma_long_period: 200
+  atr_period: 14
+  adr_period: 20
+  adr_formula: sma_high_low_ratio
+  dcr_formula: closing_range
+  relvol_period: 50
+  ud_volume_period: 50
+  rsi_short_period: 21
+  rsi_long_period: 63
+  weekly_short_wma_period: 10
+  weekly_long_wma_period: 30
+  three_weeks_tight_pct_threshold: 1.5
+  enable_3wt: true
+  atr_21ema_good_min: -0.5
+  atr_21ema_good_max: 1.0
+  atr_50sma_good_max: 3.0
+  ema21_low_pct_full_max: 5.0
+  ema21_low_pct_reduce_max: 8.0
+  atr_pct_from_50sma_overheat: 7.0
+  show_overheat_dot: true
+  pp_count_window_days: 30
+  pocket_pivot_lookback: 10

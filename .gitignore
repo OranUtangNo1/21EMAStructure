@@ -47,3 +47,6 @@ data_runs/universe_snapshots/*
 
 # Local logs
 *.log
+
+# Local Tmp
+tmp/

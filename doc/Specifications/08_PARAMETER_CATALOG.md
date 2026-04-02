@@ -2,7 +2,8 @@
 
 ## 1. Principle
 
-The active implementation keeps thresholds, weights, universes, and modes in `config/default.yaml`.
+The active implementation keeps thresholds, weights, universes, and modes rooted at `config/default.yaml`.
+That entry file is a manifest which includes section-level files under `config/default/`.
 This catalog lists the parameters that are active in the current codebase.
 
 Archived entry, structure, sizing, and trade-management parameters are out of scope for this file.
@@ -137,6 +138,9 @@ Archived entry, structure, sizing, and trade-management parameters are out of sc
 ### relvol_period
 - current default: `50`
 
+### ud_volume_period
+- current default: `50`
+
 ### rsi_short_period
 - current default: `21`
 
@@ -237,7 +241,19 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 - `club_97_hybrid_threshold`: `90.0`
 - `club_97_rs21_threshold`: `97.0`
 - `vcs_min_threshold`: `60.0`
+- `vcs_52_high_vcs_min`: `60.0`
+- `vcs_52_high_rs21_min`: `60.0`
+- `vcs_52_high_dist_max`: `-15.0`
+- `vcs_52_low_vcs_min`: `60.0`
+- `vcs_52_low_rs21_min`: `60.0`
+- `vcs_52_low_dist_max`: `25.0`
+- `vol_accum_ud_ratio_min`: `1.5`
+- `vol_accum_rel_vol_min`: `1.0`
 - `weekly_gainer_threshold`: `20.0`
+- `near_52w_high_threshold_pct`: `5.0`
+- `near_52w_high_hybrid_min`: `70.0`
+- `three_weeks_tight_vcs_min`: `50.0`
+- `rs_acceleration_rs21_min`: `70.0`
 - `duplicate_min_count`: `3`
 - `high_eps_growth_rank_threshold`: `90.0`
 - `earnings_warning_days`: `7`
@@ -245,7 +261,9 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 ### Watchlist and cards
 - `watchlist_sort_mode`: `hybrid_score`
 - `enabled_scan_rules`: active scan family names
-- `enabled_list_rules`: active annotation-rule names
+- `default_selected_scan_names`: startup-selected watchlist cards for the sidebar multiselect
+- `enabled_annotation_filters`: active annotation-rule names
+- `enabled_list_rules`: legacy alias still accepted for annotation rules
 - `card_sections`: scan-based card definitions and display names
 
 ---
@@ -271,9 +289,11 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 - `vix_score`: `0.05`
 
 ### Universes
-- `market_condition_etf_universe`: 43 ETF/symbol items
-- `market_snapshot_symbols`: `RSP`, `QQQE`, `IWM`, `DIA`, `^VIX`, `BTC-USD`
-- `factor_etfs`: `VUG`, `VTV`, `VYM`, `MGC`, `VO`, `VB`, `MTUM`, `IPO`
+- `market_condition_etf_universe`: Core universe used for `Market Score` with 19 ETF items
+- `leadership_etfs`: display-only leadership universe with 14 ETF items
+- `external_etfs`: display-only external universe with 3 ETF items
+- `factor_etfs`: `VUG`, `VTV`, `VYM`, `MGC`, `VO`, `VB`, `MTUM`
+- `QQQ`, `QQQE`, `RSP`, `DIA`, `IWM`, and the sector ETFs retain direct contact with source fragments; the remaining market-universe additions are implementation-side design decisions
 
 ---
 

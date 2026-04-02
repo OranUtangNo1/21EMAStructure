@@ -1,0 +1,28 @@
+Formula
+Price deviation from the 50-day moving average (%) / (ATR (Average True Range) / Current Price)
+
+What is the ATR% multiple from the 50MA?
+This is an indicator that measures “how far the current stock price has deviated from the 50-day moving average”
+by dividing it by “the typical range of price fluctuations for that stock (= ATR).”
+This allows you to objectively assess “how far the stock price has deviated” relative to the stock's typical price movement (volatility).
+
+In other words, it lets you check whether the price movement is abnormal by comparing “how much the price has risen” to the stock's “usual movement.”
+
+
+Current Price: $354.82
+
+50-Day Moving Average: $265.39
+
+ATR (14-day): $18.26
+
+The numerator, “Deviation between Price and 50-Day Moving Average (%)”, is:
+
+(354.82 − 265.39) ÷ 265.39 = 0.3370
+
+The denominator, “ATR ÷ Current Price,” is:
+
+18.26 ÷ 354.82 = 0.0515
+
+Therefore, 0.3370 ÷ 0.0515 = 6.54x
+
+This is how the calculation works.

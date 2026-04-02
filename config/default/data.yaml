@@ -1,0 +1,11 @@
+data:
+  technical_cache_ttl_hours: 12
+  profile_cache_ttl_hours: 168
+  fundamental_cache_ttl_hours: 24
+  allow_stale_cache_on_failure: true
+  persist_research_snapshots: true
+  price_batch_size: 80
+  price_max_retries: 3
+  price_request_sleep_seconds: 2.0
+  price_retry_backoff_multiplier: 2.0
+  price_incremental_period: 5d

@@ -1,0 +1,56 @@
+・My Entry Decision Process Based on the 21EMA Structure
+x.com/oratnek_ill/st…
+
+ - 21EMA Cockpit v2
+Unified version combining the three components of the 21EMA Cockpit into one.
+x.com/oratnek_ill/st…
+
+ - 21EMA Cockpit
+This indicator is designed for my Entry Decision Process. It includes three key components: entry timing, trend confirmation, and fundamentals. 
+x.com/oratnek_ill/st…
+
+ - 21EMA Scan for Pine Screener
+This is a Pine Screener–only indicator designed to screen the entry zones used in my Entry Decision Process.
+It allows for detailed screening that isn’t possible with TradingView’s standard built-in screener.
+x.com/oratnek_ill/st…
+
+ - 21EMA cloud
+This indicator plots the band between the 21EMA High and the 21EMA Low.
+x.com/oratnek_ill/st…
+
+・My scripts page (TradingView) 
+tradingview.com/u/oratnek/#pub…
+
+ - Relative Strength Table
+This indicator compares the relative strength (RS) of up to 35 tickers against a benchmark across multiple timeframes.
+Both the RS lookback periods and tickers are fully customizable, allowing you to analyze sector rotation, identify sector leaders, and evaluate whether your portfolio is outperforming or lagging behind the benchmark. 
+x.com/oratnek_ill/st…
+
+ - Structure Pivot (LL-HL / HH-LH)
+This indicator scans across all specified lengths at the same time and detects both bullish (LL→HL) and bearish (HH→LH) structures within them. 
+From the setups found, it automatically selects the pivot line based on the chosen mode—Tightest Structure, Longest, or Shortest. This allows the indicator to adapt its breakout/breakdown level depending on whether a tighter entry (Tightest Structure), a larger structure (Longest), or a quick short-term pullback (Shortest) is preferred. 
+x.com/oratnek_ill/st…
+
+- Volatility Contraction Score (VCS)
+VCS is an indicator based on the VCP concept that quantifies price contraction on a 0 to 100 scale, helping identify potential volatility expansions before they happen.
+x.com/oratnek_ill/st…
+
+ - Darvas Lines/Box
+This indicator is designed to identify clear consolidation ranges and spot decisive breakouts with precision. It automatically draws and adjusts the ranges, featuring Advanced Retest Confirmation and customizable alert conditions to deliver reliable signals for tracking and trading trend continuations. 
+x.com/oratnek_ill/st…
+
+ - 5ma + O’Neil & Minervini Buy Condition
+This indicator features five customizable MAs (SMA, EMA, WMA, VWMA) for flexible multi-timeframe analysis. It combines O’Neil and Minervini’s buy conditions, displaying both separate and unified signals visually.
+tradingview.com/script/AYaa5Ih…
+
+ - Position Size Calculator
+This indicator automatically calculates and displays the optimal position size, stop price, and maximum loss amount. It offers two stop-loss modes: a fixed-percentage mode and an ATR-based mode that adapts to market volatility.
+tradingview.com/script/pWAU5ja… 
+
+・Portfolio Management Spreadsheet
+This tool is a portfolio management spreadsheet that uses ATR. It is a customized version of Steve Jacobs’s ATR Matrix.
+docs.google.com/spreadsheets/d…
+
+・Others
+I share my non-public TradingView indicators, trading methods, and screening strategies on note (articles are in Japanese).
+note.com/oratnek_ill

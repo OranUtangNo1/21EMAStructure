@@ -83,7 +83,73 @@ div[data-testid="stDataFrame"], div[data-testid="stExpander"] { background:rgba(
 .oratek-priority-count { color:#2d6cdf; font-size:.9rem; font-weight:800; white-space:nowrap; padding-top:.25rem; }
 .oratek-priority-grid { display:grid; grid-template-columns:repeat(8, minmax(0,1fr)); gap:.7rem 1rem; margin-top:.95rem; }
 .oratek-priority-item { background:rgba(255,255,255,.78); border:1px solid rgba(45,108,223,.12); border-radius:14px; padding:.72rem .75rem; color:var(--text); font-size:.98rem; font-weight:800; text-align:center; }
-@media (max-width:768px) { .oratek-page-meta, .oratek-page-submeta { text-align:left; padding-top:.15rem; } .oratek-ticker-grid { grid-template-columns:repeat(3, minmax(0,1fr)); } .oratek-priority-grid { grid-template-columns:repeat(4, minmax(0,1fr)); } .oratek-mover-row { grid-template-columns:1fr; } .oratek-mover-side { text-align:left; } }
+.oratek-market-panel { background:rgba(255,255,255,.95); border:1px solid var(--panel-border); border-radius:24px; box-shadow:0 18px 36px rgba(34,48,69,.06); padding:1rem 1.05rem 1.1rem; margin-bottom:1rem; }
+.oratek-market-panel-title { color:var(--text); font-size:.82rem; font-weight:800; text-transform:uppercase; letter-spacing:.08em; margin-bottom:.85rem; }
+.oratek-market-panel-title.centered { text-align:center; }
+.oratek-market-copy-head { color:var(--text); font-size:.88rem; font-weight:800; margin-bottom:.35rem; }
+.oratek-market-copy { color:var(--muted); font-size:.84rem; line-height:1.55; }
+.oratek-market-score-chip { display:inline-flex; align-items:center; justify-content:center; gap:.45rem; padding:.72rem 1rem; border-radius:16px; margin:1rem 0 .8rem; font-size:1rem; font-weight:800; min-width:136px; }
+.oratek-market-score-chip.positive { background:linear-gradient(135deg, #1fb87b 0%, #27c997 100%); color:#fff; }
+.oratek-market-score-chip.negative { background:linear-gradient(135deg, #f15050 0%, #ef3d52 100%); color:#fff; }
+.oratek-market-score-chip.neutral { background:linear-gradient(135deg, #7f8ca6 0%, #94a1ba 100%); color:#fff; }
+.oratek-market-gauge { width:220px; margin:0 auto .2rem; }
+.oratek-market-gauge-svg { display:block; width:220px; height:120px; }
+.oratek-market-gauge-track { fill:none; stroke:#e8eef8; stroke-width:28; stroke-linecap:round; }
+.oratek-market-gauge-value { fill:none; stroke-width:28; stroke-linecap:round; stroke-dasharray:var(--market-score-filled) var(--market-score-remaining); }
+.oratek-market-gauge-value.positive { stroke:#21a46f; }
+.oratek-market-gauge-value.negative { stroke:#ef4c54; }
+.oratek-market-gauge-value.neutral { stroke:#8a97b0; }
+.oratek-market-gauge-inner { fill:none; stroke:#dbe4f3; stroke-width:1.5; }
+.oratek-market-gauge-core { fill:rgba(255,255,255,.96); stroke:rgba(219,228,243,.9); stroke-width:1.5; }
+.oratek-market-gauge-caption { text-align:center; color:var(--muted); font-size:.78rem; margin-top:.2rem; }
+.oratek-market-timeline-stack { display:grid; gap:.72rem; }
+.oratek-market-mini-card { background:rgba(255,255,255,.95); border:1px solid var(--panel-border); border-radius:20px; box-shadow:0 14px 30px rgba(34,48,69,.05); padding:.88rem .95rem; }
+.oratek-market-mini-head { display:flex; justify-content:space-between; gap:.75rem; align-items:flex-start; }
+.oratek-market-mini-title { color:var(--text); font-size:.84rem; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }
+.oratek-market-mini-state { color:var(--muted); font-size:.78rem; margin-top:.28rem; }
+.oratek-market-mini-score { min-width:58px; text-align:center; border-radius:12px; padding:.36rem .55rem; font-size:.92rem; font-weight:800; }
+.oratek-market-mini-score.positive { background:rgba(33,164,111,.14); color:#21a46f; }
+.oratek-market-mini-score.negative { background:rgba(223,91,91,.14); color:#df5b5b; }
+.oratek-market-mini-score.neutral { background:rgba(127,140,166,.14); color:#7f8ca6; }
+.oratek-market-metric-grid { display:grid; gap:.75rem; }
+.oratek-market-metric-grid.cols-6 { grid-template-columns:repeat(6, minmax(0,1fr)); }
+.oratek-market-metric-grid.cols-4 { grid-template-columns:repeat(4, minmax(0,1fr)); }
+.oratek-market-metric-grid.cols-2 { grid-template-columns:repeat(2, minmax(0,1fr)); }
+.oratek-market-metric-card { background:#fbfcff; border:1px solid #e6edf9; border-radius:18px; padding:.78rem .6rem; text-align:center; min-height:112px; display:flex; flex-direction:column; justify-content:space-between; }
+.oratek-market-metric-name { color:var(--muted); font-size:.74rem; font-weight:800; text-transform:uppercase; letter-spacing:.05em; }
+.oratek-market-metric-value { color:var(--text); font-size:1.06rem; font-weight:800; margin:.45rem 0 .55rem; }
+.oratek-market-pill { display:inline-flex; align-items:center; justify-content:center; border-radius:999px; padding:.34rem .65rem; font-size:.74rem; font-weight:800; }
+.oratek-market-pill.positive { background:rgba(33,164,111,.14); color:#21a46f; }
+.oratek-market-pill.negative { background:rgba(223,91,91,.14); color:#df5b5b; }
+.oratek-market-pill.neutral { background:rgba(127,140,166,.14); color:#7f8ca6; }
+.oratek-market-stage-head { margin:.4rem 0 .65rem; }
+.oratek-market-stage-title { color:var(--text); font-size:1rem; font-weight:800; text-align:center; }
+.oratek-market-stage-caption { color:var(--muted); font-size:.78rem; text-align:center; margin-top:.18rem; }
+.oratek-market-snapshot-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:1rem; }
+.oratek-market-snapshot-card { background:rgba(255,255,255,.95); border:1px solid var(--panel-border); border-radius:22px; box-shadow:0 18px 36px rgba(34,48,69,.06); padding:.9rem 1rem 1rem; }
+.oratek-market-snapshot-head { display:flex; justify-content:space-between; gap:.65rem; align-items:flex-start; }
+.oratek-market-snapshot-name { color:var(--muted); font-size:.78rem; font-weight:700; line-height:1.35; max-width:70%; }
+.oratek-market-snapshot-ticker { color:var(--text); font-size:1.62rem; font-weight:800; letter-spacing:-.03em; margin-top:.55rem; }
+.oratek-market-snapshot-price-row { display:flex; justify-content:space-between; gap:.75rem; align-items:baseline; margin-top:.55rem; }
+.oratek-market-snapshot-price { color:var(--text); font-size:1.42rem; font-weight:800; }
+.oratek-market-snapshot-day { font-size:1.08rem; font-weight:800; text-align:right; }
+.oratek-market-snapshot-volume { color:var(--muted); font-size:.78rem; text-align:right; margin-top:.28rem; }
+.oratek-market-factors-panel { background:rgba(255,255,255,.95); border:1px solid var(--panel-border); border-radius:22px; box-shadow:0 18px 36px rgba(34,48,69,.06); padding:.9rem .95rem 1rem; }
+.oratek-market-factor-list { display:grid; gap:.72rem; }
+.oratek-market-factor-row { background:#fbfcff; border:1px solid #e6edf9; border-radius:18px; padding:.8rem .85rem; }
+.oratek-market-factor-head { display:flex; justify-content:space-between; gap:.5rem; align-items:baseline; margin-bottom:.55rem; }
+.oratek-market-factor-name { color:var(--text); font-size:.92rem; font-weight:800; }
+.oratek-market-factor-ticker { color:var(--muted); font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; }
+.oratek-market-factor-metrics { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:.65rem; }
+.oratek-market-factor-metric-head { display:flex; justify-content:space-between; gap:.4rem; align-items:center; font-size:.73rem; font-weight:800; margin-bottom:.28rem; }
+.oratek-market-factor-period { color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+.oratek-market-factor-value { font-weight:800; }
+.oratek-market-factor-bar { height:8px; border-radius:999px; background:#edf1f7; overflow:hidden; }
+.oratek-market-factor-fill { display:block; height:100%; border-radius:999px; }
+.oratek-market-factor-fill.positive { background:linear-gradient(90deg, #39cf9a 0%, #17b07d 100%); }
+.oratek-market-factor-fill.negative { background:linear-gradient(90deg, #ff8a7a 0%, #ef4d53 100%); }
+.oratek-market-factor-fill.neutral { background:linear-gradient(90deg, #aeb9ca 0%, #8a97b0 100%); }
+@media (max-width:768px) { .oratek-page-meta, .oratek-page-submeta { text-align:left; padding-top:.15rem; } .oratek-ticker-grid { grid-template-columns:repeat(3, minmax(0,1fr)); } .oratek-priority-grid { grid-template-columns:repeat(4, minmax(0,1fr)); } .oratek-mover-row { grid-template-columns:1fr; } .oratek-mover-side { text-align:left; } .oratek-market-gauge { width:180px; height:96px; } .oratek-market-metric-grid.cols-6, .oratek-market-metric-grid.cols-4 { grid-template-columns:repeat(2, minmax(0,1fr)); } .oratek-market-metric-grid.cols-2, .oratek-market-factor-metrics { grid-template-columns:repeat(2, minmax(0,1fr)); } .oratek-market-snapshot-grid { grid-template-columns:1fr; } .oratek-market-snapshot-price-row { align-items:flex-start; flex-direction:column; } }
 </style>
 """
 
@@ -453,97 +519,201 @@ def _performance_label(value: float) -> str:
     return "Neutral"
 
 
+def _vix_label_from_score(score: float | None) -> str:
+    if score is None or pd.isna(score):
+        return "Neutral"
+    return _breadth_label(float(score))
+
+
+def _format_market_number(value: float | None, decimals: int = 1) -> str:
+    if value is None or pd.isna(value):
+        return "N/A"
+    return f"{float(value):.{decimals}f}"
+
+
+def _format_market_percent(value: float | None, signed: bool = False, decimals: int = 2) -> str:
+    if value is None or pd.isna(value):
+        return "N/A"
+    prefix = "+" if signed else ""
+    return f"{float(value):{prefix}.{decimals}f}%"
+
+
+def _format_market_price(value: float | None) -> str:
+    if value is None or pd.isna(value):
+        return "N/A"
+    amount = float(value)
+    if abs(amount) >= 1000.0:
+        return f"${amount:,.0f}"
+    return f"${amount:,.2f}"
+
+
+def _market_display_ticker(value: object) -> str:
+    text = str(value).strip().upper()
+    return text.removeprefix("^").replace("-USD", "")
+
+
+def _market_ema_badge(label: object) -> tuple[str, str]:
+    text = str(label).strip()
+    if text == "above 21EMA High":
+        return "> 21EMA High", "positive"
+    if text == "below 21EMA Low":
+        return "< 21EMA Low", "negative"
+    if text == "inside 21EMA Cloud":
+        return "Inside 21EMA", "neutral"
+    return "21EMA Unknown", "neutral"
+
+
+def render_market_conditions_panel(result) -> None:
+    tone = _tone_class(result.label)
+    score_pct = max(0.0, min(float(result.score), 100.0))
+    arc_length = 282.743
+    filled = arc_length * (score_pct / 100.0)
+    remaining = max(arc_length - filled, 0.0)
+    st.markdown(
+        f"<div class='oratek-market-panel'><div class='oratek-market-panel-title'>Market Conditions</div><div class='oratek-market-copy-head'>What are Market Conditions?</div><div class='oratek-market-copy'>Market conditions are determined by the percentage of positive signals across breadth, trend metrics, performance overview, 2-week highs, and the VIX.</div><div class='oratek-market-score-chip {tone}'>{html.escape(str(result.label))} {_format_market_number(result.score, 0)}</div><div class='oratek-market-gauge'><svg class='oratek-market-gauge-svg' viewBox='0 0 220 120' aria-hidden='true'><path class='oratek-market-gauge-track' d='M20 110 A90 90 0 0 1 200 110'></path><path class='oratek-market-gauge-value {tone}' d='M20 110 A90 90 0 0 1 200 110' style='--market-score-filled:{filled:.3f}; --market-score-remaining:{remaining:.3f};'></path><path class='oratek-market-gauge-inner' d='M49 110 A61 61 0 0 1 171 110'></path><path class='oratek-market-gauge-core' d='M67 110 A43 43 0 0 1 153 110 L153 110 L67 110 Z'></path></svg></div><div class='oratek-market-gauge-caption'>Composite score (0-100)</div></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def render_market_history_stack(result) -> None:
+    rows = [
+        ("1D ago", result.score_1d_ago, result.label_1d_ago),
+        ("1W ago", result.score_1w_ago, result.label_1w_ago),
+        ("1M ago", result.score_1m_ago, result.label_1m_ago),
+        ("3M ago", result.score_3m_ago, result.label_3m_ago),
+    ]
+    cards: list[str] = []
+    for title, score, label in rows:
+        tone = _tone_class(label or "neutral")
+        cards.append(
+            f"<div class='oratek-market-mini-card'><div class='oratek-market-mini-head'><div><div class='oratek-market-mini-title'>{html.escape(title)}</div><div class='oratek-market-mini-state'>{html.escape(label or 'N/A')}</div></div><div class='oratek-market-mini-score {tone}'>{html.escape(_format_market_number(score, 1))}</div></div></div>"
+        )
+    st.markdown("<div class='oratek-market-timeline-stack'>" + "".join(cards) + "</div>", unsafe_allow_html=True)
+
+
+def render_market_metric_panel(title: str, items: list[tuple[str, str, str, str]], columns: int, empty_text: str) -> None:
+    if not items:
+        st.markdown(
+            f"<div class='oratek-market-panel'><div class='oratek-market-panel-title centered'>{html.escape(title)}</div><div class='oratek-empty-state'>{html.escape(empty_text)}</div></div>",
+            unsafe_allow_html=True,
+        )
+        return
+    cards = "".join(
+        f"<div class='oratek-market-metric-card'><div class='oratek-market-metric-name'>{html.escape(name)}</div><div class='oratek-market-metric-value'>{html.escape(value)}</div><div class='oratek-market-pill {tone}'>{html.escape(status)}</div></div>"
+        for name, value, status, tone in items
+    )
+    st.markdown(
+        f"<div class='oratek-market-panel'><div class='oratek-market-panel-title centered'>{html.escape(title)}</div><div class='oratek-market-metric-grid cols-{columns}'>{cards}</div></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _market_metric_items(result) -> tuple[list[tuple[str, str, str, str]], list[tuple[str, str, str, str]], list[tuple[str, str, str, str]]]:
+    breadth_keys = (
+        ("pct_above_sma10", "SMA 10"),
+        ("pct_above_sma20", "SMA 20"),
+        ("pct_above_sma50", "SMA 50"),
+        ("pct_above_sma200", "SMA 200"),
+        ("pct_sma20_gt_sma50", "20 > 50"),
+        ("pct_sma50_gt_sma200", "50 > 200"),
+    )
+    breadth_items = []
+    for key, label in breadth_keys:
+        value = result.breadth_summary.get(key)
+        status = _breadth_label(float(value)) if value is not None and not pd.isna(value) else "Neutral"
+        breadth_items.append((label, _format_market_percent(value, signed=False, decimals=2), status, _tone_class(status)))
+
+    performance_keys = ("% YTD", "% 1W", "% 1M", "% 1Y")
+    performance_items = []
+    for key in performance_keys:
+        value = result.performance_overview.get(key)
+        status = _performance_label(float(value)) if value is not None and not pd.isna(value) else "Neutral"
+        performance_items.append((key, _format_market_percent(value, signed=True, decimals=2), status, _tone_class(status)))
+
+    high_value = result.high_vix_summary.get("S2W HIGH %")
+    high_status = _breadth_label(float(high_value)) if high_value is not None and not pd.isna(high_value) else "Neutral"
+    vix_value = result.high_vix_summary.get("VIX")
+    vix_status = _vix_label_from_score(result.component_scores.get("vix_score"))
+    high_vix_items = [
+        ("S2W High", _format_market_percent(high_value, signed=False, decimals=2), high_status, _tone_class(high_status)),
+        ("VIX", _format_market_number(vix_value, 2), vix_status, _tone_class(vix_status)),
+    ]
+    return breadth_items, performance_items, high_vix_items
+
+
+def render_market_snapshot_panel(frame: pd.DataFrame) -> None:
+    if frame.empty:
+        st.caption("No market snapshot rows available.")
+        return
+    cards: list[str] = []
+    for _, row in frame.iterrows():
+        badge_text, badge_tone = _market_ema_badge(row.get("21EMA POS"))
+        cards.append(
+            f"<div class='oratek-market-snapshot-card'><div class='oratek-market-snapshot-head'><div class='oratek-market-snapshot-name'>{html.escape(str(row.get('NAME', '')))}</div><div class='oratek-market-pill {badge_tone}'>{html.escape(badge_text)}</div></div><div class='oratek-market-snapshot-ticker'>{html.escape(_market_display_ticker(row.get('TICKER', '')))}</div><div class='oratek-market-snapshot-price-row'><div class='oratek-market-snapshot-price'>{html.escape(_format_market_price(row.get('PRICE')))}</div><div><div class='oratek-market-snapshot-day oratek-{_tone_class(row.get('DAY %'))}'>{html.escape(_format_market_percent(row.get('DAY %'), signed=True, decimals=2))}</div><div class='oratek-market-snapshot-volume'>volume % {html.escape(_format_market_percent(row.get('VOL vs 50D %'), signed=True, decimals=1))}</div></div></div></div>"
+        )
+    st.markdown("<div class='oratek-market-snapshot-grid'>" + "".join(cards) + "</div>", unsafe_allow_html=True)
+
+
+def render_market_factors_panel(frame: pd.DataFrame) -> None:
+    if frame.empty:
+        st.caption("No factor-relative-strength rows available.")
+        return
+    scale_values: list[float] = []
+    for column in ["REL 1W %", "REL 1M %"]:
+        scale_values.extend(abs(float(value)) for value in frame[column].dropna().tolist())
+    scale = max(scale_values) if scale_values else 1.0
+    scale = max(scale, 0.25)
+
+    rows_html: list[str] = []
+    for _, row in frame.iterrows():
+        metric_html: list[str] = []
+        for period, column in (("1W", "REL 1W %"), ("1M", "REL 1M %")):
+            value = row.get(column)
+            tone = _tone_class(value)
+            width = 0.0
+            if value is not None and not pd.isna(value):
+                width = min(abs(float(value)) / scale * 100.0, 100.0)
+            metric_html.append(
+                f"<div><div class='oratek-market-factor-metric-head'><span class='oratek-market-factor-period'>{period}</span><span class='oratek-market-factor-value oratek-{tone}'>{html.escape(_format_market_percent(value, signed=True, decimals=2))}</span></div><div class='oratek-market-factor-bar'><span class='oratek-market-factor-fill {tone}' style='width:{width:.1f}%'></span></div></div>"
+            )
+        rows_html.append(
+            f"<div class='oratek-market-factor-row'><div class='oratek-market-factor-head'><div class='oratek-market-factor-name'>{html.escape(str(row.get('NAME', '')))}</div><div class='oratek-market-factor-ticker'>{html.escape(_market_display_ticker(row.get('TICKER', '')))}</div></div><div class='oratek-market-factor-metrics'>{''.join(metric_html)}</div></div>"
+        )
+    st.markdown(f"<div class='oratek-market-factors-panel'><div class='oratek-market-factor-list'>{''.join(rows_html)}</div></div>", unsafe_allow_html=True)
+
+
 def render_market_dashboard(artifacts: PlatformArtifacts) -> None:
     result = artifacts.market_result
-    render_page_header("Market Dashboard", meta=result.update_time.split("T")[-1] if result.update_time else "N/A", centered=True)
-    render_stat_cards(
-        [
-            ("Market Score", f"{result.score:.2f}", "current composite", _tone_class(result.label)),
-            ("Label", str(result.label), "current regime", _tone_class(result.label)),
-            ("1W Ago", f"{result.score_1w_ago:.2f}" if result.score_1w_ago is not None else "N/A", "prior score", "neutral"),
-            ("1M Ago", f"{result.score_1m_ago:.2f}" if result.score_1m_ago is not None else "N/A", "prior score", "neutral"),
-            ("VIX", f"{result.vix_close:.2f}" if result.vix_close is not None else "N/A", "latest close", "neutral"),
-        ]
-    )
+    updated_meta = f"Updated: {result.update_time.split('T')[-1]}" if result.update_time else "Updated: N/A"
+    render_page_header("Market Dashboard", meta=updated_meta, centered=True)
 
-    time_axis = pd.DataFrame(
-        [
-            {"Point": "Now", "Score": result.score},
-            {"Point": "1D Ago", "Score": result.score_1d_ago},
-            {"Point": "1W Ago", "Score": result.score_1w_ago},
-            {"Point": "1M Ago", "Score": result.score_1m_ago},
-            {"Point": "3M Ago", "Score": result.score_3m_ago},
-        ]
-    )
-    breadth_frame = pd.DataFrame(
-        [
-            {"Metric": key, "Value": value, "Label": _breadth_label(float(value))}
-            for key, value in result.breadth_summary.items()
-        ]
-    )
-    performance_frame = pd.DataFrame(
-        [
-            {"Metric": key, "Value": value, "Label": _performance_label(float(value))}
-            for key, value in result.performance_overview.items()
-        ]
-    )
+    breadth_items, performance_items, high_vix_items = _market_metric_items(result)
 
-    hero_col, summary_col = st.columns([1.0, 1.8])
-    with hero_col:
-        score_class = _tone_class(result.label)
-        with st.container(border=True):
-            render_section_heading("Market Conditions", "Composite score from breadth, trend, performance, highs, and VIX")
-            st.markdown(
-                f"<div class='oratek-hero-card'><div class='oratek-hero-copy'>Market conditions are determined by the configured breadth, performance, and volatility inputs. The underlying scoring logic is unchanged.</div><div class='oratek-hero-badge {score_class}'>{html.escape(str(result.label))}<span class='oratek-hero-score'>{result.score:.2f}</span></div></div>",
-                unsafe_allow_html=True,
-            )
-            st.progress(min(max(result.score / 100.0, 0.0), 1.0))
-        with st.container(border=True):
-            render_section_heading("Score Timeline")
-            st.dataframe(time_axis, width="stretch", hide_index=True)
-    with summary_col:
-        upper_left, upper_right = st.columns([1.2, 1.0])
-        with upper_left:
-            with st.container(border=True):
-                render_section_heading("Breadth & Trend Metrics")
-                st.dataframe(breadth_frame, width="stretch", hide_index=True)
-        with upper_right:
-            with st.container(border=True):
-                render_section_heading("Performance Overview")
-                st.dataframe(performance_frame, width="stretch", hide_index=True)
-        lower_left, lower_right = st.columns([0.9, 1.1])
-        with lower_left:
-            with st.container(border=True):
-                render_section_heading("High & VIX")
-                st.dataframe(pd.DataFrame([{"Metric": key, "Value": value} for key, value in result.high_vix_summary.items()]), width="stretch", hide_index=True)
-        with lower_right:
-            with st.container(border=True):
-                render_section_heading("Component Scores")
-                st.dataframe(pd.DataFrame([{"Component": key, "Score": value} for key, value in result.component_scores.items()]), width="stretch", hide_index=True, height=min(460, 110 + len(result.component_scores) * 35))
+    left_col, middle_col, right_col = st.columns([1.15, 1.0, 2.35])
+    with left_col:
+        render_market_conditions_panel(result)
+    with middle_col:
+        render_market_history_stack(result)
+    with right_col:
+        render_market_metric_panel("Breadth & Trend Metrics", breadth_items, 6, "No breadth metrics available.")
+        performance_col, high_vix_col = st.columns([2.2, 1.0])
+        with performance_col:
+            render_market_metric_panel("Performance Overview", performance_items, 4, "No performance metrics available.")
+        with high_vix_col:
+            render_market_metric_panel("High & VIX", high_vix_items, 2, "No High & VIX metrics available.")
 
-    snapshot_col, factor_col = st.columns([2.0, 1.05])
+    snapshot_col, factor_col = st.columns([2.3, 1.1])
     with snapshot_col:
-        with st.container(border=True):
-            render_section_heading("Market Snapshot", "Vol % is versus the 50-day average")
-            if result.market_snapshot.empty:
-                st.caption("No market snapshot rows available.")
-            else:
-                st.dataframe(result.market_snapshot, width="stretch", hide_index=True, height=min(360, 110 + len(result.market_snapshot) * 35))
+        st.markdown("<div class='oratek-market-stage-head'><div class='oratek-market-stage-title'>Core</div><div class='oratek-market-stage-caption'>Used for Market Score. Vol % vs 50D Avg.</div></div>", unsafe_allow_html=True)
+        render_market_snapshot_panel(result.market_snapshot)
+        st.markdown("<div class='oratek-market-stage-head'><div class='oratek-market-stage-title'>Leadership</div><div class='oratek-market-stage-caption'>Display-only leadership universe.</div></div>", unsafe_allow_html=True)
+        render_market_snapshot_panel(result.leadership_snapshot)
+        st.markdown("<div class='oratek-market-stage-head'><div class='oratek-market-stage-title'>External</div><div class='oratek-market-stage-caption'>Display-only external universe.</div></div>", unsafe_allow_html=True)
+        render_market_snapshot_panel(result.external_snapshot)
     with factor_col:
-        with st.container(border=True):
-            render_section_heading("Factors vs SP500", "Relative performance versus the S&P 500")
-            if result.factors_vs_sp500.empty:
-                st.caption("No factor-relative-strength rows available.")
-            else:
-                st.dataframe(result.factors_vs_sp500, width="stretch", hide_index=True, height=min(360, 110 + len(result.factors_vs_sp500) * 35))
+        st.markdown("<div class='oratek-market-stage-head'><div class='oratek-market-stage-title'>Factors vs SP500</div><div class='oratek-market-stage-caption'>Factors-only universe. Relative performance vs S&P 500 (1W, 1M).</div></div>", unsafe_allow_html=True)
+        render_market_factors_panel(result.factors_vs_sp500)
 
-    with st.container(border=True):
-        render_section_heading("S&P 500 Stocks > 200-Day Moving Average (S5TH)")
-        if result.s5th_series.empty:
-            st.caption("No S5TH series available.")
-        else:
-            chart_source = result.s5th_series.set_index("date")
-            st.line_chart(chart_source[["pct_above_sma200"]], width="stretch")
     render_data_health_table(artifacts)
 
 
@@ -581,8 +751,16 @@ def main() -> None:
 
             st.markdown("**Watchlist Controls**")
             selection_key = "watchlist_selected_scan_names"
-            if selection_key not in st.session_state:
-                st.session_state[selection_key] = available_scan_names
+            selection_defaults_key = "watchlist_selected_scan_names_defaults"
+            default_selected_scan_names = list(watchlist_scan_config.startup_selected_scan_names())
+            selection_defaults_signature = (
+                str(config_path),
+                tuple(available_scan_names),
+                tuple(default_selected_scan_names),
+            )
+            if st.session_state.get(selection_defaults_key) != selection_defaults_signature:
+                st.session_state[selection_key] = default_selected_scan_names
+                st.session_state[selection_defaults_key] = selection_defaults_signature
             else:
                 st.session_state[selection_key] = [
                     name for name in st.session_state[selection_key] if name in available_scan_names

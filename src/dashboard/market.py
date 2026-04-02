@@ -44,39 +44,29 @@ DEFAULT_MARKET_CONDITION_ETFS = (
     MarketUniverseItem("XLU", "Utilities"),
     MarketUniverseItem("XLV", "Health Care"),
     MarketUniverseItem("XLY", "Consumer Discretionary"),
-    MarketUniverseItem("XBI", "Biotech"),
+)
+
+DEFAULT_LEADERSHIP_ETFS = (
     MarketUniverseItem("SMH", "Semiconductors"),
+    MarketUniverseItem("SOXX", "Semiconductors Broad"),
     MarketUniverseItem("IGV", "Software"),
     MarketUniverseItem("FDN", "Internet"),
     MarketUniverseItem("HACK", "Cybersecurity"),
+    MarketUniverseItem("XBI", "Biotech"),
+    MarketUniverseItem("IBB", "Biotech Large Cap"),
     MarketUniverseItem("ITA", "Aerospace and Defense"),
     MarketUniverseItem("KRE", "Regional Banks"),
     MarketUniverseItem("XRT", "Retail"),
     MarketUniverseItem("XOP", "Oil and Gas Exploration"),
-    MarketUniverseItem("IBB", "Biotech Large Cap"),
     MarketUniverseItem("TAN", "Solar"),
     MarketUniverseItem("IYT", "Transportation"),
-    MarketUniverseItem("SOXX", "Semiconductors Broad"),
-    MarketUniverseItem("VUG", "Growth"),
-    MarketUniverseItem("VTV", "Value"),
-    MarketUniverseItem("VYM", "High Dividend"),
-    MarketUniverseItem("MGC", "Large Cap"),
-    MarketUniverseItem("VO", "Mid Cap"),
-    MarketUniverseItem("VB", "Small Cap"),
-    MarketUniverseItem("MTUM", "Momentum"),
     MarketUniverseItem("IPO", "IPOs"),
+)
+
+DEFAULT_EXTERNAL_ETFS = (
     MarketUniverseItem("EEM", "Emerging Markets"),
     MarketUniverseItem("FXI", "China Large Cap"),
     MarketUniverseItem("KWEB", "China Internet"),
-)
-
-DEFAULT_MARKET_SNAPSHOT_SYMBOLS = (
-    MarketUniverseItem("RSP", "S&P 500 Equal Weight"),
-    MarketUniverseItem("QQQE", "Nasdaq 100 Equal Weight"),
-    MarketUniverseItem("IWM", "Russell 2000"),
-    MarketUniverseItem("DIA", "Dow Jones"),
-    MarketUniverseItem("^VIX", "Volatility Index"),
-    MarketUniverseItem("BTC-USD", "Bitcoin"),
 )
 
 DEFAULT_FACTOR_ETFS = (
@@ -87,7 +77,6 @@ DEFAULT_FACTOR_ETFS = (
     MarketUniverseItem("VO", "Mid Cap"),
     MarketUniverseItem("VB", "Small Cap"),
     MarketUniverseItem("MTUM", "Momentum"),
-    MarketUniverseItem("IPO", "IPOs"),
 )
 
 DEFAULT_COMPONENT_WEIGHTS = {
@@ -109,7 +98,8 @@ class MarketConditionConfig:
     """Configurable scoring model for the market dashboard."""
 
     condition_etfs: tuple[MarketUniverseItem, ...] = field(default_factory=lambda: DEFAULT_MARKET_CONDITION_ETFS)
-    market_snapshot_symbols: tuple[MarketUniverseItem, ...] = field(default_factory=lambda: DEFAULT_MARKET_SNAPSHOT_SYMBOLS)
+    leadership_etfs: tuple[MarketUniverseItem, ...] = field(default_factory=lambda: DEFAULT_LEADERSHIP_ETFS)
+    external_etfs: tuple[MarketUniverseItem, ...] = field(default_factory=lambda: DEFAULT_EXTERNAL_ETFS)
     factor_etfs: tuple[MarketUniverseItem, ...] = field(default_factory=lambda: DEFAULT_FACTOR_ETFS)
     component_weights: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_COMPONENT_WEIGHTS))
     bullish_threshold: float = 80.0
@@ -120,16 +110,19 @@ class MarketConditionConfig:
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> "MarketConditionConfig":
         condition_payload = payload.get("market_condition_etf_universe", payload.get("condition_etfs", []))
-        snapshot_payload = payload.get("market_snapshot_symbols", [])
+        leadership_payload = payload.get("leadership_etfs", [])
+        external_payload = payload.get("external_etfs", [])
         factor_payload = payload.get("factor_etfs", [])
         condition_items = tuple(MarketUniverseItem.from_payload(item) for item in condition_payload) if condition_payload else DEFAULT_MARKET_CONDITION_ETFS
-        snapshot_items = tuple(MarketUniverseItem.from_payload(item) for item in snapshot_payload) if snapshot_payload else DEFAULT_MARKET_SNAPSHOT_SYMBOLS
+        leadership_items = tuple(MarketUniverseItem.from_payload(item) for item in leadership_payload) if leadership_payload else DEFAULT_LEADERSHIP_ETFS
+        external_items = tuple(MarketUniverseItem.from_payload(item) for item in external_payload) if external_payload else DEFAULT_EXTERNAL_ETFS
         factor_items = tuple(MarketUniverseItem.from_payload(item) for item in factor_payload) if factor_payload else DEFAULT_FACTOR_ETFS
         component_weights = dict(DEFAULT_COMPONENT_WEIGHTS)
         component_weights.update({str(key): float(value) for key, value in dict(payload.get("component_weights", {})).items()})
         return cls(
             condition_etfs=condition_items,
-            market_snapshot_symbols=snapshot_items,
+            leadership_etfs=leadership_items,
+            external_etfs=external_items,
             factor_etfs=factor_items,
             component_weights=component_weights,
             bullish_threshold=float(payload.get("bullish_threshold", 80.0)),
@@ -150,11 +143,17 @@ class MarketConditionResult:
     score_1w_ago: float | None
     score_1m_ago: float | None
     score_3m_ago: float | None
+    label_1d_ago: str | None
+    label_1w_ago: str | None
+    label_1m_ago: str | None
+    label_3m_ago: str | None
     component_scores: dict[str, float]
     breadth_summary: dict[str, float]
     performance_overview: dict[str, float]
     high_vix_summary: dict[str, float]
     market_snapshot: pd.DataFrame
+    leadership_snapshot: pd.DataFrame
+    external_snapshot: pd.DataFrame
     factors_vs_sp500: pd.DataFrame
     s5th_series: pd.DataFrame
     vix_close: float | None
@@ -167,9 +166,9 @@ class MarketSnapshotBuilder:
     def __init__(self, config: MarketConditionConfig) -> None:
         self.config = config
 
-    def build(self, market_histories: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    def build(self, market_histories: dict[str, pd.DataFrame], items: tuple[MarketUniverseItem, ...]) -> pd.DataFrame:
         rows: list[dict[str, object]] = []
-        for item in self.config.market_snapshot_symbols:
+        for item in items:
             history = market_histories.get(item.ticker, pd.DataFrame())
             if history.empty or "close" not in history.columns:
                 continue
@@ -269,7 +268,11 @@ class MarketConditionScorer:
         self.factor_calculator = FactorRelativeStrengthCalculator(config)
 
     def required_symbols(self) -> list[str]:
-        symbols = [item.ticker for item in [*self.config.condition_etfs, *self.config.market_snapshot_symbols, *self.config.factor_etfs]]
+        symbols = [
+            item.ticker
+            for item in [*self.config.condition_etfs, *self.config.leadership_etfs, *self.config.external_etfs, *self.config.factor_etfs]
+        ]
+        symbols.append("^VIX")
         return list(dict.fromkeys(symbols))
 
     def score(
@@ -283,10 +286,16 @@ class MarketConditionScorer:
 
         latest_components = self._component_scores_at_offset(market_histories, 0)
         score = self._score_from_components(latest_components)
+        score_1d_ago = self._rounded_score_at_offset(market_histories, 1)
+        score_1w_ago = self._rounded_score_at_offset(market_histories, 5)
+        score_1m_ago = self._rounded_score_at_offset(market_histories, 21)
+        score_3m_ago = self._rounded_score_at_offset(market_histories, 63)
         performance_overview = self._performance_overview(benchmark_history)
         vix_history = market_histories.get("^VIX", pd.DataFrame())
         vix_close = self._latest_close(vix_history)
-        market_snapshot = self.snapshot_builder.build(market_histories)
+        market_snapshot = self.snapshot_builder.build(market_histories, self.config.condition_etfs)
+        leadership_snapshot = self.snapshot_builder.build(market_histories, self.config.leadership_etfs)
+        external_snapshot = self.snapshot_builder.build(market_histories, self.config.external_etfs)
         factors_vs_sp500 = self.factor_calculator.build(market_histories, benchmark_history)
         s5th_series = self._build_s5th_series(stock_histories)
 
@@ -294,10 +303,14 @@ class MarketConditionScorer:
             trade_date=self._latest_trade_date(benchmark_history),
             score=round(score, 2),
             label=self._label(score),
-            score_1d_ago=self._rounded_score_at_offset(market_histories, 1),
-            score_1w_ago=self._rounded_score_at_offset(market_histories, 5),
-            score_1m_ago=self._rounded_score_at_offset(market_histories, 21),
-            score_3m_ago=self._rounded_score_at_offset(market_histories, 63),
+            score_1d_ago=score_1d_ago,
+            score_1w_ago=score_1w_ago,
+            score_1m_ago=score_1m_ago,
+            score_3m_ago=score_3m_ago,
+            label_1d_ago=self._label_for_optional_score(score_1d_ago),
+            label_1w_ago=self._label_for_optional_score(score_1w_ago),
+            label_1m_ago=self._label_for_optional_score(score_1m_ago),
+            label_3m_ago=self._label_for_optional_score(score_3m_ago),
             component_scores={key: round(value, 2) for key, value in latest_components.items()},
             breadth_summary={key: round(latest_components[key], 2) for key in self._breadth_keys() if key in latest_components},
             performance_overview={key: round(value, 2) for key, value in performance_overview.items()},
@@ -306,6 +319,8 @@ class MarketConditionScorer:
                 "VIX": round(vix_close, 2) if vix_close is not None else np.nan,
             },
             market_snapshot=market_snapshot,
+            leadership_snapshot=leadership_snapshot,
+            external_snapshot=external_snapshot,
             factors_vs_sp500=factors_vs_sp500,
             s5th_series=s5th_series,
             vix_close=round(vix_close, 2) if vix_close is not None else None,
@@ -322,11 +337,17 @@ class MarketConditionScorer:
             score_1w_ago=None,
             score_1m_ago=None,
             score_3m_ago=None,
+            label_1d_ago=None,
+            label_1w_ago=None,
+            label_1m_ago=None,
+            label_3m_ago=None,
             component_scores={},
             breadth_summary={},
             performance_overview={},
             high_vix_summary={},
             market_snapshot=empty,
+            leadership_snapshot=empty,
+            external_snapshot=empty,
             factors_vs_sp500=empty,
             s5th_series=empty,
             vix_close=None,
@@ -424,6 +445,11 @@ class MarketConditionScorer:
         if not components:
             return None
         return round(self._score_from_components(components), 2)
+
+    def _label_for_optional_score(self, score: float | None) -> str | None:
+        if score is None:
+            return None
+        return self._label(float(score))
 
     def _performance_overview(self, benchmark_history: pd.DataFrame) -> dict[str, float]:
         close = benchmark_history["close"].astype(float)

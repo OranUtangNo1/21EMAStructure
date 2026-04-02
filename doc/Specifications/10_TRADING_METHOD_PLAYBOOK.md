@@ -73,6 +73,7 @@ Stable rule:
 - annotation rules do not create watchlist candidates by themselves
 
 The exact active scan family is documented under `doc/Scan/scan_00_index.md`.
+The default config currently enables `15` scan families, including `VCS 52 High`, `VCS 52 Low`, and `Volume Accumulation`.
 
 ### 3.2 Duplicate Tickers
 
@@ -127,7 +128,24 @@ Use in workflow:
 - separates orderly movers from unstable movers
 - highlights overheated names relative to moving-average context
 
-### 4.3 Relative Strength And RSI
+### 4.3 52-Week And Accumulation Indicators
+
+Implemented indicators:
+
+- `high_52w`
+- `low_52w`
+- `dist_from_52w_high`
+- `dist_from_52w_low`
+- `rel_volume`
+- `ud_volume_ratio`
+
+Use in workflow:
+
+- `dist_from_52w_high` supports continuation-style scans near yearly highs
+- `dist_from_52w_low` supports tight-base and bottoming candidates near yearly lows
+- `ud_volume_ratio` separates sustained accumulation from one-day volume spikes
+
+### 4.4 Relative Strength And RSI
 
 Implemented indicators:
 
@@ -142,7 +160,7 @@ Use in workflow:
 - normalized RS is used in ranking and dashboard summaries
 - RSI is used as a separate momentum-style oscillator and is not the same thing as the SPY-relative RS calculation
 
-### 4.4 Fundamental, Industry, Hybrid, And VCS
+### 4.5 Fundamental, Industry, Hybrid, And VCS
 
 Implemented scores:
 

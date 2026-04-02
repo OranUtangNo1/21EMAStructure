@@ -1,0 +1,17 @@
+app:
+  default_symbols:
+  - NVDA
+  - META
+  - PLTR
+  - CRWD
+  - ANET
+  - DUOL
+  - APP
+  - SNOW
+  benchmark_symbol: SPY
+  vix_symbol: ^VIX
+  price_period: 1y
+  cache_dir: data_cache
+  snapshot_dir: data_runs
+  use_sample_data_if_fetch_fails: false
+  refresh_on_start: true

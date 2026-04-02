@@ -31,6 +31,78 @@ def test_enabled_scan_rules_can_be_swapped_from_config() -> None:
     assert result["Vol Up"] is True
 
 
+def test_near_52w_high_scan_uses_distance_hybrid_and_trend_filters() -> None:
+    row = pd.Series({"high_52w": 100.0, "close": 95.0, "hybrid_score": 70.0, "trend_base": True})
+    config = ScanConfig(enabled_scan_rules=("Near 52W High",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["Near 52W High"] is True
+
+
+def test_vcs_52_high_scan_uses_vcs_rs_and_52w_high_distance() -> None:
+    row = pd.Series({"vcs": 60.0, "raw_rs21": 61.0, "dist_from_52w_high": -15.0})
+    config = ScanConfig(enabled_scan_rules=("VCS 52 High",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["VCS 52 High"] is True
+
+
+def test_vcs_52_high_scan_requires_rs_above_threshold() -> None:
+    row = pd.Series({"vcs": 60.0, "raw_rs21": 60.0, "dist_from_52w_high": -10.0})
+    config = ScanConfig(enabled_scan_rules=("VCS 52 High",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["VCS 52 High"] is False
+
+
+def test_vcs_52_low_scan_uses_vcs_rs_and_52w_low_distance() -> None:
+    row = pd.Series({"vcs": 60.0, "raw_rs21": 61.0, "dist_from_52w_low": 25.0})
+    config = ScanConfig(enabled_scan_rules=("VCS 52 Low",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["VCS 52 Low"] is True
+
+
+def test_volume_accumulation_scan_uses_ud_ratio_rel_volume_and_positive_day() -> None:
+    row = pd.Series({"ud_volume_ratio": 1.5, "rel_volume": 1.0, "daily_change_pct": 0.1})
+    config = ScanConfig(enabled_scan_rules=("Volume Accumulation",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["Volume Accumulation"] is True
+
+
+def test_volume_accumulation_scan_requires_positive_day() -> None:
+    row = pd.Series({"ud_volume_ratio": 2.0, "rel_volume": 1.5, "daily_change_pct": 0.0})
+    config = ScanConfig(enabled_scan_rules=("Volume Accumulation",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["Volume Accumulation"] is False
+
+
+def test_three_weeks_tight_scan_uses_indicator_flag_vcs_and_trend() -> None:
+    row = pd.Series({"three_weeks_tight": True, "vcs": 55.0, "trend_base": True})
+    config = ScanConfig(enabled_scan_rules=("Three Weeks Tight",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["Three Weeks Tight"] is True
+
+
+def test_rs_acceleration_scan_uses_rs_fields_not_rsi_fields() -> None:
+    row = pd.Series({"rs21": 75.0, "rs63": 70.0, "rsi21": 10.0, "rsi63": 90.0, "trend_base": True})
+    config = ScanConfig(enabled_scan_rules=("RS Acceleration",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["RS Acceleration"] is True
+
+
 def test_watchlist_default_sort_prefers_hybrid_score() -> None:
     watchlist = pd.DataFrame(
         {
@@ -110,6 +182,32 @@ def test_watchlist_builder_surfaces_annotation_columns() -> None:
     assert int(display.iloc[0]["scan_hit_count"]) == 3
     assert int(display.iloc[0]["annotation_hit_count"]) == 2
     assert "Relative Strength 21 > 63" in display.iloc[0]["annotation_hits"]
+
+
+def test_watchlist_builder_includes_new_scan_output_fields_when_available() -> None:
+    raw_watchlist = pd.DataFrame(
+        {
+            "name": ["Alpha"],
+            "overlap_count": [3],
+            "scan_hit_count": [3],
+            "annotation_hit_count": [0],
+            "duplicate_ticker": [True],
+            "hit_scans": ["VCS, VCS 52 High, Volume Accumulation"],
+            "annotation_hits": [""],
+            "vcs": [70.0],
+            "dist_from_52w_high": [-12.5],
+            "dist_from_52w_low": [18.0],
+            "ud_volume_ratio": [1.8],
+            "earnings_in_7d": [False],
+        },
+        index=["AAA"],
+    )
+
+    display = WatchlistViewModelBuilder().build(raw_watchlist)
+
+    assert float(display.iloc[0]["dist_from_52w_high"]) == -12.5
+    assert float(display.iloc[0]["dist_from_52w_low"]) == 18.0
+    assert float(display.iloc[0]["ud_volume_ratio"]) == 1.8
 
 
 def test_watchlist_is_empty_when_no_scans_hit_even_if_annotations_exist() -> None:
@@ -308,6 +406,56 @@ def test_annotation_filters_apply_with_and_semantics() -> None:
     )
 
     assert list(filtered.index) == ["AAA"]
+
+
+def test_default_scan_config_includes_new_scan_names_and_cards() -> None:
+    config = ScanConfig()
+
+    assert {"Volume Accumulation", "VCS 52 High", "VCS 52 Low"}.issubset(set(config.enabled_scan_rules))
+    assert {"Volume Accumulation", "VCS 52 High", "VCS 52 Low"}.issubset(
+        {section.scan_name for section in config.card_sections}
+    )
+
+
+def test_scan_config_startup_selection_defaults_to_all_card_sections() -> None:
+    config = ScanConfig(
+        card_sections=(
+            ScanCardConfig(scan_name="Vol Up", display_name="Vol Up"),
+            ScanCardConfig(scan_name="VCS", display_name="VCS"),
+        )
+    )
+
+    assert config.startup_selected_scan_names() == ("Vol Up", "VCS")
+
+
+def test_scan_config_can_define_startup_selected_scan_names_from_config() -> None:
+    config = ScanConfig.from_dict(
+        {
+            "card_sections": [
+                {"scan_name": "Vol Up", "display_name": "Vol Up"},
+                {"scan_name": "VCS", "display_name": "VCS"},
+            ],
+            "default_selected_scan_names": ["VCS"],
+        }
+    )
+
+    assert config.startup_selected_scan_names() == ("VCS",)
+
+
+def test_scan_config_rejects_unknown_startup_selected_scan_names() -> None:
+    try:
+        ScanConfig.from_dict(
+            {
+                "card_sections": [
+                    {"scan_name": "Vol Up", "display_name": "Vol Up"},
+                ],
+                "default_selected_scan_names": ["VCS"],
+            }
+        )
+    except ValueError as exc:
+        assert "default_selected_scan_names" in str(exc)
+    else:
+        raise AssertionError("Expected unknown startup-selected scan names to be rejected")
 
 
 def test_apply_selected_scan_metrics_zeroes_duplicate_state_when_no_scans_selected() -> None:
