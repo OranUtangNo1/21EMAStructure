@@ -28,6 +28,7 @@ On `Today's Watchlist`, the sidebar also exposes page-local controls:
 
 - card multiselect used for watchlist-card display
 - duplicate threshold input used for duplicate-band counting
+- initial card multiselect state sourced from `scan.default_selected_scan_names` and falls back to all cards when omitted
 
 ### 2.2 Shared context and health
 

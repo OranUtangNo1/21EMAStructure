@@ -1,0 +1,13 @@
+universe_discovery:
+  enabled: true
+  provider: finviz
+  use_snapshot_when_no_manual_symbols: true
+  snapshot_ttl_days: 7
+  allowed_exchanges:
+  - NASDAQ
+  - NYSE
+  - AMEX
+  excluded_sectors:
+  - Healthcare
+  max_symbols: 2500
+  min_market_cap: 1000000000

@@ -1,0 +1,39 @@
+scoring:
+  rs:
+    benchmark_symbol: SPY
+    rs_lookbacks:
+    - 5
+    - 21
+    - 63
+    - 126
+    rs_normalization_method: percentile
+    rs_strong_threshold: 80
+    rs_weak_threshold: 39
+  fundamental:
+    eps_weight: 1.0
+    revenue_weight: 1.0
+    fundamental_normalization_method: percentile
+    missing_fundamental_policy: fill_neutral
+  industry:
+    industry_aggregation_method: mean
+    industry_rs_input_metric: rs21
+    industry_score_normalization_method: percentile
+  hybrid:
+    rs_weights:
+    - 1.0
+    - 2.0
+    - 2.0
+    fundamental_weight: 2.0
+    industry_weight: 3.0
+    hybrid_missing_value_policy: fill_neutral_50
+  vcs:
+    vcs_threshold_candidate: 60.0
+    vcs_threshold_priority: 80.0
+    len_short: 13
+    len_long: 63
+    len_volume: 50
+    hl_lookback: 63
+    sensitivity: 2.0
+    trend_penalty_weight: 1.0
+    penalty_factor: 0.75
+    bonus_max: 15.0

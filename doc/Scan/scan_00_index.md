@@ -40,6 +40,8 @@ Each file in this folder must allow a developer to reproduce the scan boolean lo
 
 ## Active Scan Specs
 
+The default config currently enables `15` scan families.
+
 | File | Canonical scan name | Implementation owner |
 |---|---|---|
 | [scan_01_21ema.md](scan_01_21ema.md) | `21EMA scan` | `src/scan/rules.py::_scan_21ema` |
@@ -51,6 +53,12 @@ Each file in this folder must allow a developer to reproduce the scan boolean lo
 | [scan_07_pocket_pivot.md](scan_07_pocket_pivot.md) | `Pocket Pivot` | `src/scan/rules.py::_scan_pocket_pivot` |
 | [scan_08_pp_count.md](scan_08_pp_count.md) | `PP Count` | `src/scan/rules.py::_scan_pp_count` |
 | [scan_09_weekly20pct.md](scan_09_weekly20pct.md) | `Weekly 20% plus gainers` | `src/scan/rules.py::_scan_weekly_gainer` |
+| [scan_10_near_52w_high.md](scan_10_near_52w_high.md) | `Near 52W High` | `src/scan/rules.py::_scan_near_52w_high` |
+| [scan_11_three_weeks_tight.md](scan_11_three_weeks_tight.md) | `Three Weeks Tight` | `src/scan/rules.py::_scan_three_weeks_tight` |
+| [scan_12_rs_acceleration.md](scan_12_rs_acceleration.md) | `RS Acceleration` | `src/scan/rules.py::_scan_rs_acceleration` |
+| [scan_13_vcs_52_high.md](scan_13_vcs_52_high.md) | `VCS 52 High` | `src/scan/rules.py::_scan_vcs_52_high` |
+| [scan_14_vcs_52_low.md](scan_14_vcs_52_low.md) | `VCS 52 Low` | `src/scan/rules.py::_scan_vcs_52_low` |
+| [scan_15_volume_accumulation.md](scan_15_volume_accumulation.md) | `Volume Accumulation` | `src/scan/rules.py::_scan_volume_accumulation` |
 
 ## Out Of Scope
 

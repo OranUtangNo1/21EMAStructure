@@ -74,6 +74,7 @@ Current implemented rule:
 - `hit_lists = hit_scans` as a compatibility alias
 - `list_overlap_count = scan_hit_count` as a compatibility alias
 - `duplicate_ticker = scan_hit_count >= duplicate_min_count`
+- the default backend threshold remains `3` even with `15` default scan families enabled
 
 The backend duplicate flag is not derived from annotation lists.
 
@@ -110,6 +111,7 @@ Current implemented behavior:
 - cards are built from `scan.card_sections`
 - each card corresponds to one configured scan name
 - each card shows the subset of watchlist rows that hit that scan
+- the default config currently exposes `15` scan cards, including `VCS 52 High`, `VCS 52 Low`, and `Volume Accumulation`
 - detailed card meaning is defined by the referenced scan document in `doc/Scan/`
 
 ### 3.2 Card selection
@@ -119,6 +121,8 @@ The UI allows the user to choose which configured scan cards are active in the c
 Current implemented behavior:
 
 - selected cards control which watchlist cards are displayed
+- the initial selected-card state can be configured via `scan.default_selected_scan_names`
+- if `scan.default_selected_scan_names` is omitted, all configured cards start selected
 - this selection does not change the underlying watchlist candidate set
 - unselected cards are hidden from the page, but their symbols remain in the watchlist if they passed any enabled scan
 
@@ -149,7 +153,8 @@ Instead:
 - one scan is documented in one file under `doc/Scan/`
 - `doc/Scan/scan_00_index.md` is the entry point
 - active scan availability is controlled by `enabled_scan_rules`
-- active annotation availability is controlled by `enabled_list_rules`
+- active annotation availability is controlled by `enabled_annotation_filters`
+- the legacy config alias `enabled_list_rules` is still accepted for backward compatibility
 
 This structure is intended to reduce maintenance when scan types are added, removed, renamed, or reworked.
 
@@ -189,6 +194,9 @@ The display-oriented watchlist table currently exposes these fields when availab
 - `hit_scans`
 - `hit_lists`
 - `vcs`
+- `dist_from_52w_high`
+- `dist_from_52w_low`
+- `ud_volume_ratio`
 - `earnings`
 - `pp_count_30d`
 - `ema21_low_pct`
@@ -212,6 +220,7 @@ The active implementation keeps these areas configurable:
 - enabled scan rules
 - enabled annotation rules
 - card sections and their display names
+- config-driven default selected scan cards for the Watchlist sidebar
 - backend duplicate minimum count
 - watchlist sort mode
 - universe thresholds

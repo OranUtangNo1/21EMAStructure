@@ -60,6 +60,128 @@ def test_indicator_calculator_adds_52_week_high_from_daily_highs() -> None:
     assert float(result.iloc[-1]["high_52w"]) == 125.0
 
 
+def test_dist_from_52w_high_is_zero_when_close_matches_52w_high() -> None:
+    dates = pd.date_range("2025-01-01", periods=252, freq="B")
+    frame = pd.DataFrame(
+        {
+            "open": [90.0] * 252,
+            "high": [100.0] * 251 + [125.0],
+            "low": [80.0] * 252,
+            "close": [95.0] * 251 + [125.0],
+            "adjusted_close": [95.0] * 251 + [125.0],
+            "volume": [1_000_000] * 252,
+        },
+        index=dates,
+    )
+    calculator = IndicatorCalculator(IndicatorConfig(sma_short_period=2, sma_long_period=2, relvol_period=2, enable_3wt=False))
+
+    result = calculator.calculate(frame)
+
+    assert float(result.iloc[-1]["dist_from_52w_high"]) == 0.0
+
+
+def test_dist_from_52w_high_is_negative_when_close_is_below_high() -> None:
+    dates = pd.date_range("2025-01-01", periods=252, freq="B")
+    frame = pd.DataFrame(
+        {
+            "open": [90.0] * 252,
+            "high": [100.0] * 251 + [125.0],
+            "low": [80.0] * 252,
+            "close": [95.0] * 251 + [112.5],
+            "adjusted_close": [95.0] * 251 + [112.5],
+            "volume": [1_000_000] * 252,
+        },
+        index=dates,
+    )
+    calculator = IndicatorCalculator(IndicatorConfig(sma_short_period=2, sma_long_period=2, relvol_period=2, enable_3wt=False))
+
+    result = calculator.calculate(frame)
+
+    assert round(float(result.iloc[-1]["dist_from_52w_high"]), 6) == -10.0
+
+
+def test_dist_from_52w_low_is_zero_when_close_matches_52w_low() -> None:
+    dates = pd.date_range("2025-01-01", periods=252, freq="B")
+    frame = pd.DataFrame(
+        {
+            "open": [60.0] * 252,
+            "high": [65.0] * 252,
+            "low": [50.0] * 251 + [40.0],
+            "close": [55.0] * 251 + [40.0],
+            "adjusted_close": [55.0] * 251 + [40.0],
+            "volume": [1_000_000] * 252,
+        },
+        index=dates,
+    )
+    calculator = IndicatorCalculator(IndicatorConfig(sma_short_period=2, sma_long_period=2, relvol_period=2, enable_3wt=False))
+
+    result = calculator.calculate(frame)
+
+    assert float(result.iloc[-1]["dist_from_52w_low"]) == 0.0
+
+
+def test_ud_volume_ratio_is_one_when_up_and_down_volume_totals_match() -> None:
+    dates = pd.date_range("2025-01-01", periods=5, freq="D")
+    frame = pd.DataFrame(
+        {
+            "open": [10.0, 10.5, 10.5, 10.5, 10.5],
+            "high": [10.2, 11.2, 10.2, 11.2, 10.2],
+            "low": [9.8, 10.8, 9.8, 10.8, 9.8],
+            "close": [10.0, 11.0, 10.0, 11.0, 10.0],
+            "adjusted_close": [10.0, 11.0, 10.0, 11.0, 10.0],
+            "volume": [100, 100, 100, 100, 100],
+        },
+        index=dates,
+    )
+    calculator = IndicatorCalculator(
+        IndicatorConfig(
+            ema_period=1,
+            sma_short_period=1,
+            sma_long_period=1,
+            atr_period=1,
+            adr_period=1,
+            relvol_period=1,
+            ud_volume_period=4,
+            enable_3wt=False,
+        )
+    )
+
+    result = calculator.calculate(frame)
+
+    assert round(float(result.iloc[-1]["ud_volume_ratio"]), 6) == 1.0
+
+
+def test_ud_volume_ratio_handles_all_up_days_without_dividing_by_zero() -> None:
+    dates = pd.date_range("2025-01-01", periods=5, freq="D")
+    frame = pd.DataFrame(
+        {
+            "open": [10.0, 10.5, 11.5, 12.5, 13.5],
+            "high": [10.2, 11.2, 12.2, 13.2, 14.2],
+            "low": [9.8, 10.8, 11.8, 12.8, 13.8],
+            "close": [10.0, 11.0, 12.0, 13.0, 14.0],
+            "adjusted_close": [10.0, 11.0, 12.0, 13.0, 14.0],
+            "volume": [100, 100, 100, 100, 100],
+        },
+        index=dates,
+    )
+    calculator = IndicatorCalculator(
+        IndicatorConfig(
+            ema_period=1,
+            sma_short_period=1,
+            sma_long_period=1,
+            atr_period=1,
+            adr_period=1,
+            relvol_period=1,
+            ud_volume_period=4,
+            enable_3wt=False,
+        )
+    )
+
+    result = calculator.calculate(frame)
+
+    assert float(result.iloc[-1]["ud_volume_ratio"]) == 400.0
+
+
 def test_ema21_low_pct_uses_below_price_branch_when_under_support() -> None:
     dates = pd.date_range("2025-01-01", periods=2, freq="D")
     frame = pd.DataFrame(

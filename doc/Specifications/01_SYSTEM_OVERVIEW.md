@@ -53,7 +53,7 @@ The pipeline calculates the technical indicator stack, benchmark-relative streng
 
 ### 4.5 Candidate Extraction
 
-The application executes nine active scan rules. Any ticker that passes at least one scan becomes part of Today's Watchlist.
+The application executes the configured enabled scan rules. The current default config enables 15 scan rules. Any ticker that passes at least one scan becomes part of Today's Watchlist.
 
 ### 4.6 Duplicate Highlighting
 
@@ -74,7 +74,8 @@ The three active views consume the same run artifacts:
 The source of truth for current behavior is:
 
 - implementation in `src/` and `app/`
-- runtime defaults in `config/default.yaml`
+- runtime defaults rooted at `config/default.yaml`
+- section-level defaults split under `config/default/`
 
 ### 5.2 Replaceable Research Logic
 

@@ -14,9 +14,12 @@ DEFAULT_SCAN_RULE_NAMES = (
     "21EMA scan",
     "4% bullish",
     "Vol Up",
+    "Volume Accumulation",
     "Momentum 97",
     "97 Club",
     "VCS",
+    "VCS 52 High",
+    "VCS 52 Low",
     "Pocket Pivot",
     "PP Count",
     "Weekly 20% plus gainers",
@@ -35,9 +38,12 @@ DEFAULT_CARD_SECTION_PAYLOADS = (
     {"scan_name": "21EMA scan", "display_name": "21EMA"},
     {"scan_name": "4% bullish", "display_name": "4% bullish"},
     {"scan_name": "Vol Up", "display_name": "Vol Up"},
+    {"scan_name": "Volume Accumulation", "display_name": "Volume Accumulation"},
     {"scan_name": "Momentum 97", "display_name": "Momentum 97"},
     {"scan_name": "97 Club", "display_name": "97 Club"},
     {"scan_name": "VCS", "display_name": "VCS"},
+    {"scan_name": "VCS 52 High", "display_name": "VCS 52 High"},
+    {"scan_name": "VCS 52 Low", "display_name": "VCS 52 Low"},
     {"scan_name": "Pocket Pivot", "display_name": "Pocket Pivot"},
     {"scan_name": "PP Count", "display_name": "3+ Pocket Pivots (30d)"},
     {"scan_name": "Weekly 20% plus gainers", "display_name": "Weekly 20%+ Gainers"},
@@ -118,6 +124,14 @@ class ScanConfig:
     club_97_hybrid_threshold: float = 90.0
     club_97_rs21_threshold: float = 97.0
     vcs_min_threshold: float = 60.0
+    vcs_52_high_vcs_min: float = 60.0
+    vcs_52_high_rs21_min: float = 60.0
+    vcs_52_high_dist_max: float = -15.0
+    vcs_52_low_vcs_min: float = 60.0
+    vcs_52_low_rs21_min: float = 60.0
+    vcs_52_low_dist_max: float = 25.0
+    vol_accum_ud_ratio_min: float = 1.5
+    vol_accum_rel_vol_min: float = 1.0
     weekly_gainer_threshold: float = 20.0
     near_52w_high_threshold_pct: float = 5.0
     near_52w_high_hybrid_min: float = 70.0
@@ -128,6 +142,7 @@ class ScanConfig:
     earnings_warning_days: int = 7
     watchlist_sort_mode: str = "hybrid_score"
     enabled_scan_rules: tuple[str, ...] = field(default_factory=lambda: DEFAULT_SCAN_RULE_NAMES)
+    default_selected_scan_names: tuple[str, ...] | None = None
     enabled_annotation_filters: tuple[str, ...] = field(default_factory=tuple)
     annotation_filters: tuple[AnnotationFilterConfig, ...] = field(
         default_factory=lambda: tuple(AnnotationFilterConfig.from_dict(payload) for payload in DEFAULT_ANNOTATION_FILTER_PAYLOADS)
@@ -142,15 +157,19 @@ class ScanConfig:
             key: value
             for key, value in payload.items()
             if key in cls.__dataclass_fields__
-            and key not in {"enabled_scan_rules", "enabled_annotation_filters", "annotation_filters", "card_sections"}
+            and key not in {"enabled_scan_rules", "default_selected_scan_names", "enabled_annotation_filters", "annotation_filters", "card_sections"}
         }
-        enabled_scan_rules = tuple(str(name).strip() for name in payload.get("enabled_scan_rules", DEFAULT_SCAN_RULE_NAMES) if str(name).strip())
+        enabled_scan_rules = _normalize_name_tuple(payload.get("enabled_scan_rules", DEFAULT_SCAN_RULE_NAMES))
+        if "default_selected_scan_names" in payload:
+            default_selected_scan_names = _normalize_name_tuple(payload.get("default_selected_scan_names", ()))
+        else:
+            default_selected_scan_names = None
         if "enabled_annotation_filters" in payload:
             raw_annotation_names = payload.get("enabled_annotation_filters", ())
         else:
             legacy_names = payload.get("enabled_list_rules", ())
             raw_annotation_names = [name for name in legacy_names if str(name).strip() in DEFAULT_ANNOTATION_FILTER_NAMES]
-        enabled_annotation_filters = tuple(str(name).strip() for name in raw_annotation_names if str(name).strip())
+        enabled_annotation_filters = _normalize_name_tuple(raw_annotation_names)
         annotation_payloads = payload.get("annotation_filters", DEFAULT_ANNOTATION_FILTER_PAYLOADS)
         annotation_filters = tuple(AnnotationFilterConfig.from_dict(item) for item in annotation_payloads)
         card_payloads = payload.get("card_sections", DEFAULT_CARD_SECTION_PAYLOADS)
@@ -158,6 +177,7 @@ class ScanConfig:
         config = cls(
             **base_payload,
             enabled_scan_rules=enabled_scan_rules or DEFAULT_SCAN_RULE_NAMES,
+            default_selected_scan_names=default_selected_scan_names,
             enabled_annotation_filters=enabled_annotation_filters,
             annotation_filters=annotation_filters,
             card_sections=card_sections,
@@ -170,7 +190,22 @@ class ScanConfig:
         if unknown_enabled:
             raise ValueError(f"enabled_annotation_filters must be defined in annotation_filters: {', '.join(sorted(unknown_enabled))}")
         _validate_card_sections(config.card_sections)
+        available_scan_names = {section.scan_name for section in config.card_sections}
+        if config.default_selected_scan_names is not None:
+            unknown_default_selected = [name for name in config.default_selected_scan_names if name not in available_scan_names]
+            if unknown_default_selected:
+                raise ValueError(
+                    "default_selected_scan_names must be defined in card_sections: "
+                    f"{', '.join(sorted(unknown_default_selected))}"
+                )
         return config
+
+    def startup_selected_scan_names(self) -> tuple[str, ...]:
+        available_names = tuple(section.scan_name for section in self.card_sections)
+        if self.default_selected_scan_names is None:
+            return available_names
+        available_name_set = set(available_names)
+        return tuple(name for name in self.default_selected_scan_names if name in available_name_set)
 
 
 def enrich_with_scan_context(snapshot: pd.DataFrame) -> pd.DataFrame:
@@ -206,6 +241,19 @@ def annotation_filter_column_name(filter_name: str) -> str:
     if filter_name not in ANNOTATION_FILTER_COLUMN_NAMES:
         raise ValueError(f"Unknown annotation filter: {filter_name}")
     return ANNOTATION_FILTER_COLUMN_NAMES[filter_name]
+
+
+def _normalize_name_tuple(raw_names: object) -> tuple[str, ...]:
+    if raw_names is None:
+        return tuple()
+    if isinstance(raw_names, str):
+        items = [raw_names]
+    else:
+        try:
+            items = list(raw_names)
+        except TypeError:
+            items = [raw_names]
+    return tuple(dict.fromkeys(str(name).strip() for name in items if str(name).strip()))
 
 
 def _evaluate_rule_set(
@@ -267,6 +315,14 @@ def _scan_vol_up(row: pd.Series, config: ScanConfig) -> bool:
     )
 
 
+def _scan_volume_accumulation(row: pd.Series, config: ScanConfig) -> bool:
+    return bool(
+        row.get("ud_volume_ratio", 0.0) >= config.vol_accum_ud_ratio_min
+        and row.get("rel_volume", 0.0) >= config.vol_accum_rel_vol_min
+        and row.get("daily_change_pct", 0.0) > 0.0
+    )
+
+
 def _scan_momentum_97(row: pd.Series, config: ScanConfig) -> bool:
     return bool(
         row.get("weekly_return_rank", 0.0) >= config.momentum_97_weekly_rank
@@ -287,6 +343,24 @@ def _scan_97_club(row: pd.Series, config: ScanConfig) -> bool:
 def _scan_vcs(row: pd.Series, config: ScanConfig) -> bool:
     raw_rs21 = _raw_rs(row, 21)
     return bool(row.get("vcs", 0.0) >= config.vcs_min_threshold and raw_rs21 > 60.0)
+
+
+def _scan_vcs_52_high(row: pd.Series, config: ScanConfig) -> bool:
+    raw_rs21 = _raw_rs(row, 21)
+    return bool(
+        row.get("vcs", 0.0) >= config.vcs_52_high_vcs_min
+        and raw_rs21 > config.vcs_52_high_rs21_min
+        and row.get("dist_from_52w_high", float("nan")) >= config.vcs_52_high_dist_max
+    )
+
+
+def _scan_vcs_52_low(row: pd.Series, config: ScanConfig) -> bool:
+    raw_rs21 = _raw_rs(row, 21)
+    return bool(
+        row.get("vcs", 0.0) >= config.vcs_52_low_vcs_min
+        and raw_rs21 > config.vcs_52_low_rs21_min
+        and row.get("dist_from_52w_low", float("nan")) <= config.vcs_52_low_dist_max
+    )
 
 
 def _scan_pocket_pivot(row: pd.Series, config: ScanConfig) -> bool:
@@ -346,9 +420,12 @@ SCAN_RULE_REGISTRY: dict[str, RuleEvaluator] = {
     "21EMA scan": _scan_21ema,
     "4% bullish": _scan_bullish_4pct,
     "Vol Up": _scan_vol_up,
+    "Volume Accumulation": _scan_volume_accumulation,
     "Momentum 97": _scan_momentum_97,
     "97 Club": _scan_97_club,
     "VCS": _scan_vcs,
+    "VCS 52 High": _scan_vcs_52_high,
+    "VCS 52 Low": _scan_vcs_52_low,
     "Pocket Pivot": _scan_pocket_pivot,
     "PP Count": _scan_pp_count,
     "Weekly 20% plus gainers": _scan_weekly_gainer,

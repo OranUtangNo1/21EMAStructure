@@ -751,8 +751,16 @@ def main() -> None:
 
             st.markdown("**Watchlist Controls**")
             selection_key = "watchlist_selected_scan_names"
-            if selection_key not in st.session_state:
-                st.session_state[selection_key] = available_scan_names
+            selection_defaults_key = "watchlist_selected_scan_names_defaults"
+            default_selected_scan_names = list(watchlist_scan_config.startup_selected_scan_names())
+            selection_defaults_signature = (
+                str(config_path),
+                tuple(available_scan_names),
+                tuple(default_selected_scan_names),
+            )
+            if st.session_state.get(selection_defaults_key) != selection_defaults_signature:
+                st.session_state[selection_key] = default_selected_scan_names
+                st.session_state[selection_defaults_key] = selection_defaults_signature
             else:
                 st.session_state[selection_key] = [
                     name for name in st.session_state[selection_key] if name in available_scan_names

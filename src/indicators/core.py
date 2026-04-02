@@ -20,6 +20,7 @@ class IndicatorConfig:
     adr_formula: str = "sma_high_low_ratio"
     dcr_formula: str = "closing_range"
     relvol_period: int = 50
+    ud_volume_period: int = 50
     rsi_short_period: int = 21
     rsi_long_period: int = 63
     weekly_short_wma_period: int = 10
@@ -69,6 +70,9 @@ class IndicatorCalculator:
         df["sma50"] = df["close"].rolling(self.config.sma_short_period).mean()
         df["sma200"] = df["close"].rolling(self.config.sma_long_period).mean()
         df["high_52w"] = df["high"].rolling(252).max()
+        df["low_52w"] = df["low"].rolling(252).min()
+        df["dist_from_52w_high"] = ((df["close"] / df["high_52w"].replace(0, np.nan)) - 1.0) * 100.0
+        df["dist_from_52w_low"] = ((df["close"] / df["low_52w"].replace(0, np.nan)) - 1.0) * 100.0
         df["avg_volume_50d"] = df["volume"].rolling(self.config.relvol_period).mean()
 
         weekly = df.resample("W-FRI").agg(
@@ -89,6 +93,12 @@ class IndicatorCalculator:
         df["three_weeks_tight"] = weekly_tight.eq(True)
 
         previous_close = df["close"].shift(1)
+        up_volume = df["volume"].where(df["close"] >= previous_close, 0.0)
+        down_volume = df["volume"].where(df["close"] < previous_close, 0.0)
+        rolling_up_volume = up_volume.rolling(self.config.ud_volume_period).sum()
+        rolling_down_volume = down_volume.rolling(self.config.ud_volume_period).sum()
+        df["ud_volume_ratio"] = rolling_up_volume / rolling_down_volume.clip(lower=1.0)
+
         true_range = pd.concat(
             [
                 df["high"] - df["low"],

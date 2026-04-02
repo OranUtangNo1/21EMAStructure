@@ -1,0 +1,8 @@
+universe:
+  min_market_cap: 1000000000
+  min_avg_volume_50d: 1000000
+  min_price: 0.0
+  min_adr_percent: 3.5
+  max_adr_percent: 10.0
+  excluded_sectors:
+  - Healthcare
