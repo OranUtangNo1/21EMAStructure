@@ -1,6 +1,6 @@
 # Dashboard UI Spec
 
-## 1. Active UI scope
+## 1. Active UI Scope
 
 The active Streamlit app exposes exactly three pages:
 
@@ -10,13 +10,11 @@ The active Streamlit app exposes exactly three pages:
 
 There is no active chart, cockpit, entry, sizing, or exit page in the current app.
 
----
-
-## 2. Shared UI behavior
+## 2. Shared UI Behavior
 
 ### 2.1 Sidebar controls
 
-The sidebar currently exposes:
+The sidebar always exposes:
 
 - `Config Path`
 - `Manual Symbols (optional)`
@@ -24,24 +22,40 @@ The sidebar currently exposes:
 - page selection radio
 - `Refresh` button
 
-On `Today's Watchlist`, the sidebar also exposes page-local controls:
-
-- card multiselect used for watchlist-card display
-- post-scan annotation filter multiselect
-- duplicate subfilter multiselect used only for duplicate-band output
-- duplicate threshold input used for duplicate-band counting
-- the watchlist control values are persisted per config path in the user-preferences store and restored on the next app start
-- initial fallbacks still come from scan config defaults when no persisted value exists
+The app reloads artifacts when the user presses `Refresh` or when the tuple `(config_path, manual_symbols, force_universe_refresh)` changes.
 
 ### 2.2 Shared context and health
 
 All pages can show:
 
-- data-source context strip via `artifacts.data_source_label`
-- data-health warning banner when stale or sample data exists
-- `Data Health` expander with `fetch_status`, universe snapshot path, and run snapshot path
+- a context strip with `Data source: <artifacts.data_source_label>`
+- a warning banner when sample fallback is present
+- an info banner when stale cache or missing datasets exist
+- a `Data Health` expander with:
+  - `artifacts.fetch_status`
+  - `artifacts.universe_snapshot_path` when present
+  - `artifacts.run_directory` when present
 
----
+### 2.3 Watchlist preference persistence
+
+The watchlist page persists its sidebar state through `UserPreferenceStore`.
+
+Current implemented behavior:
+
+- persistence group for current sidebar state: `watchlist_controls`
+- named preset collection group: `watchlist_presets`
+- namespace: resolved config path
+- current sidebar state stores:
+  - `selected_scan_names`
+  - `selected_annotation_filters`
+  - `selected_duplicate_subfilters`
+  - `duplicate_threshold`
+- preset records store:
+  - `schema_version`
+  - `kind`
+  - `values`
+- preset `values` currently contain the same four watchlist control fields
+- maximum saved presets per namespace: 10
 
 ## 3. Today's Watchlist
 
@@ -50,58 +64,79 @@ All pages can show:
 The current page header shows:
 
 - title: `Today's Watchlist`
-- trading date from the latest snapshot row
-- subtitle text: `Sorted by Hybrid-RS`
-- `Universe Mode`
-- `Universe Size`
+- subtitle: latest trade date from `artifacts.snapshot`
+- meta block:
+  - `Sorted by Hybrid-RS`
+  - `Universe Mode`
+  - `Universe Size`
+  - `Cards Selected`
+  - `Post-scan Filters`
+  - `Duplicate Subfilters`
+  - `Duplicate Threshold`
 
-### 3.2 Duplicate Tickers priority band
+### 3.2 Sidebar-only watchlist controls
+
+On `Today's Watchlist`, the sidebar additionally exposes:
+
+- saved-preset selectbox
+- `Load Preset` action
+- `Delete Preset` action
+- card multiselect used for watchlist-card display and duplicate counting
+- post-scan annotation filter multiselect
+- duplicate subfilter multiselect
+- duplicate threshold input
+- preset-name input
+- `Save Preset` action
+- `Update Preset` action
+
+Current defaults:
+
+- card defaults come from `scan.default_selected_scan_names` or all card sections when unspecified
+- annotation-filter defaults come from `scan.enabled_annotation_filters`
+- duplicate-subfilter default is empty
+- duplicate threshold defaults to `scan.duplicate_min_count`
+- preset-name input defaults to empty until the user loads or saves a preset
+
+Preset load behavior:
+
+- invalid scan names and filter names are ignored against the current config
+- duplicate threshold is clamped to the current selected-card count
+- `Update Preset` overwrites the currently selected saved preset
+
+### 3.3 Duplicate Tickers priority band
 
 The page renders a dedicated `Duplicate Tickers` band before the scan cards.
 
 Current logic:
 
-- source rows are recomputed in the page layer from raw `watchlist` rows plus raw `scan_hits`
-- only currently selected scan cards are counted in this band
-- the sidebar duplicate threshold is applied to this band only
+- source rows are rebuilt from raw `artifacts.watchlist` plus raw `artifacts.scan_hits`
+- selected annotation filters narrow the displayed watchlist first
+- selected scan cards determine overlap counting
+- the sidebar duplicate threshold applies only to this projected view
 - duplicate-only subfilters are applied after duplicate rows are formed
-- `Top3 HybridRS` keeps the three highest `hybrid_score` duplicate rows
-- each row is built from scan overlap, not list overlap
-- displayed columns currently include:
-  - `Ticker`
-  - `Scan Hits`
-  - `Hybrid-RS`
-  - `Overlap`
-  - `VCS`
 
-### 3.3 Scan-card grid
+The band currently renders:
 
-The page renders scan cards from `artifacts.watchlist_cards`.
+- section title
+- explanatory note
+- duplicate count
+- ticker symbols only
 
-Each card currently shows:
+The underlying duplicate frame includes `Ticker`, `Scan Hits`, `Hybrid-RS`, `Overlap`, and `VCS`, but the active page displays only the ticker list.
 
-- display name from `scan.card_sections`
-- ticker count
-- a ticker grid built from the card rows
+### 3.4 Scan-card grid
+
+The page rebuilds scan cards from the current projected watchlist. It does not render the prebuilt `artifacts.watchlist_cards`.
 
 Current card behavior:
 
 - only selected scan cards are shown
-- card selection does not change the underlying watchlist candidate set
-- only scan-based cards are supported by config
-- detailed scan meaning is documented under `doc/Scan/`
+- card selection does not change the raw watchlist candidate set
+- selected annotation filters can remove names from cards
+- current duplicate threshold can change the duplicate badge state used by the card projection
+- cards render ticker symbols only, not row tables
 
-Card rows are built from the matching scan-hit subset and currently expose:
-
-- `Ticker`
-- `Name`
-- `Hybrid-RS`
-- `Overlap`
-- `VCS`
-- `Duplicate`
-- `Earnings`
-
-### 3.4 Earnings for today
+### 3.5 Earnings for today
 
 The page renders a separate ticker card titled `Earnings for today (liquid)`.
 
@@ -109,9 +144,9 @@ Current source:
 
 - `artifacts.earnings_today`
 - built from `earnings_today == True` in the eligible snapshot
-- sorted by `hybrid_score desc`, then `market_cap desc`
+- sorted by `Hybrid-RS` descending before display when that column is available
 
----
+The active page displays ticker symbols only.
 
 ## 4. RS Radar
 
@@ -120,17 +155,19 @@ Current source:
 The page header shows:
 
 - title: `RS Radar`
-- subtitle: ETF-based radar using configured sector and industry universes
+- subtitle: `ETF-based radar using configured sector and industry universes.`
 - `Updated: HH:MM:SS`
 
 ### 4.2 Left column
 
-The left column contains two panels:
+The left column contains two styled mover panels:
 
 - `Top 3 RS% Change (Daily)`
 - `Top 3 RS% Change (Weekly)`
 
-Each panel is sourced from the ETF radar universe and currently shows:
+Each panel is sourced from the ETF radar universe and is driven by `radar.top_movers_count`, which currently defaults to `3`.
+
+Each mover row is built from:
 
 - `RS`
 - `TICKER`
@@ -139,12 +176,14 @@ Each panel is sourced from the ETF radar universe and currently shows:
 - one performance column (`DAY %` or `WK %`)
 - one relative-strength change column (`RS DAY%` or `RS WK%`)
 
-### 4.3 Right / lower sections
+### 4.3 Right and lower sections
 
 The page also renders:
 
 - `Sector Leaders`
 - `Industry Leaders`
+
+These sections use styled dataframes.
 
 Current `Sector Leaders` columns:
 
@@ -167,8 +206,6 @@ Current `Industry Leaders` columns:
 - all sector-leader columns above
 - `MAJOR STOCKS`
 
----
-
 ## 5. Market Dashboard
 
 ### 5.1 Header
@@ -180,44 +217,32 @@ The page header is centered and shows:
 
 ### 5.2 Top layout
 
-The page now uses a three-part top layout instead of the former stat-card row.
+The page uses a three-part top layout:
 
-Current rendered areas:
+- `Market Conditions` hero panel
+- prior-score stack for `1D Ago`, `1W Ago`, `1M Ago`, and `3M Ago`
+- compact metric-card panels for:
+  - `Breadth & Trend Metrics`
+  - `Performance Overview`
+  - `High & VIX`
 
-- `Market Conditions` hero panel with explanatory copy
-- current score chip using the current market label
-- semicircle score gauge derived from `score`
-- four prior-score cards: `1D Ago`, `1W Ago`, `1M Ago`, `3M Ago`
-- `Breadth & Trend Metrics` metric card grid
-- `Performance Overview` metric card grid
-- `High & VIX` metric card grid
-
-The page no longer renders the old top stat cards or the separate `Component Scores` table.
+The page does not render the older top stat-card row or a separate component-score table.
 
 ### 5.3 Market Conditions hero
 
-The hero panel currently shows:
+The hero panel shows:
 
 - a short explanation of how market conditions are determined
 - the current `label`
 - the current `score`
 - a semicircle gauge filled from `score / 100`
 
-The prior-score stack currently shows one card each for:
+The four prior-score cards show:
 
-- `1D Ago`
-- `1W Ago`
-- `1M Ago`
-- `3M Ago`
-
-Each prior-score card shows:
-
-- the rounded prior score
-- the label computed for that historical score
+- the historical score
+- the label derived from that historical score
 
 ### 5.4 Summary metric panels
-
-The Market Dashboard now renders compact metric cards instead of tables.
 
 Current `Breadth & Trend Metrics` items:
 
@@ -248,8 +273,8 @@ The page renders three snapshot sections using the same card layout:
 - `Leadership`
 - `External`
 
-`Core` is the only universe used for `Market Score`.
-`Leadership` and `External` are display-only sections and do not feed the score.
+`Core` is the only universe used for the current Market Score when `market.calculation_mode = etf`.
+`Leadership` and `External` are display-only sections and do not feed the score directly.
 
 Each card currently shows:
 
@@ -260,7 +285,7 @@ Each card currently shows:
 - `DAY %`
 - `VOL vs 50D %`
 
-The underlying 21EMA position labels are still sourced from the market snapshot builder:
+The underlying 21EMA position labels are:
 
 - `below 21EMA Low`
 - `inside 21EMA Cloud`
@@ -269,7 +294,7 @@ The underlying 21EMA position labels are still sourced from the market snapshot 
 
 ### 5.6 Factors vs SP500
 
-The page renders `Factors vs SP500` as stacked factor cards instead of a table and uses the configured factors-only universe.
+The page renders `Factors vs SP500` as stacked factor cards and uses the configured factor universe.
 
 Each factor row currently shows:
 
@@ -279,18 +304,17 @@ Each factor row currently shows:
 - `REL 1M %`
 - mini bars for the 1W and 1M values
 
-The page does not render `REL 1Y %` in this panel even though the underlying result frame still includes it.
+The underlying result frame still includes `REL 1Y %`, but the active page does not render it.
 
 ### 5.7 S5TH chart
 
-The page no longer renders the S5TH chart.
+The page does not render the S5TH chart.
+
 The underlying result object may still carry `result.s5th_series`, but the active Market Dashboard does not display it.
 
----
+## 6. Current UI Conventions
 
-## 6. Current UI conventions
-
-- The app uses the configured universes from `config/default.yaml`.
-- Numeric display formatting is handled in the page-specific builders.
-- Duplicate highlighting in watchlist cards depends on the `duplicate_ticker` field from the raw watchlist rows.
-- UI data is always sourced from `PlatformArtifacts`, not recomputed inside the page renderer except for presentation-only formatting.
+- the app loads all page data through `PlatformArtifacts`
+- the watchlist page then performs additional UI projection from raw watchlist data and raw scan hits
+- numeric display formatting is handled in page-specific helpers
+- duplicate highlighting in watchlist cards depends on the projected `duplicate_ticker` field after current sidebar selections are applied

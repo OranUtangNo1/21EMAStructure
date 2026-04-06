@@ -4,7 +4,8 @@
 
 The active implementation uses a practical low-cost stack for screening:
 
-- Finviz for weekly universe discovery
+- Finviz for default weekly universe discovery
+- Yahoo screener as an optional alternate discovery path
 - Yahoo Finance for daily price history
 - Yahoo fallback providers for profile and fundamental fields when the weekly snapshot does not supply them
 - local cache and local run snapshots for persistence
@@ -17,38 +18,51 @@ This is the current implemented provider stack.
 
 The default weekly discovery path is:
 
-1. run the Finviz screener
-2. apply the configured discovery filters
+1. reuse the latest fresh snapshot when available
+2. otherwise run the configured discovery provider
 3. save the resulting snapshot under `data_runs/universe_snapshots/`
 4. reuse the latest snapshot until the refresh interval expires or a manual refresh is requested
+5. fall back to the latest stale snapshot if live discovery fails
+
+This separation between reusable weekly discovery and daily scan execution is active in the code.
 
 ### 2.2 Daily Scan Execution
 
 The daily scan path is:
 
-1. resolve symbols from the latest weekly snapshot
-2. load price history for those symbols
+1. resolve symbols from manual input, snapshots, live discovery, or default symbols
+2. load price history for those symbols plus benchmark, VIX, radar ETFs, market ETFs, and factor ETFs
 3. merge profile and fundamental data
 4. apply the local eligible-universe filter
 5. calculate indicators and scores
 6. run the enabled scans
 
-This separation between weekly discovery and daily scan execution is active in the code.
-
 ## 3. Current Discovery Filters
 
-The current default discovery filters come from `config/default.yaml`.
+### 3.1 Finviz defaults
 
-Implemented defaults:
+Implemented defaults from `config/default/universe_discovery.yaml`:
 
 - provider: `finviz`
 - exchanges: `NASDAQ`, `NYSE`, `AMEX`
 - excluded sector: `Healthcare`
 - minimum market cap: `1000000000`
 - maximum symbols: `2500`
-- refresh cadence: weekly
+- snapshot TTL: `7 days`
 
-These are discovery-stage filters, not the final eligible-universe rules.
+Finviz discovery also starts from the screener-side market-cap bucket `+Small (over $300mln)` and then applies the code-side `min_market_cap` filter after normalization.
+
+### 3.2 Yahoo screener support
+
+When `provider = yahoo`, the code supports these active behaviors:
+
+- exchange-scoped screener queries
+- market-cap, average-volume, and minimum-price query constraints
+- `quoteType == EQUITY` enforcement
+- rejection of non-equity `typeDisp` values
+- max-symbol truncation after normalization
+
+Yahoo discovery is implemented but not selected by the default config.
 
 ## 4. Current Eligible-Universe Filter
 
@@ -74,6 +88,7 @@ Benefits:
 - fast enough for the current product scope
 - simple local caching model
 - enough data to run the active scans and dashboards
+- clean reuse of weekly discovery results across daily runs
 
 Tradeoffs:
 

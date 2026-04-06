@@ -20,6 +20,11 @@ from src.ui_preferences import UserPreferenceStore
 
 st.set_page_config(page_title="Growth Trading Screener", layout="wide")
 
+WATCHLIST_PRESET_GROUP = "watchlist_presets"
+WATCHLIST_PRESET_KIND = "watchlist_controls"
+WATCHLIST_PRESET_SCHEMA_VERSION = 1
+WATCHLIST_PRESET_LIMIT = 10
+
 GLOBAL_CSS = """
 <style>
 :root { --bg:#f3f5fb; --panel:#ffffff; --panel-border:#dbe4f3; --text:#223045; --muted:#6f7f98; }
@@ -361,6 +366,100 @@ def load_user_preference_store(config_path: str) -> UserPreferenceStore:
 
 def watchlist_preference_namespace(config_path: str) -> str:
     return str(Path(config_path).expanduser().resolve(strict=False))
+
+
+def _normalize_watchlist_preset_name(raw_value: object) -> str:
+    return str(raw_value).strip()
+
+
+def _build_watchlist_control_values(
+    selected_scan_names: list[str],
+    selected_annotation_filters: list[str],
+    selected_duplicate_subfilters: list[str],
+    duplicate_threshold: int,
+) -> dict[str, object]:
+    return {
+        "selected_scan_names": list(selected_scan_names),
+        "selected_annotation_filters": list(selected_annotation_filters),
+        "selected_duplicate_subfilters": list(selected_duplicate_subfilters),
+        "duplicate_threshold": int(duplicate_threshold),
+    }
+
+
+def _build_watchlist_preset_record(values: dict[str, object]) -> dict[str, object]:
+    return {
+        "schema_version": WATCHLIST_PRESET_SCHEMA_VERSION,
+        "kind": WATCHLIST_PRESET_KIND,
+        "values": values,
+    }
+
+
+def _read_watchlist_preset_values(
+    record: object,
+    *,
+    available_scan_names: list[str],
+    available_annotation_names: list[str],
+    available_duplicate_subfilters: list[str],
+    default_duplicate_threshold: int,
+) -> dict[str, object] | None:
+    if not isinstance(record, dict):
+        return None
+    if any(key in record for key in ("schema_version", "kind", "values")):
+        schema_version = record.get("schema_version")
+        if schema_version not in (None, WATCHLIST_PRESET_SCHEMA_VERSION):
+            return None
+        kind = str(record.get("kind", WATCHLIST_PRESET_KIND)).strip()
+        if kind != WATCHLIST_PRESET_KIND:
+            return None
+        values = record.get("values", {})
+        if not isinstance(values, dict):
+            return None
+    else:
+        values = record
+
+    selected_scan_names = [
+        str(name)
+        for name in values.get("selected_scan_names", [])
+        if str(name) in available_scan_names
+    ]
+    selected_annotation_filters = [
+        str(name)
+        for name in values.get("selected_annotation_filters", [])
+        if str(name) in available_annotation_names
+    ]
+    selected_duplicate_subfilters = [
+        str(name)
+        for name in values.get("selected_duplicate_subfilters", [])
+        if str(name) in available_duplicate_subfilters
+    ]
+
+    try:
+        duplicate_threshold = int(values.get("duplicate_threshold", default_duplicate_threshold))
+    except (TypeError, ValueError):
+        duplicate_threshold = int(default_duplicate_threshold)
+    max_threshold = max(1, len(selected_scan_names)) if selected_scan_names else 1
+    duplicate_threshold = max(1, min(duplicate_threshold, max_threshold))
+
+    return _build_watchlist_control_values(
+        selected_scan_names,
+        selected_annotation_filters,
+        selected_duplicate_subfilters,
+        duplicate_threshold,
+    )
+
+
+def _apply_watchlist_preset_to_session_state(
+    values: dict[str, object],
+    *,
+    selection_key: str,
+    annotation_key: str,
+    duplicate_subfilter_key: str,
+    threshold_key: str,
+) -> None:
+    st.session_state[selection_key] = list(values.get("selected_scan_names", []))
+    st.session_state[annotation_key] = list(values.get("selected_annotation_filters", []))
+    st.session_state[duplicate_subfilter_key] = list(values.get("selected_duplicate_subfilters", []))
+    st.session_state[threshold_key] = int(values.get("duplicate_threshold", 1))
 
 
 def render_data_health_banner(artifacts: PlatformArtifacts) -> None:
@@ -756,6 +855,7 @@ def main() -> None:
     watchlist_scan_config: ScanConfig | None = None
     selected_watchlist_scans: list[str] | None = None
     selected_annotation_filters: list[str] | None = None
+    selected_duplicate_subfilters: list[str] | None = None
     duplicate_threshold: int | None = None
     watchlist_preference_store: UserPreferenceStore | None = None
     watchlist_preferences: dict[str, object] = {}
@@ -778,6 +878,10 @@ def main() -> None:
             watchlist_preference_store = load_user_preference_store(config_path)
             watchlist_preferences_namespace = watchlist_preference_namespace(config_path)
             watchlist_preferences = watchlist_preference_store.load_group("watchlist_controls", watchlist_preferences_namespace)
+            raw_watchlist_presets = watchlist_preference_store.load_collection(
+                WATCHLIST_PRESET_GROUP,
+                watchlist_preferences_namespace,
+            )
             card_sections = watchlist_scan_config.card_sections
             annotation_filters = watchlist_scan_config.annotation_filters
             available_duplicate_subfilters = list(WatchlistViewModelBuilder(watchlist_scan_config).available_duplicate_subfilters())
@@ -789,9 +893,18 @@ def main() -> None:
                 for section in annotation_filters
             }
 
-            st.markdown("**Watchlist Controls**")
             selection_key = "watchlist_selected_scan_names"
             selection_defaults_key = "watchlist_selected_scan_names_defaults"
+            annotation_key = "watchlist_selected_annotation_filters"
+            annotation_defaults_key = "watchlist_selected_annotation_filters_defaults"
+            duplicate_subfilter_key = "watchlist_selected_duplicate_subfilters"
+            duplicate_subfilter_defaults_key = "watchlist_selected_duplicate_subfilters_defaults"
+            threshold_key = "watchlist_duplicate_threshold"
+            threshold_defaults_key = "watchlist_duplicate_threshold_defaults"
+            preset_select_key = "watchlist_selected_preset_name"
+            preset_name_key = "watchlist_preset_name"
+            preset_feedback_key = "watchlist_preset_feedback"
+
             default_selected_scan_names = list(watchlist_scan_config.startup_selected_scan_names())
             persisted_selected_scan_names = watchlist_preferences.get("selected_scan_names", default_selected_scan_names)
             if not isinstance(persisted_selected_scan_names, list):
@@ -804,6 +917,127 @@ def main() -> None:
                 tuple(available_scan_names),
                 tuple(default_selected_scan_names),
             )
+
+            default_annotation_names = [
+                name
+                for name in watchlist_scan_config.enabled_annotation_filters
+                if name in available_annotation_names
+            ]
+            persisted_annotation_names = watchlist_preferences.get("selected_annotation_filters", default_annotation_names)
+            if not isinstance(persisted_annotation_names, list):
+                persisted_annotation_names = default_annotation_names
+            persisted_annotation_names = [
+                str(name) for name in persisted_annotation_names if str(name) in available_annotation_names
+            ]
+            annotation_defaults_signature = (
+                watchlist_preferences_namespace,
+                tuple(available_annotation_names),
+                tuple(default_annotation_names),
+            )
+
+            default_duplicate_subfilters: list[str] = []
+            persisted_duplicate_subfilters = watchlist_preferences.get(
+                "selected_duplicate_subfilters",
+                default_duplicate_subfilters,
+            )
+            if not isinstance(persisted_duplicate_subfilters, list):
+                persisted_duplicate_subfilters = default_duplicate_subfilters
+            persisted_duplicate_subfilters = [
+                str(name) for name in persisted_duplicate_subfilters if str(name) in available_duplicate_subfilters
+            ]
+            duplicate_subfilter_defaults_signature = (
+                watchlist_preferences_namespace,
+                tuple(available_duplicate_subfilters),
+                tuple(default_duplicate_subfilters),
+            )
+
+            persisted_duplicate_threshold = watchlist_preferences.get(
+                "duplicate_threshold",
+                int(watchlist_scan_config.duplicate_min_count),
+            )
+            try:
+                persisted_duplicate_threshold_int = int(persisted_duplicate_threshold)
+            except (TypeError, ValueError):
+                persisted_duplicate_threshold_int = int(watchlist_scan_config.duplicate_min_count)
+            persisted_duplicate_threshold_int = max(
+                1,
+                min(persisted_duplicate_threshold_int, max(1, len(persisted_selected_scan_names)) if persisted_selected_scan_names else 1),
+            )
+
+            watchlist_presets: dict[str, dict[str, object]] = {}
+            for raw_name, raw_record in raw_watchlist_presets.items():
+                preset_name = _normalize_watchlist_preset_name(raw_name)
+                if not preset_name:
+                    continue
+                preset_values = _read_watchlist_preset_values(
+                    raw_record,
+                    available_scan_names=available_scan_names,
+                    available_annotation_names=available_annotation_names,
+                    available_duplicate_subfilters=available_duplicate_subfilters,
+                    default_duplicate_threshold=persisted_duplicate_threshold_int,
+                )
+                if preset_values is None:
+                    continue
+                watchlist_presets[preset_name] = preset_values
+
+            st.markdown("**Watchlist Presets**")
+            feedback_message = st.session_state.pop(preset_feedback_key, "")
+            if feedback_message:
+                st.success(feedback_message)
+
+            preset_options = [""] + list(watchlist_presets)
+            selected_preset_name = st.selectbox(
+                "Saved preset",
+                options=preset_options,
+                key=preset_select_key,
+                format_func=lambda name: name if name else "Select a preset",
+            )
+            preset_action_columns = st.columns(2)
+            load_preset = preset_action_columns[0].button(
+                "Load Preset",
+                use_container_width=True,
+                disabled=not selected_preset_name,
+            )
+            delete_preset = preset_action_columns[1].button(
+                "Delete Preset",
+                use_container_width=True,
+                disabled=not selected_preset_name,
+            )
+
+            if load_preset and selected_preset_name:
+                loaded_values = watchlist_presets.get(selected_preset_name)
+                if loaded_values is not None:
+                    _apply_watchlist_preset_to_session_state(
+                        loaded_values,
+                        selection_key=selection_key,
+                        annotation_key=annotation_key,
+                        duplicate_subfilter_key=duplicate_subfilter_key,
+                        threshold_key=threshold_key,
+                    )
+                    st.session_state[selection_defaults_key] = selection_defaults_signature
+                    st.session_state[annotation_defaults_key] = annotation_defaults_signature
+                    st.session_state[duplicate_subfilter_defaults_key] = duplicate_subfilter_defaults_signature
+                    st.session_state[threshold_defaults_key] = (
+                        watchlist_preferences_namespace,
+                        max(1, len(loaded_values["selected_scan_names"])) if loaded_values["selected_scan_names"] else 1,
+                    )
+                    st.session_state[preset_name_key] = selected_preset_name
+                    st.success(f"Loaded preset '{selected_preset_name}'.")
+
+            if delete_preset and selected_preset_name:
+                watchlist_preference_store.delete_collection_item(
+                    WATCHLIST_PRESET_GROUP,
+                    watchlist_preferences_namespace,
+                    selected_preset_name,
+                )
+                st.session_state[preset_select_key] = ""
+                st.session_state[preset_name_key] = ""
+                st.session_state[preset_feedback_key] = f"Deleted preset '{selected_preset_name}'."
+                st.rerun()
+
+            st.caption(f"{len(watchlist_presets)}/{WATCHLIST_PRESET_LIMIT} presets saved.")
+
+            st.markdown("**Watchlist Controls**")
             current_selected_scan_names = st.session_state.get(
                 selection_key,
                 persisted_selected_scan_names,
@@ -823,30 +1057,13 @@ def main() -> None:
                 key=selection_key,
             )
 
-            annotation_key = "watchlist_selected_annotation_filters"
-            annotation_defaults_key = "watchlist_selected_annotation_filters_defaults"
-            default_annotation_names = [
-                name
-                for name in watchlist_scan_config.enabled_annotation_filters
-                if name in available_annotation_names
-            ]
-            persisted_annotation_names = watchlist_preferences.get("selected_annotation_filters", default_annotation_names)
-            if not isinstance(persisted_annotation_names, list):
-                persisted_annotation_names = default_annotation_names
-            persisted_annotation_names = [
-                str(name) for name in persisted_annotation_names if str(name) in available_annotation_names
-            ]
-            annotation_defaults_signature = (
-                watchlist_preferences_namespace,
-                tuple(available_annotation_names),
-                tuple(default_annotation_names),
-            )
             if st.session_state.get(annotation_defaults_key) != annotation_defaults_signature:
                 st.session_state[annotation_key] = persisted_annotation_names
                 st.session_state[annotation_defaults_key] = annotation_defaults_signature
             else:
                 st.session_state[annotation_key] = [
-                    name for name in st.session_state.get(annotation_key, persisted_annotation_names) if name in available_annotation_names
+                    name for name in st.session_state.get(annotation_key, persisted_annotation_names)
+                    if name in available_annotation_names
                 ]
 
             selected_annotation_filters = st.multiselect(
@@ -857,23 +1074,6 @@ def main() -> None:
                 help="Filters are applied after scan eligibility. They narrow displayed cards and Duplicate Tickers without changing the underlying scan candidate set.",
             )
 
-            duplicate_subfilter_key = "watchlist_selected_duplicate_subfilters"
-            duplicate_subfilter_defaults_key = "watchlist_selected_duplicate_subfilters_defaults"
-            default_duplicate_subfilters: list[str] = []
-            persisted_duplicate_subfilters = watchlist_preferences.get(
-                "selected_duplicate_subfilters",
-                default_duplicate_subfilters,
-            )
-            if not isinstance(persisted_duplicate_subfilters, list):
-                persisted_duplicate_subfilters = default_duplicate_subfilters
-            persisted_duplicate_subfilters = [
-                str(name) for name in persisted_duplicate_subfilters if str(name) in available_duplicate_subfilters
-            ]
-            duplicate_subfilter_defaults_signature = (
-                watchlist_preferences_namespace,
-                tuple(available_duplicate_subfilters),
-                tuple(default_duplicate_subfilters),
-            )
             if st.session_state.get(duplicate_subfilter_defaults_key) != duplicate_subfilter_defaults_signature:
                 st.session_state[duplicate_subfilter_key] = persisted_duplicate_subfilters
                 st.session_state[duplicate_subfilter_defaults_key] = duplicate_subfilter_defaults_signature
@@ -891,24 +1091,16 @@ def main() -> None:
                 help="Applied only to Duplicate Tickers after duplicate thresholding. Top3 HybridRS keeps the three highest hybrid_score names among duplicate candidates.",
             )
 
-            threshold_key = "watchlist_duplicate_threshold"
-            threshold_defaults_key = "watchlist_duplicate_threshold_defaults"
             max_threshold = max(1, len(selected_watchlist_scans)) if selected_watchlist_scans else 1
-            persisted_duplicate_threshold = watchlist_preferences.get(
-                "duplicate_threshold",
-                int(watchlist_scan_config.duplicate_min_count),
-            )
-            try:
-                persisted_duplicate_threshold_int = int(persisted_duplicate_threshold)
-            except (TypeError, ValueError):
-                persisted_duplicate_threshold_int = int(watchlist_scan_config.duplicate_min_count)
-            persisted_duplicate_threshold_int = max(1, min(persisted_duplicate_threshold_int, max_threshold))
             threshold_defaults_signature = (watchlist_preferences_namespace, max_threshold)
             if st.session_state.get(threshold_defaults_key) != threshold_defaults_signature:
-                st.session_state[threshold_key] = persisted_duplicate_threshold_int
+                st.session_state[threshold_key] = min(persisted_duplicate_threshold_int, max_threshold)
                 st.session_state[threshold_defaults_key] = threshold_defaults_signature
             else:
-                st.session_state[threshold_key] = max(1, min(int(st.session_state.get(threshold_key, persisted_duplicate_threshold_int)), max_threshold))
+                st.session_state[threshold_key] = max(
+                    1,
+                    min(int(st.session_state.get(threshold_key, persisted_duplicate_threshold_int)), max_threshold),
+                )
 
             duplicate_threshold = int(
                 st.number_input(
@@ -920,17 +1112,66 @@ def main() -> None:
                     help="A ticker is shown in Duplicate Tickers only if it appears in at least this many selected scan cards.",
                 )
             )
+
+            current_watchlist_controls = _build_watchlist_control_values(
+                selected_watchlist_scans,
+                selected_annotation_filters,
+                selected_duplicate_subfilters,
+                duplicate_threshold,
+            )
+
+            st.markdown("**Preset Editor**")
+            st.text_input(
+                "Preset name",
+                key=preset_name_key,
+                placeholder="e.g. Momentum Core",
+            )
+            preset_editor_columns = st.columns(2)
+            save_preset = preset_editor_columns[0].button("Save Preset", use_container_width=True)
+            update_preset = preset_editor_columns[1].button(
+                "Update Preset",
+                use_container_width=True,
+                disabled=not selected_preset_name,
+            )
+
+            if save_preset:
+                preset_name = _normalize_watchlist_preset_name(st.session_state.get(preset_name_key, ""))
+                if not preset_name:
+                    st.warning("Enter a preset name before saving.")
+                elif preset_name in watchlist_presets:
+                    st.warning("That preset already exists. Load it and use Update Preset to overwrite it.")
+                elif len(watchlist_presets) >= WATCHLIST_PRESET_LIMIT:
+                    st.warning(f"You can save up to {WATCHLIST_PRESET_LIMIT} presets.")
+                else:
+                    watchlist_preference_store.save_collection_item(
+                        WATCHLIST_PRESET_GROUP,
+                        watchlist_preferences_namespace,
+                        preset_name,
+                        _build_watchlist_preset_record(current_watchlist_controls),
+                    )
+                    st.session_state[preset_select_key] = preset_name
+                    st.session_state[preset_name_key] = preset_name
+                    st.session_state[preset_feedback_key] = f"Saved preset '{preset_name}'."
+                    st.rerun()
+
+            if update_preset and selected_preset_name:
+                watchlist_preference_store.save_collection_item(
+                    WATCHLIST_PRESET_GROUP,
+                    watchlist_preferences_namespace,
+                    selected_preset_name,
+                    _build_watchlist_preset_record(current_watchlist_controls),
+                )
+                st.session_state[preset_name_key] = selected_preset_name
+                st.session_state[preset_feedback_key] = f"Updated preset '{selected_preset_name}'."
+                st.rerun()
+
             if watchlist_preference_store is not None and watchlist_preferences_namespace is not None:
                 watchlist_preference_store.save_group(
                     "watchlist_controls",
                     watchlist_preferences_namespace,
-                    {
-                        "selected_scan_names": list(selected_watchlist_scans),
-                        "selected_annotation_filters": list(selected_annotation_filters),
-                        "selected_duplicate_subfilters": list(selected_duplicate_subfilters),
-                        "duplicate_threshold": duplicate_threshold,
-                    },
+                    current_watchlist_controls,
                 )
+            st.caption("Load a saved preset, adjust the controls, then use Update Preset to overwrite it.")
             st.caption("Selected cards drive card display and Duplicate Tickers. Post-scan filters narrow the displayed watchlist after scan hits are computed. Duplicate subfilters apply only inside Duplicate Tickers.")
 
         refresh = st.button("Refresh", type="primary")
