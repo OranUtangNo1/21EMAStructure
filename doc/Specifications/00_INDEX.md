@@ -85,6 +85,11 @@ Entry evaluation, chart-based structure review, position sizing, and trade manag
   - one scan per document
   - exact scan-specific thresholds and formulas live there instead of in the numbered specifications
 
+## Additional User Guide
+
+- `doc/SCREENING_FIELD_GUIDE_JA.md`
+  - Japanese user guide for the meaning of displayed indicators, scan outputs, and practical screening interpretation
+
 ---
 
 ## Archived Documents

@@ -225,7 +225,7 @@ Default parameters:
 Implemented fields:
 
 - `pocket_pivot`
-- `pp_count_30d`
+- `pp_count_window`
 
 Pocket Pivot formula:
 
@@ -239,7 +239,7 @@ PP Count formula:
 Default parameters:
 
 - `pocket_pivot_lookback = 10`
-- `pp_count_window_days = 30`
+- `pp_count_window_days = 20`
 
 ### 3.6 Trend Base
 

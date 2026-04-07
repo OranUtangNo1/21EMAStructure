@@ -63,7 +63,7 @@ class WatchlistViewModelBuilder:
             "dist_from_52w_low",
             "ud_volume_ratio",
             "earnings",
-            "pp_count_30d",
+            "pp_count_window",
             "ema21_low_pct",
             "atr_21ema_zone",
             "atr_50sma_zone",
@@ -151,7 +151,7 @@ class WatchlistViewModelBuilder:
         hits: pd.DataFrame,
         selected_scan_names: Iterable[str] | None = None,
     ) -> list[ScanCardViewModel]:
-        if watchlist.empty or hits.empty:
+        if watchlist.empty:
             return []
 
         cards: list[ScanCardViewModel] = []
@@ -238,16 +238,15 @@ class WatchlistViewModelBuilder:
                 display[column] = display[column].round(2)
         return display
 
+    def _empty_card_rows(self) -> pd.DataFrame:
+        return pd.DataFrame(columns=["Ticker", "Name", "Hybrid-RS", "Overlap", "VCS", "Duplicate", "Earnings"])
+
     def _build_single_card(self, section: ScanCardConfig, watchlist: pd.DataFrame, hits: pd.DataFrame) -> ScanCardViewModel | None:
         scan_hits = self._scan_hits_frame(hits)
         section_hits = scan_hits.loc[scan_hits["name"] == section.scan_name, "ticker"].drop_duplicates().tolist()
-        if not section_hits:
-            return None
-        frame = watchlist.loc[watchlist.index.intersection(section_hits)].copy()
-        if frame.empty:
-            return None
+        frame = watchlist.loc[watchlist.index.intersection(section_hits)].copy() if section_hits else watchlist.iloc[0:0].copy()
         sort_columns = [column for column in section.sort_columns if column in frame.columns]
-        if sort_columns:
+        if sort_columns and not frame.empty:
             frame = frame.sort_values(sort_columns, ascending=[False] * len(sort_columns))
         return ScanCardViewModel(
             scan_name=section.scan_name,
@@ -257,6 +256,9 @@ class WatchlistViewModelBuilder:
         )
 
     def _build_card_rows(self, frame: pd.DataFrame) -> pd.DataFrame:
+        if frame.empty:
+            return self._empty_card_rows()
+
         display = frame.reset_index(names="Ticker").copy()
         duplicate_series = display["duplicate_ticker"] if "duplicate_ticker" in display.columns else pd.Series(False, index=display.index)
         earnings_series = display["earnings_in_7d"] if "earnings_in_7d" in display.columns else pd.Series(False, index=display.index)

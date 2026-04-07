@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import pandas as pd
 
@@ -40,8 +40,8 @@ def test_near_52w_high_scan_uses_distance_hybrid_and_trend_filters() -> None:
     assert result["Near 52W High"] is True
 
 
-def test_vcs_52_high_scan_uses_vcs_rs_and_52w_high_distance() -> None:
-    row = pd.Series({"vcs": 60.0, "raw_rs21": 61.0, "dist_from_52w_high": -15.0})
+def test_vcs_52_high_scan_uses_relaxed_thresholds_with_trend_base() -> None:
+    row = pd.Series({"vcs": 55.0, "raw_rs21": 30.0, "dist_from_52w_high": -20.0, "trend_base": True})
     config = ScanConfig(enabled_scan_rules=("VCS 52 High",))
 
     result = evaluate_scan_rules(row, config)
@@ -49,8 +49,8 @@ def test_vcs_52_high_scan_uses_vcs_rs_and_52w_high_distance() -> None:
     assert result["VCS 52 High"] is True
 
 
-def test_vcs_52_high_scan_requires_rs_above_threshold() -> None:
-    row = pd.Series({"vcs": 60.0, "raw_rs21": 60.0, "dist_from_52w_high": -10.0})
+def test_vcs_52_high_scan_requires_trend_base() -> None:
+    row = pd.Series({"vcs": 80.0, "raw_rs21": 90.0, "dist_from_52w_high": -5.0, "trend_base": False})
     config = ScanConfig(enabled_scan_rules=("VCS 52 High",))
 
     result = evaluate_scan_rules(row, config)
@@ -58,13 +58,123 @@ def test_vcs_52_high_scan_requires_rs_above_threshold() -> None:
     assert result["VCS 52 High"] is False
 
 
-def test_vcs_52_low_scan_uses_vcs_rs_and_52w_low_distance() -> None:
-    row = pd.Series({"vcs": 60.0, "raw_rs21": 61.0, "dist_from_52w_low": 25.0})
+def test_vcs_52_low_scan_requires_stronger_rs_and_deep_distance_from_high() -> None:
+    row = pd.Series({"vcs": 60.0, "raw_rs21": 81.0, "dist_from_52w_low": 25.0, "dist_from_52w_high": -65.0})
     config = ScanConfig(enabled_scan_rules=("VCS 52 Low",))
 
     result = evaluate_scan_rules(row, config)
 
     assert result["VCS 52 Low"] is True
+
+
+def test_vcs_52_low_scan_rejects_names_not_far_enough_below_52w_high() -> None:
+    row = pd.Series({"vcs": 90.0, "raw_rs21": 100.0, "dist_from_52w_low": 20.0, "dist_from_52w_high": -60.0})
+    config = ScanConfig(enabled_scan_rules=("VCS 52 Low",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["VCS 52 Low"] is False
+
+
+
+def test_pullback_quality_scan_requires_quiet_volume_contraction() -> None:
+    row = pd.Series(
+        {
+            "trend_base": True,
+                        "ema21_slope_5d_pct": 0.4,
+            "sma50_slope_10d_pct": 0.8,
+            "atr_21ema_zone": -0.5,
+            "atr_50sma_zone": 1.0,
+            "weekly_return": -4.0,
+            "dcr_percent": 55.0,
+            "drawdown_from_20d_high_pct": 7.0,
+            "volume_ma5_to_ma20_ratio": 0.8,
+        }
+    )
+    config = ScanConfig(enabled_scan_rules=("Pullback Quality scan",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["Pullback Quality scan"] is True
+
+
+def test_reclaim_scan_requires_cross_back_above_ema21_with_volume() -> None:
+    row = pd.Series(
+        {
+            "trend_base": True,
+                        "ema21_slope_5d_pct": 0.4,
+            "sma50_slope_10d_pct": 0.7,
+            "atr_21ema_zone": 0.5,
+            "atr_50sma_zone": 1.5,
+            "weekly_return": 2.0,
+            "dcr_percent": 65.0,
+            "drawdown_from_20d_high_pct": 5.0,
+            "volume_ratio_20d": 1.2,
+            "close_crossed_above_ema21": True,
+            "min_atr_21ema_zone_5d": -0.5,
+        }
+    )
+    config = ScanConfig(enabled_scan_rules=("Reclaim scan",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["Reclaim scan"] is True
+
+
+def test_reclaim_scan_rejects_rows_without_reclaim_cross() -> None:
+    row = pd.Series(
+        {
+            "trend_base": True,
+                        "ema21_slope_5d_pct": 0.4,
+            "sma50_slope_10d_pct": 0.7,
+            "atr_21ema_zone": 0.5,
+            "atr_50sma_zone": 1.5,
+            "weekly_return": 2.0,
+            "dcr_percent": 65.0,
+            "drawdown_from_20d_high_pct": 5.0,
+            "volume_ratio_20d": 1.2,
+            "close_crossed_above_ema21": False,
+            "min_atr_21ema_zone_5d": -0.5,
+        }
+    )
+    config = ScanConfig(enabled_scan_rules=("Reclaim scan",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["Reclaim scan"] is False
+
+
+def test_pp_count_annotation_triggers_at_two_pocket_pivots() -> None:
+    row = pd.Series({"pp_count_window": 2})
+    config = ScanConfig()
+
+    result = evaluate_annotation_filters(row, config)
+
+    assert result["PP Count (20d)"] is True
+
+
+def test_pp_count_scan_requires_trend_base_and_scan_threshold() -> None:
+    row = pd.Series({"pp_count_window": 3, "trend_base": True})
+    config = ScanConfig(enabled_scan_rules=("PP Count",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["PP Count"] is True
+
+
+def test_pp_count_thresholds_can_be_parameterized_independently() -> None:
+    row = pd.Series({"pp_count_window": 2, "trend_base": True})
+    config = ScanConfig(
+        enabled_scan_rules=("PP Count",),
+        pp_count_scan_min=3,
+        pp_count_annotation_min=2,
+    )
+
+    scan_result = evaluate_scan_rules(row, config)
+    annotation_result = evaluate_annotation_filters(row, config)
+
+    assert scan_result["PP Count"] is False
+    assert annotation_result["PP Count (20d)"] is True
 
 
 def test_volume_accumulation_scan_uses_ud_ratio_rel_volume_and_positive_day() -> None:
@@ -159,6 +269,41 @@ def test_watchlist_cards_follow_configured_card_sections() -> None:
     assert list(cards[0].rows["Ticker"]) == ["BBB"]
 
 
+def test_watchlist_cards_keep_selected_sections_visible_when_a_scan_has_no_hits() -> None:
+    raw_watchlist = pd.DataFrame(
+        {
+            "name": ["Alpha"],
+            "hybrid_score": [95.0],
+            "overlap_count": [2],
+            "vcs": [70.0],
+            "earnings_in_7d": [False],
+        },
+        index=["AAA"],
+    )
+    hits = pd.DataFrame(
+        [
+            {"ticker": "AAA", "name": "21EMA scan", "kind": "scan"},
+        ]
+    )
+    config = ScanConfig(
+        card_sections=(
+            ScanCardConfig(scan_name="Pullback Quality scan", display_name="PB Quality"),
+            ScanCardConfig(scan_name="Reclaim scan", display_name="Reclaim"),
+        )
+    )
+
+    cards = WatchlistViewModelBuilder(config).build_scan_cards(
+        raw_watchlist,
+        hits,
+        selected_scan_names=["Pullback Quality scan", "Reclaim scan"],
+    )
+
+    assert [card.scan_name for card in cards] == ["Pullback Quality scan", "Reclaim scan"]
+    assert all(card.ticker_count == 0 for card in cards)
+    assert all(card.rows.empty for card in cards)
+    assert list(cards[0].rows.columns) == ["Ticker", "Name", "Hybrid-RS", "Overlap", "VCS", "Duplicate", "Earnings"]
+
+
 def test_watchlist_builder_surfaces_annotation_columns() -> None:
     raw_watchlist = pd.DataFrame(
         {
@@ -229,7 +374,7 @@ def test_watchlist_is_empty_when_no_scans_hit_even_if_annotations_exist() -> Non
             "rel_volume": [0.1],
             "daily_change_pct": [-1.0],
             "from_open_pct": [-1.0],
-            "pp_count_30d": [0],
+            "pp_count_window": [0],
         },
         index=["AAA"],
     )
@@ -284,7 +429,7 @@ def test_runner_attaches_annotation_flags_to_scan_hits() -> None:
             "eps_growth": [50.0],
             "eps_growth_rank": [95.0],
             "trend_base": [False],
-            "pp_count_30d": [0],
+            "pp_count_window": [0],
             "pocket_pivot": [False],
         },
         index=["AAA"],
@@ -449,10 +594,27 @@ def test_annotation_filters_apply_with_and_semantics() -> None:
 def test_default_scan_config_includes_new_scan_names_and_cards() -> None:
     config = ScanConfig()
 
-    assert {"Volume Accumulation", "VCS 52 High", "VCS 52 Low"}.issubset(set(config.enabled_scan_rules))
-    assert {"Volume Accumulation", "VCS 52 High", "VCS 52 Low"}.issubset(
+    assert {
+        "Pullback Quality scan",
+        "Reclaim scan",
+        "Volume Accumulation",
+        "VCS 52 High",
+        "VCS 52 Low",
+    }.issubset(set(config.enabled_scan_rules))
+    assert "21EMA scan V2" not in set(config.enabled_scan_rules)
+    assert "PP Count" in set(config.enabled_scan_rules)
+    assert {
+        "Pullback Quality scan",
+        "Reclaim scan",
+        "Volume Accumulation",
+        "VCS 52 High",
+        "VCS 52 Low",
+    }.issubset(
         {section.scan_name for section in config.card_sections}
     )
+    assert {section.scan_name for section in config.card_sections}.isdisjoint({"21EMA scan V2"})
+    assert "PP Count" in {section.scan_name for section in config.card_sections}
+    assert {section.filter_name for section in config.annotation_filters} >= {"PP Count (20d)"}
 
 
 def test_scan_config_startup_selection_defaults_to_all_card_sections() -> None:
@@ -522,3 +684,21 @@ def test_apply_selected_scan_metrics_zeroes_duplicate_state_when_no_scans_select
     assert int(projected.iloc[0]["selected_scan_hit_count"]) == 0
     assert int(projected.iloc[0]["overlap_count"]) == 0
     assert bool(projected.iloc[0]["duplicate_ticker"]) is False
+
+
+def test_default_pp_count_annotation_is_available() -> None:
+    config = ScanConfig()
+
+    labels = {section.filter_name: section.display_name for section in config.annotation_filters}
+
+    assert labels["PP Count (20d)"] == "PP Count (20d)"
+def test_legacy_pp_count_annotation_name_remains_accepted() -> None:
+    config = ScanConfig.from_dict(
+        {
+            "annotation_filters": [
+                {"filter_name": "3+ Pocket Pivots (20d)", "display_name": "3+ Pocket Pivots (20d)"},
+            ]
+        }
+    )
+
+    assert config.annotation_filters[0].filter_name == "PP Count (20d)"

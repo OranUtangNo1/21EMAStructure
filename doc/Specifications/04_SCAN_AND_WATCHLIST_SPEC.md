@@ -1,4 +1,4 @@
-# Scan and Watchlist Spec
+﻿# Scan and Watchlist Spec
 
 ## 1. Purpose
 
@@ -66,9 +66,10 @@ The application also evaluates configured annotation filters on the same eligibl
 Current implemented behavior:
 
 - annotation filters are defined by `scan.annotation_filters`
-- the default config ships two available filters:
+- the default config ships three available filters:
   - `RS 21 >= 63`
   - `High Est. EPS Growth`
+  - `PP Count (20d)`
 - the default config enables none of them at runtime because `enabled_annotation_filters` is `[]`
 - annotation results are attached to the raw watchlist as:
   - one boolean column per configured filter
@@ -258,7 +259,7 @@ The raw watchlist produced by `ScanRunner.run()` currently carries these backend
 - `dist_from_52w_low`
 - `ud_volume_ratio`
 - `earnings`
-- `pp_count_30d`
+- `pp_count_window`
 - `ema21_low_pct`
 - `atr_21ema_zone`
 - `atr_50sma_zone`

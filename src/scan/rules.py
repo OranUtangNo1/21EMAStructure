@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -12,6 +12,8 @@ RuleEvaluator = Callable[[pd.Series, "ScanConfig"], bool]
 
 DEFAULT_SCAN_RULE_NAMES = (
     "21EMA scan",
+    "Pullback Quality scan",
+    "Reclaim scan",
     "4% bullish",
     "Vol Up",
     "Volume Accumulation",
@@ -31,15 +33,21 @@ DEFAULT_SCAN_RULE_NAMES = (
 DEFAULT_ANNOTATION_FILTER_NAMES = (
     "RS 21 >= 63",
     "High Est. EPS Growth",
+    "PP Count (20d)",
 )
 
 ANNOTATION_FILTER_NAME_ALIASES = {
     "Relative Strength 21 > 63": "RS 21 >= 63",
+    "PP Count": "PP Count (20d)",
+    "2+ Pocket Pivots (20d)": "PP Count (20d)",
+    "3+ Pocket Pivots (20d)": "PP Count (20d)",
 }
 
 DEFAULT_CARD_SORT_COLUMNS = ("hybrid_score", "overlap_count", "vcs")
 DEFAULT_CARD_SECTION_PAYLOADS = (
     {"scan_name": "21EMA scan", "display_name": "21EMA"},
+    {"scan_name": "Pullback Quality scan", "display_name": "PB Quality"},
+    {"scan_name": "Reclaim scan", "display_name": "Reclaim"},
     {"scan_name": "4% bullish", "display_name": "4% bullish"},
     {"scan_name": "Vol Up", "display_name": "Vol Up"},
     {"scan_name": "Volume Accumulation", "display_name": "Volume Accumulation"},
@@ -49,7 +57,7 @@ DEFAULT_CARD_SECTION_PAYLOADS = (
     {"scan_name": "VCS 52 High", "display_name": "VCS 52 High"},
     {"scan_name": "VCS 52 Low", "display_name": "VCS 52 Low"},
     {"scan_name": "Pocket Pivot", "display_name": "Pocket Pivot"},
-    {"scan_name": "PP Count", "display_name": "3+ Pocket Pivots (30d)"},
+    {"scan_name": "PP Count", "display_name": "PP Count"},
     {"scan_name": "Weekly 20% plus gainers", "display_name": "Weekly 20%+ Gainers"},
     {"scan_name": "Near 52W High", "display_name": "Near 52W High"},
     {"scan_name": "Three Weeks Tight", "display_name": "3WT"},
@@ -58,10 +66,13 @@ DEFAULT_CARD_SECTION_PAYLOADS = (
 DEFAULT_ANNOTATION_FILTER_PAYLOADS = (
     {"filter_name": "RS 21 >= 63", "display_name": "RS 21 >= 63"},
     {"filter_name": "High Est. EPS Growth", "display_name": "High Est. EPS Growth"},
+    {"filter_name": "PP Count (20d)", "display_name": "PP Count (20d)"},
 )
 ANNOTATION_FILTER_COLUMN_NAMES = {
     "RS 21 >= 63": "annotation_rs21_gte_63",
     "High Est. EPS Growth": "annotation_high_eps_growth",
+    "PP Count (20d)": "annotation_pp_count_20d",
+    "3+ Pocket Pivots (20d)": "annotation_pp_count_20d",
 }
 
 
@@ -129,12 +140,14 @@ class ScanConfig:
     club_97_hybrid_threshold: float = 90.0
     club_97_rs21_threshold: float = 97.0
     vcs_min_threshold: float = 60.0
-    vcs_52_high_vcs_min: float = 60.0
-    vcs_52_high_rs21_min: float = 60.0
-    vcs_52_high_dist_max: float = -15.0
+    vcs_52_high_vcs_min: float = 55.0
+    vcs_52_high_rs21_min: float = 25.0
+    vcs_52_high_dist_max: float = -20.0
+    vcs_52_high_require_trend_base: bool = True
     vcs_52_low_vcs_min: float = 60.0
-    vcs_52_low_rs21_min: float = 60.0
+    vcs_52_low_rs21_min: float = 80.0
     vcs_52_low_dist_max: float = 25.0
+    vcs_52_low_dist_from_52w_high_max: float = -65.0
     vol_accum_ud_ratio_min: float = 1.5
     vol_accum_rel_vol_min: float = 1.0
     weekly_gainer_threshold: float = 20.0
@@ -144,6 +157,8 @@ class ScanConfig:
     rs_acceleration_rs21_min: float = 70.0
     duplicate_min_count: int = 3
     high_eps_growth_rank_threshold: float = 90.0
+    pp_count_scan_min: int = 3
+    pp_count_annotation_min: int = 2
     earnings_warning_days: int = 7
     watchlist_sort_mode: str = "hybrid_score"
     enabled_scan_rules: tuple[str, ...] = field(default_factory=lambda: DEFAULT_SCAN_RULE_NAMES)
@@ -327,8 +342,39 @@ def _scan_21ema(row: pd.Series, config: ScanConfig) -> bool:
         and row.get("dcr_percent", 0.0) > 20.0
         and -0.5 <= row.get("atr_21ema_zone", float("nan")) <= 1.0
         and 0.0 <= row.get("atr_50sma_zone", float("nan")) <= 3.0
-        and row.get("pp_count_30d", 0) > 1
         and row.get("trend_base", False)
+    )
+
+
+def _scan_pullback_quality(row: pd.Series, config: ScanConfig) -> bool:
+    weekly_return = row.get("weekly_return", float("nan"))
+    return bool(
+        row.get("trend_base", False)
+        and row.get("ema21_slope_5d_pct", float("nan")) > 0.0
+        and row.get("sma50_slope_10d_pct", float("nan")) > 0.0
+        and -1.25 <= row.get("atr_21ema_zone", float("nan")) <= 0.25
+        and 0.75 <= row.get("atr_50sma_zone", float("nan")) <= 3.5
+        and -8.0 <= weekly_return <= 3.0
+        and row.get("dcr_percent", 0.0) >= 50.0
+        and 3.0 <= row.get("drawdown_from_20d_high_pct", float("nan")) <= 15.0
+        and row.get("volume_ma5_to_ma20_ratio", float("nan")) <= 0.85
+    )
+
+
+def _scan_reclaim(row: pd.Series, config: ScanConfig) -> bool:
+    weekly_return = row.get("weekly_return", float("nan"))
+    return bool(
+        row.get("trend_base", False)
+        and row.get("ema21_slope_5d_pct", float("nan")) > 0.0
+        and row.get("sma50_slope_10d_pct", float("nan")) > 0.0
+        and 0.0 <= row.get("atr_21ema_zone", float("nan")) <= 1.0
+        and 0.75 <= row.get("atr_50sma_zone", float("nan")) <= 4.0
+        and -3.0 <= weekly_return <= 10.0
+        and row.get("dcr_percent", 0.0) >= 60.0
+        and 2.0 <= row.get("drawdown_from_20d_high_pct", float("nan")) <= 12.0
+        and row.get("volume_ratio_20d", float("nan")) >= 1.10
+        and row.get("close_crossed_above_ema21", False)
+        and row.get("min_atr_21ema_zone_5d", float("nan")) <= -0.25
     )
 
 
@@ -385,6 +431,7 @@ def _scan_vcs_52_high(row: pd.Series, config: ScanConfig) -> bool:
         row.get("vcs", 0.0) >= config.vcs_52_high_vcs_min
         and raw_rs21 > config.vcs_52_high_rs21_min
         and row.get("dist_from_52w_high", float("nan")) >= config.vcs_52_high_dist_max
+        and (not config.vcs_52_high_require_trend_base or row.get("trend_base", False))
     )
 
 
@@ -394,6 +441,7 @@ def _scan_vcs_52_low(row: pd.Series, config: ScanConfig) -> bool:
         row.get("vcs", 0.0) >= config.vcs_52_low_vcs_min
         and raw_rs21 > config.vcs_52_low_rs21_min
         and row.get("dist_from_52w_low", float("nan")) <= config.vcs_52_low_dist_max
+        and row.get("dist_from_52w_high", float("nan")) <= config.vcs_52_low_dist_from_52w_high_max
     )
 
 
@@ -402,7 +450,7 @@ def _scan_pocket_pivot(row: pd.Series, config: ScanConfig) -> bool:
 
 
 def _scan_pp_count(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(row.get("pp_count_30d", 0) > 3 and row.get("trend_base", False))
+    return bool(row.get("pp_count_window", 0) >= config.pp_count_scan_min and row.get("trend_base", False))
 
 
 def _scan_weekly_gainer(row: pd.Series, config: ScanConfig) -> bool:
@@ -449,8 +497,14 @@ def _annotation_high_eps_growth(row: pd.Series, config: ScanConfig) -> bool:
     return bool(row.get("eps_growth_rank", 0.0) >= config.high_eps_growth_rank_threshold)
 
 
+def _annotation_pp_count_20d(row: pd.Series, config: ScanConfig) -> bool:
+    return bool(row.get("pp_count_window", 0) >= config.pp_count_annotation_min)
+
+
 SCAN_RULE_REGISTRY: dict[str, RuleEvaluator] = {
     "21EMA scan": _scan_21ema,
+    "Pullback Quality scan": _scan_pullback_quality,
+    "Reclaim scan": _scan_reclaim,
     "4% bullish": _scan_bullish_4pct,
     "Vol Up": _scan_vol_up,
     "Volume Accumulation": _scan_volume_accumulation,
@@ -470,6 +524,8 @@ SCAN_RULE_REGISTRY: dict[str, RuleEvaluator] = {
 ANNOTATION_FILTER_REGISTRY: dict[str, RuleEvaluator] = {
     "RS 21 >= 63": _annotation_rs21_gte_63,
     "High Est. EPS Growth": _annotation_high_eps_growth,
+    "PP Count (20d)": _annotation_pp_count_20d,
+    "3+ Pocket Pivots (20d)": _annotation_pp_count_20d,
 }
 
 

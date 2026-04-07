@@ -1,4 +1,4 @@
-# Parameter Catalog
+﻿# Parameter Catalog
 
 ## 1. Principle
 
@@ -158,7 +158,7 @@ Archived entry, structure, sizing, and trade-management parameters are out of sc
 - current default: `10`
 
 ### indicators.weekly_long_wma_period
-- current default: `30`
+- current default: `20`
 
 ### indicators.three_weeks_tight_pct_threshold
 - current default: `1.5`
@@ -189,7 +189,7 @@ Archived entry, structure, sizing, and trade-management parameters are out of sc
 - currently not consumed by active UI code
 
 ### indicators.pp_count_window_days
-- current default: `30`
+- current default: `20`
 
 ### indicators.pocket_pivot_lookback
 - current default: `10`
@@ -258,6 +258,8 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 - `near_52w_high_hybrid_min`: `70.0`
 - `three_weeks_tight_vcs_min`: `50.0`
 - `rs_acceleration_rs21_min`: `70.0`
+- `pp_count_scan_min`: `3`
+- `pp_count_annotation_min`: `2`
 - `duplicate_min_count`: `3`
 - `high_eps_growth_rank_threshold`: `90.0`
 - `earnings_warning_days`: `7`
