@@ -131,12 +131,18 @@ Current controls:
 
 These values are persisted under the `watchlist_controls` group in the user-preferences store and are namespaced by the resolved config path.
 
-Named presets are stored separately under the `watchlist_presets` group in the same namespace. Current preset behavior:
+Named presets come from two sources:
+
+- built-in presets defined in `scan.watchlist_presets`
+- saved presets stored under the `watchlist_presets` group in the same namespace
+
+Current preset behavior:
 
 - record shape: `schema_version`, `kind`, `values`
 - `kind` is currently `watchlist_controls`
 - `values` stores the same four sidebar control fields
 - the active UI supports save, load, update, and delete
+- built-in presets can be loaded and exported but not deleted or updated from the UI
 - at most 10 presets are stored per config namespace
 - preset load drops scan or filter names that no longer exist in the current config and clamps duplicate threshold to the selected-card count
 
@@ -221,6 +227,7 @@ Instead:
 - available annotation-filter definitions are controlled by `annotation_filters`
 - startup-enabled annotation filters come from `enabled_annotation_filters`
 - the legacy config alias `enabled_list_rules` is still accepted for backward compatibility
+- if `enabled_annotation_filters` mistakenly includes scan names, the loader moves those names into `enabled_scan_rules` and keeps only real annotation filters in the enabled annotation set
 
 ## 5. Active Watchlist Outputs
 
@@ -298,6 +305,7 @@ The active implementation keeps these areas configurable:
 - available annotation filters
 - enabled annotation filters
 - card sections and their display names
+- built-in watchlist presets
 - startup-selected watchlist cards
 - backend duplicate minimum count
 - watchlist sort mode

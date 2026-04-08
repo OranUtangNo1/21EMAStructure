@@ -36,6 +36,7 @@ This keeps settings, reusable calculations, and display-ready outputs separate.
 - `src/data/store.py`
   - universe snapshot persistence
   - per-run artifact persistence
+  - latest saved-run loading for same-day restart reuse
 - `src/data/universe.py`
   - post-price local eligible-universe filter
 - `src/data/quality.py`
@@ -45,7 +46,7 @@ This keeps settings, reusable calculations, and display-ready outputs separate.
   - `FundamentalSnapshot`
 - `src/data/results.py`
   - `FetchStatus`
-  - price, profile, fundamental, and universe-snapshot batch results
+  - price, profile, fundamental, universe-snapshot, and saved-run load result objects
 
 ### 2.3 Indicators
 
@@ -116,6 +117,7 @@ This keeps settings, reusable calculations, and display-ready outputs separate.
 - `app/main.py`
   - Streamlit entrypoint
   - page rendering
+  - same-day saved-run reuse before pipeline recomputation
   - watchlist sidebar control state
   - watchlist preset save/load/update/delete UI with a 10-preset cap
 
@@ -162,6 +164,8 @@ Current concrete implementations:
 
 `ResearchPlatform.run(symbols=None, force_universe_refresh=False)` returns `PlatformArtifacts`.
 
+`ResearchPlatform.load_latest_run_artifacts(symbols=None, force_universe_refresh=False)` can also return `PlatformArtifacts` by reusing the latest same-day saved run when the current request matches the saved config path, manual-symbol input, and expected trade date.
+
 The pipeline contract is:
 
 1. resolve symbols
@@ -197,6 +201,7 @@ The scan layer contract is:
 - `apply_selected_scan_metrics(watchlist, hits, min_count, selected_scan_names)`
 - `build_scan_cards(watchlist, hits, selected_scan_names)`
 - `build_duplicate_tickers(watchlist, hits, min_count, selected_scan_names, selected_duplicate_subfilters)`
+- `build_preset_export(preset_name, watchlist, hits, export_target, selected_scan_names, min_count, selected_annotation_filters, selected_duplicate_subfilters)`
 - `build_earnings_today(snapshot)`
 
 The active app uses raw `watchlist` plus `scan_hits` to rebuild cards and duplicate output from current sidebar selections.
@@ -246,6 +251,7 @@ The active pipeline bundle includes:
 - `universe_mode`
 - `resolved_symbols`
 - `universe_snapshot_path`
+- `artifact_origin`
 
 `watchlist_cards` is still produced by the pipeline, but the active UI rebuilds cards from raw watchlist data so current sidebar selections can be applied.
 

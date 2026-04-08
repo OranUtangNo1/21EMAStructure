@@ -21,6 +21,7 @@
 - use yfinance bulk downloads for price histories
 - source profile and fundamental data from the weekly snapshot first, then fall back per symbol only when needed
 - preserve fetch status, data quality, and saved run metadata as first-class outputs
+- allow same-day app restarts to reuse a saved run bundle when the config path, manual-symbol input, and expected trade date still match
 
 ### 1.3 Benchmark and market symbols
 
@@ -177,7 +178,18 @@ The current default config sets this to `false`, so sample fallback is inactive 
 - fundamental cache: `24h`
 - universe snapshot TTL: `7d`
 
-### 4.3 Fetch-status states
+### 4.3 Same-day saved-run reuse
+
+When persistence is enabled, the app can reuse the latest saved run instead of rerunning the pipeline when all of these hold:
+
+- `Force Weekly Universe Refresh` is off
+- the saved run metadata `config_path` matches the current resolved config path
+- the saved run metadata `manual_symbols_input` matches the current manual-symbol input
+- the saved run `trade_date` matches the current expected trade date
+
+The current expected trade date is derived from US/Eastern calendar date with a daily close cutoff and a weekday-only fallback. This intentionally treats the product as daily-data driven and ignores intraday or after-hours drift for restart reuse.
+
+### 4.4 Fetch-status states
 
 The implementation tracks per-symbol dataset status with these source states:
 
@@ -238,13 +250,19 @@ When `data.persist_research_snapshots` is true, the pipeline saves:
 - `eligible_snapshot.csv`
 - `watchlist.csv`
 - `fetch_status.csv`
+- `scan_hits.csv`
+- `market_result.json` plus market dashboard tables
+- `radar_result.json` plus radar tables
 - `metadata.json`
 
 Run metadata currently includes:
 
 - `run_created_at`
+- `config_path`
+- `manual_symbols_input`
 - `requested_symbols`
 - `available_symbols`
+- `trade_date`
 - `data_source_label`
 - `used_sample_data`
 - `data_health_summary`

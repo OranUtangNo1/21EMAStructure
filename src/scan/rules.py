@@ -28,6 +28,9 @@ DEFAULT_SCAN_RULE_NAMES = (
     "Near 52W High",
     "Three Weeks Tight",
     "RS Acceleration",
+    "Fundamental Demand",
+    "Sustained Leadership",
+    "Trend Reversal Setup",
 )
 
 DEFAULT_ANNOTATION_FILTER_NAMES = (
@@ -62,6 +65,9 @@ DEFAULT_CARD_SECTION_PAYLOADS = (
     {"scan_name": "Near 52W High", "display_name": "Near 52W High"},
     {"scan_name": "Three Weeks Tight", "display_name": "3WT"},
     {"scan_name": "RS Acceleration", "display_name": "RS Accel"},
+    {"scan_name": "Fundamental Demand", "display_name": "Fund Demand"},
+    {"scan_name": "Sustained Leadership", "display_name": "RS Leader"},
+    {"scan_name": "Trend Reversal Setup", "display_name": "Reversal Setup"},
 )
 DEFAULT_ANNOTATION_FILTER_PAYLOADS = (
     {"filter_name": "RS 21 >= 63", "display_name": "RS 21 >= 63"},
@@ -129,6 +135,49 @@ class AnnotationFilterConfig:
 
 
 @dataclass(slots=True)
+class WatchlistPresetConfig:
+    """Built-in watchlist preset definition loaded from config."""
+
+    preset_name: str
+    selected_scan_names: tuple[str, ...]
+    selected_annotation_filters: tuple[str, ...] = field(default_factory=tuple)
+    selected_duplicate_subfilters: tuple[str, ...] = field(default_factory=tuple)
+    duplicate_threshold: int = 1
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, object]) -> "WatchlistPresetConfig":
+        preset_name = str(payload.get("preset_name", payload.get("name", ""))).strip()
+        if not preset_name:
+            raise ValueError("watchlist_presets items require preset_name")
+        selected_scan_names = _normalize_name_tuple(payload.get("selected_scan_names", ()))
+        if not selected_scan_names:
+            raise ValueError("watchlist_presets items require selected_scan_names")
+        selected_annotation_filters = _normalize_annotation_name_tuple(payload.get("selected_annotation_filters", ()))
+        selected_duplicate_subfilters = _normalize_name_tuple(payload.get("selected_duplicate_subfilters", ()))
+        try:
+            duplicate_threshold = int(payload.get("duplicate_threshold", 1))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("watchlist_presets duplicate_threshold must be an integer") from exc
+        if duplicate_threshold < 1:
+            raise ValueError("watchlist_presets duplicate_threshold must be >= 1")
+        return cls(
+            preset_name=preset_name,
+            selected_scan_names=selected_scan_names,
+            selected_annotation_filters=selected_annotation_filters,
+            selected_duplicate_subfilters=selected_duplicate_subfilters,
+            duplicate_threshold=duplicate_threshold,
+        )
+
+    def to_control_values(self) -> dict[str, object]:
+        return {
+            "selected_scan_names": list(self.selected_scan_names),
+            "selected_annotation_filters": list(self.selected_annotation_filters),
+            "selected_duplicate_subfilters": list(self.selected_duplicate_subfilters),
+            "duplicate_threshold": int(self.duplicate_threshold),
+        }
+
+
+@dataclass(slots=True)
 class ScanConfig:
     """Configurable thresholds, rule selection, and scan-card settings."""
 
@@ -155,6 +204,15 @@ class ScanConfig:
     near_52w_high_hybrid_min: float = 70.0
     three_weeks_tight_vcs_min: float = 50.0
     rs_acceleration_rs21_min: float = 70.0
+    fund_demand_fundamental_min: float = 70.0
+    fund_demand_rs21_min: float = 60.0
+    fund_demand_rel_vol_min: float = 1.0
+    sustained_rs21_min: float = 80.0
+    sustained_rs63_min: float = 70.0
+    sustained_rs126_min: float = 60.0
+    reversal_dist_52w_low_max: float = 40.0
+    reversal_dist_52w_high_min: float = -40.0
+    reversal_rs21_min: float = 50.0
     duplicate_min_count: int = 3
     high_eps_growth_rank_threshold: float = 90.0
     pp_count_scan_min: int = 3
@@ -167,6 +225,7 @@ class ScanConfig:
     annotation_filters: tuple[AnnotationFilterConfig, ...] = field(
         default_factory=lambda: tuple(AnnotationFilterConfig.from_dict(payload) for payload in DEFAULT_ANNOTATION_FILTER_PAYLOADS)
     )
+    watchlist_presets: tuple[WatchlistPresetConfig, ...] = field(default_factory=tuple)
     card_sections: tuple[ScanCardConfig, ...] = field(
         default_factory=lambda: tuple(ScanCardConfig.from_dict(payload) for payload in DEFAULT_CARD_SECTION_PAYLOADS)
     )
@@ -177,7 +236,7 @@ class ScanConfig:
             key: value
             for key, value in payload.items()
             if key in cls.__dataclass_fields__
-            and key not in {"enabled_scan_rules", "default_selected_scan_names", "enabled_annotation_filters", "annotation_filters", "card_sections"}
+            and key not in {"enabled_scan_rules", "default_selected_scan_names", "enabled_annotation_filters", "annotation_filters", "watchlist_presets", "card_sections"}
         }
         enabled_scan_rules = _normalize_name_tuple(payload.get("enabled_scan_rules", DEFAULT_SCAN_RULE_NAMES))
         if "default_selected_scan_names" in payload:
@@ -189,9 +248,14 @@ class ScanConfig:
         else:
             legacy_names = payload.get("enabled_list_rules", ())
             raw_annotation_names = [name for name in legacy_names if _canonical_annotation_filter_name(name) in ANNOTATION_FILTER_REGISTRY]
-        enabled_annotation_filters = _normalize_annotation_name_tuple(raw_annotation_names)
+        enabled_scan_rules, enabled_annotation_filters = _coerce_enabled_annotation_filters(
+            raw_annotation_names,
+            enabled_scan_rules,
+        )
         annotation_payloads = payload.get("annotation_filters", DEFAULT_ANNOTATION_FILTER_PAYLOADS)
         annotation_filters = tuple(AnnotationFilterConfig.from_dict(item) for item in annotation_payloads)
+        watchlist_preset_payloads = payload.get("watchlist_presets", ())
+        watchlist_presets = tuple(WatchlistPresetConfig.from_dict(item) for item in watchlist_preset_payloads)
         card_payloads = payload.get("card_sections", DEFAULT_CARD_SECTION_PAYLOADS)
         card_sections = tuple(ScanCardConfig.from_dict(item) for item in card_payloads)
         config = cls(
@@ -200,6 +264,7 @@ class ScanConfig:
             default_selected_scan_names=default_selected_scan_names,
             enabled_annotation_filters=enabled_annotation_filters,
             annotation_filters=annotation_filters,
+            watchlist_presets=watchlist_presets,
             card_sections=card_sections,
         )
         _validate_rule_names(config.enabled_scan_rules, SCAN_RULE_REGISTRY, "scan")
@@ -211,6 +276,7 @@ class ScanConfig:
             raise ValueError(f"enabled_annotation_filters must be defined in annotation_filters: {', '.join(sorted(unknown_enabled))}")
         _validate_card_sections(config.card_sections)
         available_scan_names = {section.scan_name for section in config.card_sections}
+        _validate_watchlist_presets(config.watchlist_presets, available_scan_names, available_filter_names)
         if config.default_selected_scan_names is not None:
             unknown_default_selected = [name for name in config.default_selected_scan_names if name not in available_scan_names]
             if unknown_default_selected:
@@ -301,6 +367,32 @@ def _normalize_annotation_name_tuple(raw_names: object) -> tuple[str, ...]:
     )
 
 
+def _merge_name_tuples(*name_groups: tuple[str, ...]) -> tuple[str, ...]:
+    merged: list[str] = []
+    for group in name_groups:
+        for name in group:
+            if name not in merged:
+                merged.append(name)
+    return tuple(merged)
+
+
+def _coerce_enabled_annotation_filters(
+    raw_names: object,
+    enabled_scan_rules: tuple[str, ...],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    annotation_names = _normalize_annotation_name_tuple(raw_names)
+    compatible_annotation_names = tuple(name for name in annotation_names if name in ANNOTATION_FILTER_REGISTRY)
+    misplaced_scan_names = tuple(name for name in annotation_names if name in SCAN_RULE_REGISTRY and name not in ANNOTATION_FILTER_REGISTRY)
+    unknown_names = tuple(
+        name
+        for name in annotation_names
+        if name not in ANNOTATION_FILTER_REGISTRY and name not in SCAN_RULE_REGISTRY
+    )
+    if unknown_names:
+        raise ValueError(f"Unknown annotation filter rule(s): {', '.join(sorted(unknown_names))}")
+    return _merge_name_tuples(enabled_scan_rules, misplaced_scan_names), compatible_annotation_names
+
+
 def _evaluate_rule_set(
     row: pd.Series,
     rule_names: tuple[str, ...],
@@ -332,6 +424,28 @@ def _validate_annotation_filters(annotation_filters: tuple[AnnotationFilterConfi
     ]
     if unknown:
         raise ValueError(f"Unknown annotation filter section(s): {', '.join(sorted(unknown))}")
+
+
+def _validate_watchlist_presets(
+    watchlist_presets: tuple[WatchlistPresetConfig, ...],
+    available_scan_names: set[str],
+    available_filter_names: set[str],
+) -> None:
+    seen_names: set[str] = set()
+    for preset in watchlist_presets:
+        if preset.preset_name in seen_names:
+            raise ValueError(f"Duplicate watchlist preset name: {preset.preset_name}")
+        seen_names.add(preset.preset_name)
+        unknown_scans = [name for name in preset.selected_scan_names if name not in available_scan_names]
+        if unknown_scans:
+            raise ValueError(
+                f"watchlist preset '{preset.preset_name}' references unknown card_sections scan(s): {', '.join(sorted(unknown_scans))}"
+            )
+        unknown_filters = [name for name in preset.selected_annotation_filters if name not in available_filter_names]
+        if unknown_filters:
+            raise ValueError(
+                f"watchlist preset '{preset.preset_name}' references unknown annotation filter(s): {', '.join(sorted(unknown_filters))}"
+            )
 
 
 def _scan_21ema(row: pd.Series, config: ScanConfig) -> bool:
@@ -488,6 +602,46 @@ def _scan_rs_acceleration(row: pd.Series, config: ScanConfig) -> bool:
     )
 
 
+def _scan_fundamental_demand(row: pd.Series, config: ScanConfig) -> bool:
+    raw_rs21 = _raw_rs(row, 21)
+    return bool(
+        row.get("fundamental_score", 0.0) >= config.fund_demand_fundamental_min
+        and raw_rs21 >= config.fund_demand_rs21_min
+        and row.get("rel_volume", 0.0) >= config.fund_demand_rel_vol_min
+        and row.get("daily_change_pct", 0.0) > 0.0
+        and row.get("trend_base", False)
+    )
+
+
+def _scan_sustained_leadership(row: pd.Series, config: ScanConfig) -> bool:
+    rs21 = _raw_rs(row, 21)
+    rs63 = row.get("rs63", float("nan"))
+    rs126 = row.get("rs126", float("nan"))
+    return bool(
+        pd.notna(rs21)
+        and float(rs21) >= config.sustained_rs21_min
+        and pd.notna(rs63)
+        and float(rs63) >= config.sustained_rs63_min
+        and pd.notna(rs126)
+        and float(rs126) >= config.sustained_rs126_min
+        and row.get("trend_base", False)
+    )
+
+
+def _scan_trend_reversal_setup(row: pd.Series, config: ScanConfig) -> bool:
+    pocket_pivot_count = row.get("pp_count_30d", row.get("pp_count_window", 0))
+    raw_rs21 = _raw_rs(row, 21)
+    return bool(
+        row.get("close", 0.0) > row.get("sma50", float("inf"))
+        and row.get("sma50", float("inf")) <= row.get("sma200", float("inf"))
+        and row.get("sma50_slope_10d_pct", float("nan")) > 0.0
+        and row.get("dist_from_52w_low", float("nan")) <= config.reversal_dist_52w_low_max
+        and row.get("dist_from_52w_high", float("nan")) >= config.reversal_dist_52w_high_min
+        and raw_rs21 >= config.reversal_rs21_min
+        and pocket_pivot_count >= 1
+    )
+
+
 def _annotation_rs21_gte_63(row: pd.Series, config: ScanConfig) -> bool:
     rs21 = _raw_rs(row, 21)
     return bool(pd.notna(rs21) and float(rs21) >= 63.0)
@@ -519,6 +673,9 @@ SCAN_RULE_REGISTRY: dict[str, RuleEvaluator] = {
     "Near 52W High": _scan_near_52w_high,
     "Three Weeks Tight": _scan_three_weeks_tight,
     "RS Acceleration": _scan_rs_acceleration,
+    "Fundamental Demand": _scan_fundamental_demand,
+    "Sustained Leadership": _scan_sustained_leadership,
+    "Trend Reversal Setup": _scan_trend_reversal_setup,
 }
 
 ANNOTATION_FILTER_REGISTRY: dict[str, RuleEvaluator] = {

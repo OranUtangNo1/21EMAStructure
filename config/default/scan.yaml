@@ -22,6 +22,15 @@
   near_52w_high_hybrid_min: 70.0
   three_weeks_tight_vcs_min: 50.0
   rs_acceleration_rs21_min: 70.0
+  fund_demand_fundamental_min: 70.0
+  fund_demand_rs21_min: 60.0
+  fund_demand_rel_vol_min: 1.0
+  sustained_rs21_min: 80.0
+  sustained_rs63_min: 70.0
+  sustained_rs126_min: 60.0
+  reversal_dist_52w_low_max: 40.0
+  reversal_dist_52w_high_min: -40.0
+  reversal_rs21_min: 50.0
   duplicate_min_count: 3
   high_eps_growth_rank_threshold: 90.0
   pp_count_scan_min: 3
@@ -46,6 +55,9 @@
   - Near 52W High
   - Three Weeks Tight
   - RS Acceleration
+  - Fundamental Demand
+  - Sustained Leadership
+  - Trend Reversal Setup
   default_selected_scan_names:
   - 21EMA scan
   - Pullback Quality scan
@@ -64,6 +76,9 @@
   - Near 52W High
   - Three Weeks Tight
   - RS Acceleration
+  - Fundamental Demand
+  - Sustained Leadership
+  - Trend Reversal Setup
   enabled_annotation_filters: []
   annotation_filters:
   - filter_name: RS 21 >= 63
@@ -72,6 +87,57 @@
     display_name: High Est. EPS Growth
   - filter_name: PP Count (20d)
     display_name: PP Count (20d)
+  watchlist_presets:
+  - preset_name: Leader Breakout
+    selected_scan_names: [97 Club, VCS 52 High, Three Weeks Tight]
+    selected_annotation_filters: []
+    selected_duplicate_subfilters: []
+    duplicate_threshold: 2
+  - preset_name: Orderly Pullback
+    selected_scan_names: [Pullback Quality scan, Volume Accumulation, RS Acceleration]
+    selected_annotation_filters: []
+    selected_duplicate_subfilters: []
+    duplicate_threshold: 2
+  - preset_name: Reclaim Trigger
+    selected_scan_names: [Reclaim scan, Pocket Pivot, Fundamental Demand]
+    selected_annotation_filters: []
+    selected_duplicate_subfilters: []
+    duplicate_threshold: 2
+  - preset_name: Momentum Surge
+    selected_scan_names: [4% bullish, Momentum 97, PP Count, Sustained Leadership]
+    selected_annotation_filters: []
+    selected_duplicate_subfilters: []
+    duplicate_threshold: 2
+  - preset_name: Early Cycle Recovery
+    selected_scan_names: [VCS 52 Low, Volume Accumulation, Trend Reversal Setup]
+    selected_annotation_filters: []
+    selected_duplicate_subfilters: []
+    duplicate_threshold: 2
+  - preset_name: Pattern 1 - Initial Leader Breakout
+    selected_scan_names: [97 Club, VCS 52 High, RS Acceleration]
+    selected_annotation_filters: []
+    selected_duplicate_subfilters: []
+    duplicate_threshold: 2
+  - preset_name: Pattern 2 - Strong Pullback Buy
+    selected_scan_names: [21EMA scan, PP Count, Volume Accumulation]
+    selected_annotation_filters: []
+    selected_duplicate_subfilters: []
+    duplicate_threshold: 2
+  - preset_name: Pattern 3 - Tight Base Watch
+    selected_scan_names: [VCS, Three Weeks Tight, Near 52W High]
+    selected_annotation_filters: []
+    selected_duplicate_subfilters: []
+    duplicate_threshold: 2
+  - preset_name: Pattern 4 - Momentum Confirmation
+    selected_scan_names: [4% bullish, Momentum 97, PP Count]
+    selected_annotation_filters: []
+    selected_duplicate_subfilters: []
+    duplicate_threshold: 2
+  - preset_name: Pattern 5 - Early Reversal Signal
+    selected_scan_names: [VCS 52 Low, Volume Accumulation, Pocket Pivot]
+    selected_annotation_filters: []
+    selected_duplicate_subfilters: []
+    duplicate_threshold: 2
   card_sections:
   - scan_name: 21EMA scan
     display_name: 21EMA
@@ -107,3 +173,9 @@
     display_name: 3WT
   - scan_name: RS Acceleration
     display_name: RS Accel
+  - scan_name: Fundamental Demand
+    display_name: Fund Demand
+  - scan_name: Sustained Leadership
+    display_name: RS Leader
+  - scan_name: Trend Reversal Setup
+    display_name: Reversal Setup

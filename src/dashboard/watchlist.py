@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -238,6 +238,55 @@ class WatchlistViewModelBuilder:
                 display[column] = display[column].round(2)
         return display
 
+    def build_preset_export(
+        self,
+        preset_name: str,
+        watchlist: pd.DataFrame,
+        hits: pd.DataFrame,
+        *,
+        export_target: str = "Today's Watchlist",
+        selected_scan_names: Iterable[str] | None = None,
+        min_count: int = 1,
+        selected_annotation_filters: Iterable[str] | None = None,
+        selected_duplicate_subfilters: Iterable[str] | None = None,
+    ) -> pd.DataFrame:
+        effective_selected_scan_names = (
+            list(selected_scan_names)
+            if selected_scan_names is not None
+            else [section.scan_name for section in self.available_card_sections()]
+        )
+        filtered_watchlist = self.filter_by_annotation_filters(
+            watchlist,
+            selected_annotation_filters,
+        )
+        projected_watchlist = self.apply_selected_scan_metrics(
+            filtered_watchlist,
+            hits,
+            min_count=min_count,
+            selected_scan_names=effective_selected_scan_names,
+        )
+        duplicate_frame = self.build_duplicate_tickers(
+            projected_watchlist,
+            hits,
+            min_count=min_count,
+            selected_scan_names=effective_selected_scan_names,
+            selected_duplicate_subfilters=selected_duplicate_subfilters,
+        )
+        cards = self.build_scan_cards(
+            projected_watchlist,
+            hits,
+            selected_scan_names=effective_selected_scan_names,
+        )
+
+        row: dict[str, str] = {
+            "Output Target": str(export_target).strip(),
+            "Preset Name": str(preset_name).strip(),
+            "Duplicate Tickers": self._join_tickers(duplicate_frame),
+        }
+        for card in cards:
+            row[f"{card.display_name} Hit Tickers"] = self._join_tickers(card.rows)
+        return pd.DataFrame([row])
+
     def _empty_card_rows(self) -> pd.DataFrame:
         return pd.DataFrame(columns=["Ticker", "Name", "Hybrid-RS", "Overlap", "VCS", "Duplicate", "Earnings"])
 
@@ -363,8 +412,22 @@ class WatchlistViewModelBuilder:
             return hits.copy()
         return hits.loc[hits["kind"] == "scan"].copy()
 
+    def _join_tickers(self, frame: pd.DataFrame) -> str:
+        if frame.empty:
+            return ""
+        ticker_column = "Ticker" if "Ticker" in frame.columns else "TICKER" if "TICKER" in frame.columns else None
+        if ticker_column is None:
+            return ""
+        values = [
+            str(value).strip().upper()
+            for value in frame[ticker_column].tolist()
+            if str(value).strip()
+        ]
+        return ", ".join(values)
+
 
 class WatchlistCardGridBuilder(WatchlistViewModelBuilder):
     """Docs-facing alias for the scan card grid builder."""
 
     pass
+

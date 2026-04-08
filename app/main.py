@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import html
 import sys
@@ -9,7 +9,7 @@ import streamlit as st
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
-    sys.path.append(str(ROOT))
+    sys.path.insert(0, str(ROOT))
 
 from src.configuration import load_settings
 from src.dashboard.watchlist import WatchlistViewModelBuilder
@@ -89,6 +89,8 @@ div[data-testid="stDataFrame"], div[data-testid="stExpander"] { background:rgba(
 .oratek-priority-count { color:#2d6cdf; font-size:.9rem; font-weight:800; white-space:nowrap; padding-top:.25rem; }
 .oratek-priority-grid { display:grid; grid-template-columns:repeat(8, minmax(0,1fr)); gap:.7rem 1rem; margin-top:.95rem; }
 .oratek-priority-item { background:rgba(255,255,255,.78); border:1px solid rgba(45,108,223,.12); border-radius:14px; padding:.72rem .75rem; color:var(--text); font-size:.98rem; font-weight:800; text-align:center; }
+.oratek-priority-item-rs { color:#2d6cdf; font-size:.74rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase; margin-bottom:.18rem; }
+.oratek-priority-item-ticker { color:var(--text); font-size:.98rem; font-weight:800; }
 .oratek-market-panel { background:rgba(255,255,255,.95); border:1px solid var(--panel-border); border-radius:24px; box-shadow:0 18px 36px rgba(34,48,69,.06); padding:1rem 1.05rem 1.1rem; margin-bottom:1rem; }
 .oratek-market-panel-title { color:var(--text); font-size:.82rem; font-weight:800; text-transform:uppercase; letter-spacing:.08em; margin-bottom:.85rem; }
 .oratek-market-panel-title.centered { text-align:center; }
@@ -263,7 +265,7 @@ def render_ticker_card(title: str, tickers: list[str], empty_text: str) -> None:
 
 def render_priority_ticker_band(title: str, tickers: list[str], note: str, empty_text: str) -> None:
     count = len(tickers)
-    body = "".join(f"<div class='oratek-priority-item'>{html.escape(ticker)}</div>" for ticker in tickers)
+    body = "".join(f"<div class='oratek-priority-item'><div class='oratek-priority-item-ticker'>{html.escape(ticker)}</div></div>" for ticker in tickers)
     if not body:
         body = f"<div class='oratek-empty-state'>{html.escape(empty_text)}</div>"
     else:
@@ -272,6 +274,45 @@ def render_priority_ticker_band(title: str, tickers: list[str], note: str, empty
         f"<div class='oratek-priority-band'><div class='oratek-priority-head'><div><div class='oratek-priority-kicker'>Priority Focus</div><div class='oratek-priority-title'>{html.escape(title)}</div><div class='oratek-priority-note'>{html.escape(note)}</div></div><div class='oratek-priority-count'>{count} tickers</div></div>{body}</div>",
         unsafe_allow_html=True,
     )
+
+
+def render_priority_band_from_frame(
+    title: str,
+    frame: pd.DataFrame,
+    note: str,
+    empty_text: str,
+    metric_label: str = "RS",
+    metric_column: str = "Hybrid-RS",
+) -> None:
+    count = len(frame.index) if frame is not None else 0
+    if frame is None or frame.empty or "Ticker" not in frame.columns:
+        body = f"<div class='oratek-empty-state'>{html.escape(empty_text)}</div>"
+    else:
+        items: list[str] = []
+        for _, row in frame.iterrows():
+            ticker = str(row.get("Ticker", "")).strip()
+            if not ticker:
+                continue
+            metric_value = row.get(metric_column)
+            metric_html = ""
+            if pd.notna(metric_value):
+                metric_text = _format_metric_value(metric_value)
+                metric_html = f"<div class='oratek-priority-item-rs'>{html.escape(metric_label)} {html.escape(metric_text)}</div>"
+            items.append(
+                f"<div class='oratek-priority-item'>{metric_html}<div class='oratek-priority-item-ticker'>{html.escape(ticker)}</div></div>"
+            )
+        body = f"<div class='oratek-priority-grid'>{''.join(items)}</div>" if items else f"<div class='oratek-empty-state'>{html.escape(empty_text)}</div>"
+    st.markdown(
+        f"<div class='oratek-priority-band'><div class='oratek-priority-head'><div><div class='oratek-priority-kicker'>Priority Focus</div><div class='oratek-priority-title'>{html.escape(title)}</div><div class='oratek-priority-note'>{html.escape(note)}</div></div><div class='oratek-priority-count'>{count} tickers</div></div>{body}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _format_metric_value(value: object) -> str:
+    number = _coerce_number(value)
+    if number is None:
+        return str(value).strip()
+    return f"{number:.1f}"
 
 
 def _format_radar_value(column: str, value: object) -> str:
@@ -386,12 +427,38 @@ def _build_watchlist_control_values(
     }
 
 
+def _watchlist_controls_equal(left: dict[str, object] | None, right: dict[str, object] | None) -> bool:
+    if left is None or right is None:
+        return False
+    return _build_watchlist_control_values(
+        list(left.get("selected_scan_names", [])),
+        list(left.get("selected_annotation_filters", [])),
+        list(left.get("selected_duplicate_subfilters", [])),
+        int(left.get("duplicate_threshold", 1)),
+    ) == _build_watchlist_control_values(
+        list(right.get("selected_scan_names", [])),
+        list(right.get("selected_annotation_filters", [])),
+        list(right.get("selected_duplicate_subfilters", [])),
+        int(right.get("duplicate_threshold", 1)),
+    )
+
+
 def _build_watchlist_preset_record(values: dict[str, object]) -> dict[str, object]:
     return {
         "schema_version": WATCHLIST_PRESET_SCHEMA_VERSION,
         "kind": WATCHLIST_PRESET_KIND,
         "values": values,
     }
+
+
+def _build_builtin_watchlist_presets(scan_config: ScanConfig) -> dict[str, dict[str, object]]:
+    presets: dict[str, dict[str, object]] = {}
+    for preset in scan_config.watchlist_presets:
+        preset_name = _normalize_watchlist_preset_name(preset.preset_name)
+        if not preset_name:
+            continue
+        presets[preset_name] = preset.to_control_values()
+    return presets
 
 
 def _read_watchlist_preset_values(
@@ -460,6 +527,16 @@ def _apply_watchlist_preset_to_session_state(
     st.session_state[annotation_key] = list(values.get("selected_annotation_filters", []))
     st.session_state[duplicate_subfilter_key] = list(values.get("selected_duplicate_subfilters", []))
     st.session_state[threshold_key] = int(values.get("duplicate_threshold", 1))
+
+
+def _build_watchlist_preset_export_filename(preset_name: str) -> str:
+    safe_name = "".join(char if char.isalnum() else "_" for char in str(preset_name).strip())
+    safe_name = safe_name.strip("_") or "preset"
+    return f"watchlist_preset_{safe_name.lower()}.csv"
+
+
+def _dataframe_to_csv_bytes(frame: pd.DataFrame) -> bytes:
+    return frame.to_csv(index=False).encode("utf-8-sig")
 
 
 def render_data_health_banner(artifacts: PlatformArtifacts) -> None:
@@ -560,8 +637,6 @@ def render_watchlist(
         selected_scan_names=effective_selected_scan_names,
         selected_duplicate_subfilters=effective_selected_duplicate_subfilters,
     )
-    duplicate_tickers = _to_ticker_list(duplicate_frame)
-
     if effective_selected_scan_names:
         duplicate_note = f"Counted from {len(effective_selected_scan_names)} selected cards"
         if effective_selected_annotation_filters:
@@ -574,9 +649,9 @@ def render_watchlist(
         duplicate_note = "No cards are selected. Choose one or more watchlist cards in the sidebar to enable duplicate counting."
         duplicate_empty_text = "No cards selected."
 
-    render_priority_ticker_band(
+    render_priority_band_from_frame(
         "Duplicate Tickers",
-        duplicate_tickers,
+        duplicate_frame,
         duplicate_note,
         duplicate_empty_text,
     )
@@ -860,6 +935,8 @@ def main() -> None:
     watchlist_preference_store: UserPreferenceStore | None = None
     watchlist_preferences: dict[str, object] = {}
     watchlist_preferences_namespace: str | None = None
+    selected_preset_export_name: str | None = None
+    selected_preset_export_values: dict[str, object] | None = None
 
     with st.sidebar:
         st.markdown("<div class='oratek-sidebar-title'>Growth Trading Screener</div>", unsafe_allow_html=True)
@@ -882,6 +959,7 @@ def main() -> None:
                 WATCHLIST_PRESET_GROUP,
                 watchlist_preferences_namespace,
             )
+            builtin_watchlist_presets = _build_builtin_watchlist_presets(watchlist_scan_config)
             card_sections = watchlist_scan_config.card_sections
             annotation_filters = watchlist_scan_config.annotation_filters
             available_duplicate_subfilters = list(WatchlistViewModelBuilder(watchlist_scan_config).available_duplicate_subfilters())
@@ -964,7 +1042,7 @@ def main() -> None:
                 min(persisted_duplicate_threshold_int, max(1, len(persisted_selected_scan_names)) if persisted_selected_scan_names else 1),
             )
 
-            watchlist_presets: dict[str, dict[str, object]] = {}
+            saved_watchlist_presets: dict[str, dict[str, object]] = {}
             for raw_name, raw_record in raw_watchlist_presets.items():
                 preset_name = _normalize_watchlist_preset_name(raw_name)
                 if not preset_name:
@@ -978,7 +1056,11 @@ def main() -> None:
                 )
                 if preset_values is None:
                     continue
-                watchlist_presets[preset_name] = preset_values
+                saved_watchlist_presets[preset_name] = preset_values
+            watchlist_presets: dict[str, dict[str, object]] = {
+                **builtin_watchlist_presets,
+                **saved_watchlist_presets,
+            }
 
             st.markdown("**Watchlist Presets**")
             feedback_message = st.session_state.pop(preset_feedback_key, "")
@@ -992,6 +1074,9 @@ def main() -> None:
                 key=preset_select_key,
                 format_func=lambda name: name if name else "Select a preset",
             )
+            selected_preset_is_builtin = bool(selected_preset_name and selected_preset_name in builtin_watchlist_presets)
+            selected_preset_export_name = selected_preset_name or None
+            selected_preset_export_values = watchlist_presets.get(selected_preset_name) if selected_preset_name else None
             preset_action_columns = st.columns(2)
             load_preset = preset_action_columns[0].button(
                 "Load Preset",
@@ -1001,7 +1086,7 @@ def main() -> None:
             delete_preset = preset_action_columns[1].button(
                 "Delete Preset",
                 use_container_width=True,
-                disabled=not selected_preset_name,
+                disabled=not selected_preset_name or selected_preset_is_builtin,
             )
 
             if load_preset and selected_preset_name:
@@ -1035,7 +1120,9 @@ def main() -> None:
                 st.session_state[preset_feedback_key] = f"Deleted preset '{selected_preset_name}'."
                 st.rerun()
 
-            st.caption(f"{len(watchlist_presets)}/{WATCHLIST_PRESET_LIMIT} presets saved.")
+            st.caption(
+                f"Built-in: {len(builtin_watchlist_presets)} | Saved: {len(saved_watchlist_presets)}/{WATCHLIST_PRESET_LIMIT}"
+            )
 
             st.markdown("**Watchlist Controls**")
             current_selected_scan_names = st.session_state.get(
@@ -1119,6 +1206,15 @@ def main() -> None:
                 selected_duplicate_subfilters,
                 duplicate_threshold,
             )
+            selected_saved_preset_values = (
+                saved_watchlist_presets.get(selected_preset_name)
+                if selected_preset_name and not selected_preset_is_builtin
+                else None
+            )
+            preset_has_unsaved_changes = not _watchlist_controls_equal(
+                current_watchlist_controls,
+                selected_saved_preset_values,
+            )
 
             st.markdown("**Preset Editor**")
             st.text_input(
@@ -1131,7 +1227,11 @@ def main() -> None:
             update_preset = preset_editor_columns[1].button(
                 "Update Preset",
                 use_container_width=True,
-                disabled=not selected_preset_name,
+                disabled=(
+                    not selected_preset_name
+                    or selected_preset_is_builtin
+                    or not preset_has_unsaved_changes
+                ),
             )
 
             if save_preset:
@@ -1140,7 +1240,7 @@ def main() -> None:
                     st.warning("Enter a preset name before saving.")
                 elif preset_name in watchlist_presets:
                     st.warning("That preset already exists. Load it and use Update Preset to overwrite it.")
-                elif len(watchlist_presets) >= WATCHLIST_PRESET_LIMIT:
+                elif len(saved_watchlist_presets) >= WATCHLIST_PRESET_LIMIT:
                     st.warning(f"You can save up to {WATCHLIST_PRESET_LIMIT} presets.")
                 else:
                     watchlist_preference_store.save_collection_item(
@@ -1171,7 +1271,7 @@ def main() -> None:
                     watchlist_preferences_namespace,
                     current_watchlist_controls,
                 )
-            st.caption("Load a saved preset, adjust the controls, then use Update Preset to overwrite it.")
+            st.caption("Load any preset to apply it. Only saved presets can be updated or deleted; built-in presets are read-only.")
             st.caption("Selected cards drive card display and Duplicate Tickers. Post-scan filters narrow the displayed watchlist after scan hits are computed. Duplicate subfilters apply only inside Duplicate Tickers.")
 
         refresh = st.button("Refresh", type="primary")
@@ -1186,6 +1286,32 @@ def main() -> None:
     artifacts: PlatformArtifacts = st.session_state["artifacts"]
     render_context_strip([f"Data source: {artifacts.data_source_label}"])
     render_data_health_banner(artifacts)
+
+    if (
+        page == "Today's Watchlist"
+        and watchlist_scan_config is not None
+        and selected_preset_export_name
+        and selected_preset_export_values is not None
+    ):
+        preset_export_frame = WatchlistViewModelBuilder(watchlist_scan_config).build_preset_export(
+            selected_preset_export_name,
+            artifacts.watchlist,
+            artifacts.scan_hits,
+            selected_scan_names=list(selected_preset_export_values.get("selected_scan_names", [])),
+            min_count=int(selected_preset_export_values.get("duplicate_threshold", watchlist_scan_config.duplicate_min_count)),
+            selected_annotation_filters=list(selected_preset_export_values.get("selected_annotation_filters", [])),
+            selected_duplicate_subfilters=list(selected_preset_export_values.get("selected_duplicate_subfilters", [])),
+        )
+        with st.sidebar:
+            st.markdown("**Preset Export**")
+            st.download_button(
+                "Export Preset CSV",
+                data=_dataframe_to_csv_bytes(preset_export_frame),
+                file_name=_build_watchlist_preset_export_filename(selected_preset_export_name),
+                mime="text/csv",
+                use_container_width=True,
+            )
+            st.caption("Exports the selected preset's duplicate tickers and each selected scan card's hit tickers.")
 
     if page == "Today's Watchlist":
         render_watchlist(

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, time as dt_time
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pandas as pd
+from pandas.tseries.offsets import BDay
 
 from src.configuration import load_settings
 from src.dashboard.market import MarketConditionConfig, MarketConditionResult, MarketConditionScorer
@@ -63,6 +65,7 @@ class PlatformArtifacts:
     universe_mode: str
     resolved_symbols: list[str]
     universe_snapshot_path: str | None
+    artifact_origin: str
 
 
 class ResearchPlatform:
@@ -70,6 +73,8 @@ class ResearchPlatform:
 
     def __init__(self, config_path: str | Path | None = None) -> None:
         self.root = Path(__file__).resolve().parents[1]
+        resolved_config = Path(config_path).expanduser() if config_path is not None else self.root / "config" / "default.yaml"
+        self.config_path = resolved_config.resolve(strict=False)
         self.settings = load_settings(config_path)
         app_settings = self.settings.get("app", {})
         data_settings = self.settings.get("data", {})
@@ -137,6 +142,7 @@ class ResearchPlatform:
             raise ValueError(f"Unsupported universe discovery provider: {self.discovery_provider_name}")
 
     def run(self, symbols: list[str] | None = None, force_universe_refresh: bool = False) -> PlatformArtifacts:
+        manual_symbols = self._normalize_symbols(symbols or [])
         active_symbols, universe_mode, universe_snapshot_path, universe_snapshot = self._resolve_active_symbols(symbols, force_universe_refresh)
         if not active_symbols:
             raise ValueError("At least one symbol is required.")
@@ -183,7 +189,10 @@ class ResearchPlatform:
             data_source_label,
             data_health_summary,
             market_result,
+            radar_result,
+            scan_result.hits,
             active_symbols,
+            manual_symbols,
             universe_mode,
             universe_snapshot_path,
         )
@@ -208,7 +217,182 @@ class ResearchPlatform:
             universe_mode=universe_mode,
             resolved_symbols=active_symbols,
             universe_snapshot_path=universe_snapshot_path,
+            artifact_origin="pipeline_recomputed",
         )
+
+    def load_latest_run_artifacts(self, symbols: list[str] | None = None, force_universe_refresh: bool = False) -> PlatformArtifacts | None:
+        if force_universe_refresh or not self.persist_research_snapshots:
+            return None
+
+        loaded = self.snapshot_store.load_latest_run()
+        if (
+            loaded.path is None
+            or loaded.metadata is None
+            or loaded.snapshot is None
+            or loaded.eligible_snapshot is None
+            or loaded.watchlist is None
+            or loaded.fetch_status is None
+            or loaded.scan_hits is None
+            or loaded.market_metadata is None
+            or loaded.radar_metadata is None
+        ):
+            return None
+
+        requested_manual_symbols = self._normalize_symbols(symbols or [])
+        if not self._saved_run_matches_request(loaded.metadata, requested_manual_symbols):
+            return None
+
+        trade_date = self._latest_trade_date_from_snapshot(loaded.snapshot)
+        expected_trade_date = self._expected_trade_date()
+        if trade_date is None or expected_trade_date is None or trade_date.normalize() != expected_trade_date.normalize():
+            return None
+
+        market_result = self._restore_market_result(loaded.market_metadata, loaded.market_frames)
+        radar_result = self._restore_radar_result(loaded.radar_metadata, loaded.radar_frames)
+        if market_result is None or radar_result is None:
+            return None
+
+        duplicate_tickers = self.watchlist_builder.build_duplicate_tickers(
+            loaded.watchlist,
+            loaded.scan_hits,
+            self.scan_config.duplicate_min_count,
+        )
+        watchlist_cards = self.watchlist_builder.build_scan_cards(loaded.watchlist, loaded.scan_hits)
+        earnings_today = self.watchlist_builder.build_earnings_today(loaded.eligible_snapshot)
+        data_health_summary = summarize_data_health(loaded.fetch_status)
+        data_source_label = str(loaded.metadata.get("data_source_label") or summarize_data_source_label(loaded.fetch_status))
+        used_sample_data = bool((loaded.fetch_status["source"] == "sample").any()) if "source" in loaded.fetch_status.columns else False
+
+        requested_symbols = loaded.metadata.get("requested_symbols", [])
+        resolved_symbols = self._normalize_symbols(requested_symbols) if isinstance(requested_symbols, list) else []
+        if not resolved_symbols:
+            resolved_symbols = self._normalize_symbols(list(loaded.snapshot.index))
+
+        return PlatformArtifacts(
+            snapshot=loaded.snapshot,
+            eligible_snapshot=loaded.eligible_snapshot,
+            watchlist=loaded.watchlist,
+            duplicate_tickers=duplicate_tickers,
+            watchlist_cards=watchlist_cards,
+            earnings_today=earnings_today,
+            scan_hits=loaded.scan_hits,
+            benchmark_history=pd.DataFrame(),
+            vix_history=pd.DataFrame(),
+            market_result=market_result,
+            radar_result=radar_result,
+            used_sample_data=used_sample_data,
+            data_source_label=data_source_label,
+            fetch_status=loaded.fetch_status,
+            data_health_summary=data_health_summary,
+            run_directory=loaded.path,
+            universe_mode=str(loaded.metadata.get("universe_mode", "persisted_run")),
+            resolved_symbols=resolved_symbols,
+            universe_snapshot_path=str(loaded.metadata.get("universe_snapshot_path")) if loaded.metadata.get("universe_snapshot_path") else None,
+            artifact_origin="same_day_saved_run",
+        )
+
+    def _saved_run_matches_request(self, metadata: dict[str, object], manual_symbols: list[str]) -> bool:
+        config_path_value = metadata.get("config_path")
+        if not config_path_value:
+            return False
+        saved_config_path = Path(str(config_path_value)).expanduser().resolve(strict=False)
+        if saved_config_path != self.config_path:
+            return False
+
+        saved_manual_symbols = metadata.get("manual_symbols_input", [])
+        if not isinstance(saved_manual_symbols, list):
+            return False
+        return self._normalize_symbols(saved_manual_symbols) == manual_symbols
+
+    def _expected_trade_date(self) -> pd.Timestamp:
+        now_eastern = datetime.now(ZoneInfo("America/New_York"))
+        current_date = pd.Timestamp(now_eastern.date())
+        if now_eastern.weekday() >= 5:
+            return (current_date - BDay(1)).normalize()
+        if now_eastern.time() < dt_time(16, 0):
+            return (current_date - BDay(1)).normalize()
+        return current_date.normalize()
+
+    def _latest_trade_date_from_snapshot(self, snapshot: pd.DataFrame) -> pd.Timestamp | None:
+        if snapshot.empty or "trade_date" not in snapshot.columns:
+            return None
+        trade_date = pd.to_datetime(snapshot["trade_date"], errors="coerce").max()
+        if pd.isna(trade_date):
+            return None
+        return pd.Timestamp(trade_date)
+
+    def _restore_market_result(
+        self,
+        metadata: dict[str, object] | None,
+        frames: dict[str, pd.DataFrame],
+    ) -> MarketConditionResult | None:
+        required_frames = {"market_snapshot", "leadership_snapshot", "external_snapshot", "factors_vs_sp500"}
+        if metadata is None or not required_frames.issubset(frames):
+            return None
+
+        trade_date_raw = metadata.get("trade_date")
+        trade_date = pd.Timestamp(trade_date_raw) if trade_date_raw else None
+        return MarketConditionResult(
+            trade_date=trade_date,
+            score=float(metadata.get("score", 0.0)),
+            label=str(metadata.get("label", "No Data")),
+            score_1d_ago=self._optional_float(metadata.get("score_1d_ago")),
+            score_1w_ago=self._optional_float(metadata.get("score_1w_ago")),
+            score_1m_ago=self._optional_float(metadata.get("score_1m_ago")),
+            score_3m_ago=self._optional_float(metadata.get("score_3m_ago")),
+            label_1d_ago=self._optional_str(metadata.get("label_1d_ago")),
+            label_1w_ago=self._optional_str(metadata.get("label_1w_ago")),
+            label_1m_ago=self._optional_str(metadata.get("label_1m_ago")),
+            label_3m_ago=self._optional_str(metadata.get("label_3m_ago")),
+            component_scores=self._float_mapping(metadata.get("component_scores")),
+            breadth_summary=self._float_mapping(metadata.get("breadth_summary")),
+            performance_overview=self._float_mapping(metadata.get("performance_overview")),
+            high_vix_summary=self._float_mapping(metadata.get("high_vix_summary")),
+            market_snapshot=frames["market_snapshot"],
+            leadership_snapshot=frames["leadership_snapshot"],
+            external_snapshot=frames["external_snapshot"],
+            factors_vs_sp500=frames["factors_vs_sp500"],
+            s5th_series=pd.DataFrame(),
+            vix_close=self._optional_float(metadata.get("vix_close")),
+            update_time=str(metadata.get("update_time", "")),
+        )
+
+    def _restore_radar_result(
+        self,
+        metadata: dict[str, object] | None,
+        frames: dict[str, pd.DataFrame],
+    ) -> RadarResult | None:
+        required_frames = {"sector_leaders", "industry_leaders", "top_daily", "top_weekly"}
+        if metadata is None or not required_frames.issubset(frames):
+            return None
+        return RadarResult(
+            sector_leaders=frames["sector_leaders"],
+            industry_leaders=frames["industry_leaders"],
+            top_daily=frames["top_daily"],
+            top_weekly=frames["top_weekly"],
+            update_time=str(metadata.get("update_time", "")),
+        )
+
+    def _optional_float(self, value: object) -> float | None:
+        if value is None or pd.isna(value):
+            return None
+        return float(value)
+
+    def _optional_str(self, value: object) -> str | None:
+        if value is None or pd.isna(value):
+            return None
+        text = str(value).strip()
+        return text or None
+
+    def _float_mapping(self, payload: object) -> dict[str, float]:
+        if not isinstance(payload, dict):
+            return {}
+        result: dict[str, float] = {}
+        for key, value in payload.items():
+            if value is None:
+                continue
+            result[str(key)] = float(value)
+        return result
 
     def _resolve_active_symbols(self, symbols: list[str] | None, force_universe_refresh: bool) -> tuple[list[str], str, str | None, pd.DataFrame | None]:
         manual_symbols = self._normalize_symbols(symbols or [])
@@ -425,16 +609,23 @@ class ResearchPlatform:
         data_source_label: str,
         data_health_summary: dict[str, float | int],
         market_result: MarketConditionResult,
+        radar_result: RadarResult,
+        scan_hits: pd.DataFrame,
         requested_symbols: list[str],
+        manual_symbols_input: list[str],
         universe_mode: str,
         universe_snapshot_path: str | None,
     ) -> str | None:
         if not self.persist_research_snapshots:
             return None
+        trade_date = self._latest_trade_date_from_snapshot(snapshot)
         metadata = {
             "run_created_at": datetime.now().isoformat(timespec="seconds"),
+            "config_path": str(self.config_path),
+            "manual_symbols_input": manual_symbols_input,
             "requested_symbols": requested_symbols,
             "available_symbols": list(snapshot.index),
+            "trade_date": trade_date.isoformat() if trade_date is not None else None,
             "data_source_label": data_source_label,
             "used_sample_data": bool((fetch_status["source"] == "sample").any()) if not fetch_status.empty else False,
             "data_health_summary": data_health_summary,
@@ -443,7 +634,16 @@ class ResearchPlatform:
             "universe_mode": universe_mode,
             "universe_snapshot_path": universe_snapshot_path,
         }
-        run_dir = self.snapshot_store.save_run(snapshot, eligible_snapshot, watchlist, fetch_status, metadata)
+        run_dir = self.snapshot_store.save_run(
+            snapshot,
+            eligible_snapshot,
+            watchlist,
+            fetch_status,
+            metadata,
+            scan_hits=scan_hits,
+            market_result=market_result,
+            radar_result=radar_result,
+        )
         return str(run_dir)
 
     def _apply_sample_price_fallback(

@@ -24,17 +24,21 @@ The sidebar always exposes:
 
 The app reloads artifacts when the user presses `Refresh` or when the tuple `(config_path, manual_symbols, force_universe_refresh)` changes.
 
+Current load behavior:
+
+- explicit `Refresh` always recomputes the pipeline
+- otherwise the app first tries to reuse the latest same-day saved run
+- saved-run reuse is allowed only when config path, manual-symbol input, and expected trade date match, and `Force Weekly Universe Refresh` is off
+
 ### 2.2 Shared context and health
 
 All pages can show:
 
 - a context strip with `Data source: <artifacts.data_source_label>`
+- a context strip item with `Load mode: Same-day saved run` or `Load mode: Pipeline recomputed`
 - a warning banner when sample fallback is present
 - an info banner when stale cache or missing datasets exist
-- a `Data Health` expander with:
-  - `artifacts.fetch_status`
-  - `artifacts.universe_snapshot_path` when present
-  - `artifacts.run_directory` when present
+- a `Data Health` expander with `Load mode`, `artifacts.fetch_status`, `artifacts.universe_snapshot_path` when present, and `artifacts.run_directory` when present
 
 ### 2.3 Watchlist preference persistence
 
@@ -55,6 +59,7 @@ Current implemented behavior:
   - `kind`
   - `values`
 - preset `values` currently contain the same four watchlist control fields
+- the preset picker merges built-in config presets with saved presets from the preference store
 - maximum saved presets per namespace: 10
 
 ## 3. Today's Watchlist
@@ -88,6 +93,7 @@ On `Today's Watchlist`, the sidebar additionally exposes:
 - preset-name input
 - `Save Preset` action
 - `Update Preset` action
+- `Export Preset CSV` download action
 
 Current defaults:
 
@@ -101,7 +107,18 @@ Preset load behavior:
 
 - invalid scan names and filter names are ignored against the current config
 - duplicate threshold is clamped to the current selected-card count
+- built-in presets cannot be deleted or updated from the UI
 - `Update Preset` overwrites the currently selected saved preset
+- `Export Preset CSV` uses the currently selected saved preset record, not unsaved sidebar edits
+
+Preset export CSV behavior:
+
+- one row per selected saved preset
+- fixed leading columns: `Output Target`, `Preset Name`, `Duplicate Tickers`
+- one additional column per selected scan card using `<display_name> Hit Tickers`
+- `Duplicate Tickers` stores the comma-separated ticker list from the preset's projected duplicate band
+- each scan-card column stores the comma-separated ticker list shown in that preset's projected card
+- file encoding is UTF-8 with BOM for spreadsheet compatibility
 
 ### 3.3 Duplicate Tickers priority band
 

@@ -40,7 +40,7 @@ Each file in this folder must allow a developer to reproduce the scan boolean lo
 
 ## Active Scan Specs
 
-The default config currently enables `17` scan families.
+The default config currently enables `20` scan families.
 
 | File | Canonical scan name | Implementation owner |
 |---|---|---|
@@ -61,6 +61,9 @@ The default config currently enables `17` scan families.
 | [scan_15_volume_accumulation.md](scan_15_volume_accumulation.md) | `Volume Accumulation` | `src/scan/rules.py::_scan_volume_accumulation` |
 | [scan_16_pullback_quality.txt](scan_16_pullback_quality.txt) | `Pullback Quality scan` | `src/scan/rules.py::_scan_pullback_quality` |
 | [scan_17_reclaim.txt](scan_17_reclaim.txt) | `Reclaim scan` | `src/scan/rules.py::_scan_reclaim` |
+| [scan_18_fundamental_demand.md](scan_18_fundamental_demand.md) | `Fundamental Demand` | `src/scan/rules.py::_scan_fundamental_demand` |
+| [scan_19_sustained_leadership.md](scan_19_sustained_leadership.md) | `Sustained Leadership` | `src/scan/rules.py::_scan_sustained_leadership` |
+| [scan_20_trend_reversal_setup.md](scan_20_trend_reversal_setup.md) | `Trend Reversal Setup` | `src/scan/rules.py::_scan_trend_reversal_setup` |
 
 ## Out Of Scope
 

@@ -245,12 +245,14 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 - `club_97_hybrid_threshold`: `90.0`
 - `club_97_rs21_threshold`: `97.0`
 - `vcs_min_threshold`: `60.0`
-- `vcs_52_high_vcs_min`: `60.0`
-- `vcs_52_high_rs21_min`: `60.0`
-- `vcs_52_high_dist_max`: `-15.0`
+- `vcs_52_high_vcs_min`: `55.0`
+- `vcs_52_high_rs21_min`: `25.0`
+- `vcs_52_high_dist_max`: `-20.0`
+- `vcs_52_high_require_trend_base`: `true`
 - `vcs_52_low_vcs_min`: `60.0`
-- `vcs_52_low_rs21_min`: `60.0`
+- `vcs_52_low_rs21_min`: `80.0`
 - `vcs_52_low_dist_max`: `25.0`
+- `vcs_52_low_dist_from_52w_high_max`: `-65.0`
 - `vol_accum_ud_ratio_min`: `1.5`
 - `vol_accum_rel_vol_min`: `1.0`
 - `weekly_gainer_threshold`: `20.0`
@@ -258,6 +260,15 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 - `near_52w_high_hybrid_min`: `70.0`
 - `three_weeks_tight_vcs_min`: `50.0`
 - `rs_acceleration_rs21_min`: `70.0`
+- `fund_demand_fundamental_min`: `70.0`
+- `fund_demand_rs21_min`: `60.0`
+- `fund_demand_rel_vol_min`: `1.0`
+- `sustained_rs21_min`: `80.0`
+- `sustained_rs63_min`: `70.0`
+- `sustained_rs126_min`: `60.0`
+- `reversal_dist_52w_low_max`: `40.0`
+- `reversal_dist_52w_high_min`: `-40.0`
+- `reversal_rs21_min`: `50.0`
 - `pp_count_scan_min`: `3`
 - `pp_count_annotation_min`: `2`
 - `duplicate_min_count`: `3`
@@ -270,7 +281,9 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 - `default_selected_scan_names`: startup-selected watchlist cards for the sidebar multiselect
 - `enabled_annotation_filters`: startup-enabled post-scan filters; current default is empty
 - `enabled_list_rules`: legacy alias still accepted for annotation rules
+- misplaced scan names inside `enabled_annotation_filters` are coerced into `enabled_scan_rules` during config loading
 - `annotation_filters`: available annotation-filter definitions and display names
+- `watchlist_presets`: built-in watchlist preset definitions loaded into the sidebar preset picker
 - `card_sections`: scan-based card definitions, display names, and optional `sort_columns`
 
 ## 8. Market Dashboard
