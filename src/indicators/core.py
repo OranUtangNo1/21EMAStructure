@@ -127,13 +127,13 @@ class IndicatorCalculator:
         df["volume_ma5_to_ma20_ratio"] = df["volume_ma5"] / df["volume_ma20"].replace(0, np.nan)
         df["volume_ratio_20d"] = df["volume"] / df["volume_ma20"].replace(0, np.nan)
 
-        df["daily_change_pct"] = df["close"].pct_change() * 100.0
+        df["daily_change_pct"] = df["close"].pct_change(fill_method=None) * 100.0
         df["rsi21"] = self._calculate_rsi(df["close"], self.config.rsi_short_period)
         df["rsi63"] = self._calculate_rsi(df["close"], self.config.rsi_long_period)
         df["from_open_pct"] = (df["close"] - df["open"]) / df["open"].replace(0, np.nan) * 100.0
-        df["weekly_return"] = df["close"].pct_change(5) * 100.0
-        df["monthly_return"] = df["close"].pct_change(21) * 100.0
-        df["quarterly_return"] = df["close"].pct_change(63) * 100.0
+        df["weekly_return"] = df["close"].pct_change(5, fill_method=None) * 100.0
+        df["monthly_return"] = df["close"].pct_change(21, fill_method=None) * 100.0
+        df["quarterly_return"] = df["close"].pct_change(63, fill_method=None) * 100.0
         df["rolling_20d_close_high"] = df["close"].rolling(20).max()
         df["drawdown_from_20d_high_pct"] = (
             (df["rolling_20d_close_high"] - df["close"]) / df["rolling_20d_close_high"].replace(0, np.nan) * 100.0
