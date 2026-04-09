@@ -8,12 +8,12 @@ Important principle:
 
 - backend watchlist generation is stable product behavior
 - the concrete scan family can change through config and implementation updates
-- exact per-scan formulas live under `doc/Scan/`
+- exact per-scan formulas live under `doc/SystemDocs/Scan/`
 - the watchlist page adds a display-layer projection on top of the raw watchlist
 
 Primary scan reference:
 
-- `doc/Scan/scan_00_index.md`
+- `doc/SystemDocs/Scan/scan_00_index.md`
 
 ## 2. Backend Watchlist Workflow
 
@@ -221,8 +221,8 @@ The numbered specifications do not duplicate scan-level formulas.
 
 Instead:
 
-- one scan is documented in one file under `doc/Scan/`
-- `doc/Scan/scan_00_index.md` is the entry point
+- one scan is documented in one file under `doc/SystemDocs/Scan/`
+- `doc/SystemDocs/Scan/scan_00_index.md` is the entry point
 - active scan availability is controlled by `enabled_scan_rules`
 - available annotation-filter definitions are controlled by `annotation_filters`
 - startup-enabled annotation filters come from `enabled_annotation_filters`

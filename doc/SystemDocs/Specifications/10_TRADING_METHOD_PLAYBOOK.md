@@ -76,7 +76,7 @@ Stable rule:
 - a ticker becomes a raw watchlist candidate if it passes at least one enabled scan
 - annotation filters do not create watchlist candidates by themselves
 
-The exact active scan family is documented under `doc/Scan/scan_00_index.md`.
+The exact active scan family is documented under `doc/SystemDocs/Scan/scan_00_index.md`.
 The default config currently enables 15 scan families.
 
 ### 3.2 Duplicate Tickers

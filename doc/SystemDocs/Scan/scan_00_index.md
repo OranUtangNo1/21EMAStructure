@@ -1,6 +1,6 @@
 ﻿# Scan Documentation Index
 
-`doc/Scan` is the source of truth for active watchlist scan definitions.
+`doc/SystemDocs/Scan` is the source of truth for active watchlist scan definitions.
 Each file in this folder must allow a developer to reproduce the scan boolean logic without reading prose-heavy design docs.
 
 ## Operating Rules

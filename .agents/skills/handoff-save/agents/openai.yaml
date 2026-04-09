@@ -1,0 +1,4 @@
+interface:
+  display_name: "Session Handoff Save"
+  short_description: "Save a compact session handoff"
+  default_prompt: "Use $handoff-save to write a compact handoff document before compaction or session end."
