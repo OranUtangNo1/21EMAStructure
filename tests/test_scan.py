@@ -821,6 +821,36 @@ def test_scan_config_can_parse_builtin_watchlist_presets() -> None:
     assert config.watchlist_presets[0].to_control_values()["duplicate_threshold"] == 2
 
 
+def test_scan_config_can_parse_preset_csv_export_settings() -> None:
+    config = ScanConfig.from_dict(
+        {
+            "card_sections": [
+                {"scan_name": "97 Club", "display_name": "97 Club"},
+            ],
+            "watchlist_presets": [
+                {
+                    "preset_name": "Leader Breakout",
+                    "selected_scan_names": ["97 Club"],
+                    "duplicate_threshold": 2,
+                    "export_enabled": False,
+                }
+            ],
+            "preset_csv_export": {
+                "enabled": True,
+                "output_dir": "custom_exports",
+                "write_details": False,
+                "top_ticker_limit": 3,
+            },
+        }
+    )
+
+    assert config.preset_csv_export.enabled is True
+    assert config.preset_csv_export.output_dir == "custom_exports"
+    assert config.preset_csv_export.write_details is False
+    assert config.preset_csv_export.top_ticker_limit == 3
+    assert config.watchlist_presets[0].export_enabled is False
+
+
 
 def test_watchlist_preset_export_includes_duplicate_and_card_hit_tickers() -> None:
     watchlist = pd.DataFrame(
@@ -869,4 +899,70 @@ def test_watchlist_preset_export_includes_duplicate_and_card_hit_tickers() -> No
         "Duplicate Tickers": "AAA",
         "21EMA Hit Tickers": "AAA, BBB",
         "VCS Hit Tickers": "AAA",
+    }
+
+
+def test_watchlist_preset_summary_export_reports_candidate_counts_and_top_tickers() -> None:
+    watchlist = pd.DataFrame(
+        {
+            "hybrid_score": [95.0, 80.0, 70.0],
+            "overlap_count": [2, 1, 1],
+            "vcs": [70.0, 60.0, 55.0],
+            "annotation_rs21_gte_63": [True, True, False],
+        },
+        index=["AAA", "BBB", "CCC"],
+    )
+    hits = pd.DataFrame(
+        [
+            {"ticker": "AAA", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "AAA", "name": "VCS", "kind": "scan"},
+            {"ticker": "BBB", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "CCC", "name": "VCS", "kind": "scan"},
+        ]
+    )
+    config = ScanConfig(
+        card_sections=(
+            ScanCardConfig(scan_name="21EMA scan", display_name="21EMA"),
+            ScanCardConfig(scan_name="VCS", display_name="VCS"),
+        )
+    )
+    custom_presets = [
+        ScanConfig.from_dict(
+            {
+                "card_sections": [
+                    {"scan_name": "21EMA scan", "display_name": "21EMA"},
+                    {"scan_name": "VCS", "display_name": "VCS"},
+                ],
+                "watchlist_presets": [
+                    {
+                        "preset_name": "Momentum Core",
+                        "selected_scan_names": ["21EMA scan", "VCS"],
+                        "selected_annotation_filters": ["RS 21 >= 63"],
+                        "duplicate_threshold": 2,
+                    }
+                ],
+            }
+        ).watchlist_presets[0]
+    ]
+
+    summary = WatchlistViewModelBuilder(config).build_preset_summary_exports(
+        custom_presets,
+        watchlist,
+        hits,
+        trade_date="2026-04-09",
+        output_date="2026-04-09",
+        top_ticker_limit=3,
+    )
+
+    assert summary.iloc[0].to_dict() == {
+        "Output Target": "Today's Watchlist",
+        "trade_date": "2026-04-09",
+        "output_date": "2026-04-09",
+        "preset_name": "Momentum Core",
+        "has_candidates": True,
+        "candidate_count": 1,
+        "top_tickers": "AAA",
+        "selected_scan_names": "21EMA scan, VCS",
+        "selected_annotation_filters": "RS 21 >= 63",
+        "duplicate_threshold": 2,
     }

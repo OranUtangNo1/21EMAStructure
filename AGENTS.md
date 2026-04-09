@@ -54,6 +54,8 @@
 - `config/` contains default and alternate configuration files.
 - `doc/Specifications/` contains numbered system specifications.
 - `doc/Scan/` contains one-file-per-scan canonical scan definitions.
+- `doc/ForCodexOutput/` contains user-requested answer documents and Codex-generated project notes intended for user review.
+- `doc/ForUsersOnly/` contains project documents reserved for user-managed reading and writing unless a task explicitly directs Codex to use them.
 - `src/` contains active implementation modules.
 - `tests/` contains active automated tests.
 - `data_cache/` stores local cache artifacts.
@@ -67,6 +69,8 @@
 - New configuration files belong in `config/`.
 - New numbered design documents belong in `doc/Specifications/` and must be linked from `doc/Specifications/00_INDEX.md`.
 - New per-scan documents belong in `doc/Scan/` and should follow the strict scan spec format.
+- New answer-style documents requested by the user should be saved in `doc/ForCodexOutput/`.
+- User-only working documents should be kept in `doc/ForUsersOnly/`; do not read or edit them unless the task explicitly requires it.
 - New tests belong in `tests/` and should sit next to the subsystem they validate.
 - New out-of-scope material belongs in `archived/`.
 - Do not save generated cache data, run exports, or temporary investigation notes as new tracked source files unless the task explicitly requires fixtures or durable artifacts.
@@ -76,6 +80,8 @@
 - Preserve the Config / Calculator / Result separation used across the codebase.
 - Preserve data-quality visibility. Fetch status, source labels, stale-cache handling, and persisted run metadata are product behavior, not incidental logging.
 - Do not edit generated artifacts in `data_cache/`, `data_runs/`, or `__pycache__/` unless the task explicitly targets persistence, fixtures, or cache behavior.
+- Treat `doc/ForCodexOutput/` as the default destination for user-requested explanatory documents that Codex creates during a task.
+- Treat `doc/ForUsersOnly/` as user-controlled documentation space. Do not read from it, write to it, or use it as source material unless the user explicitly asks.
 - Keep active screening docs separate from archived entry/risk docs.
 - If numbered specs are added, moved, or repurposed, update `doc/Specifications/00_INDEX.md` in the same pass.
 - Prefer ASCII-safe file edits by default. Only use non-ASCII text when it is explicitly needed and the write path has been verified to preserve UTF-8 without lossy replacement.
@@ -92,6 +98,10 @@
 - When behavior changes, update the matching docs in the same pass unless the current task explicitly forbids doc edits.
 - When a scan definition changes, keep `doc/Scan/` aligned with implementation or call out the mismatch immediately.
 - Do not add long narrative explanations here.
+
+## Python Environment
+- Always use `.venv`
+- Do not use system Python
 
 ## Commands
 

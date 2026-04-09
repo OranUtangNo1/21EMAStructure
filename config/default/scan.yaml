@@ -87,57 +87,72 @@
     display_name: High Est. EPS Growth
   - filter_name: PP Count (20d)
     display_name: PP Count (20d)
+  preset_csv_export:
+    enabled: true
+    output_dir: data_runs/preset_exports
+    write_details: true
+    top_ticker_limit: 5
   watchlist_presets:
   - preset_name: Leader Breakout
     selected_scan_names: [97 Club, VCS 52 High, Three Weeks Tight]
     selected_annotation_filters: []
     selected_duplicate_subfilters: []
     duplicate_threshold: 2
+    export_enabled: true
   - preset_name: Orderly Pullback
     selected_scan_names: [Pullback Quality scan, Volume Accumulation, RS Acceleration]
     selected_annotation_filters: []
     selected_duplicate_subfilters: []
-    duplicate_threshold: 2
+    duplicate_threshold: 3
+    export_enabled: true
   - preset_name: Reclaim Trigger
     selected_scan_names: [Reclaim scan, Pocket Pivot, Fundamental Demand]
     selected_annotation_filters: []
     selected_duplicate_subfilters: []
-    duplicate_threshold: 2
+    duplicate_threshold: 3
+    export_enabled: true
   - preset_name: Momentum Surge
     selected_scan_names: [4% bullish, Momentum 97, PP Count, Sustained Leadership]
     selected_annotation_filters: []
     selected_duplicate_subfilters: []
     duplicate_threshold: 2
+    export_enabled: true
   - preset_name: Early Cycle Recovery
     selected_scan_names: [VCS 52 Low, Volume Accumulation, Trend Reversal Setup]
     selected_annotation_filters: []
     selected_duplicate_subfilters: []
     duplicate_threshold: 2
+    export_enabled: true
   - preset_name: Pattern 1 - Initial Leader Breakout
     selected_scan_names: [97 Club, VCS 52 High, RS Acceleration]
     selected_annotation_filters: []
     selected_duplicate_subfilters: []
     duplicate_threshold: 2
+    export_enabled: true
   - preset_name: Pattern 2 - Strong Pullback Buy
     selected_scan_names: [21EMA scan, PP Count, Volume Accumulation]
     selected_annotation_filters: []
     selected_duplicate_subfilters: []
     duplicate_threshold: 2
+    export_enabled: true
   - preset_name: Pattern 3 - Tight Base Watch
     selected_scan_names: [VCS, Three Weeks Tight, Near 52W High]
     selected_annotation_filters: []
     selected_duplicate_subfilters: []
     duplicate_threshold: 2
+    export_enabled: true
   - preset_name: Pattern 4 - Momentum Confirmation
     selected_scan_names: [4% bullish, Momentum 97, PP Count]
     selected_annotation_filters: []
     selected_duplicate_subfilters: []
     duplicate_threshold: 2
+    export_enabled: true
   - preset_name: Pattern 5 - Early Reversal Signal
     selected_scan_names: [VCS 52 Low, Volume Accumulation, Pocket Pivot]
     selected_annotation_filters: []
     selected_duplicate_subfilters: []
     duplicate_threshold: 2
+    export_enabled: true
   card_sections:
   - scan_name: 21EMA scan
     display_name: 21EMA

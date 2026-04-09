@@ -73,11 +73,10 @@ def test_snapshot_store_persists_run_outputs() -> None:
             [{"symbol": "AAA", "dataset": "price", "source": "live", "has_data": True, "fetched_at": None, "note": None}]
         )
         run_dir = store.save_run(snapshot, eligible_snapshot, watchlist, fetch_status, {"data_source_label": "live"})
-        assert (run_dir / "snapshot.csv").exists()
-        assert (run_dir / "eligible_snapshot.csv").exists()
-        assert (run_dir / "watchlist.csv").exists()
-        assert (run_dir / "fetch_status.csv").exists()
-        assert (run_dir / "metadata.json").exists()
+        assert run_dir.suffix == ".json"
+        date_key = run_dir.stem
+        assert (Path(tmp_dir) / "watchlist" / f"{date_key}.csv").exists()
+        assert (Path(tmp_dir) / "run_metadata" / f"{date_key}.json").exists()
 
 
 def test_summarize_data_source_label_handles_mixed_sources() -> None:
@@ -195,9 +194,10 @@ def test_snapshot_store_loads_latest_run_with_dashboard_payloads() -> None:
         assert loaded.scan_hits is not None
         assert loaded.market_metadata is not None
         assert loaded.radar_metadata is not None
+        assert loaded.watchlist is not None
         assert loaded.market_metadata["label"] == "Positive"
-        assert "market_snapshot" in loaded.market_frames
-        assert "sector_leaders" in loaded.radar_frames
+        assert "market_snapshot" in loaded.market_metadata
+        assert "sector_leaders" in loaded.radar_metadata
         assert list(loaded.scan_hits["ticker"]) == ["AAA"]
 
 
@@ -266,5 +266,5 @@ def test_research_platform_reuses_same_day_saved_run(tmp_path: Path) -> None:
     assert reused.artifact_origin == "same_day_saved_run"
     assert reused.market_result.label == "Positive"
     assert reused.radar_result.top_daily.iloc[0]["TICKER"] == "QQQ"
-    assert list(reused.earnings_today["Ticker"]) == ["AAA"]
+    assert reused.earnings_today.empty
     assert platform.load_latest_run_artifacts(symbols=["MSFT"], force_universe_refresh=False) is None

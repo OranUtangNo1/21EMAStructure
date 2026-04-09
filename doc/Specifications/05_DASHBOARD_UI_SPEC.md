@@ -16,11 +16,23 @@ There is no active chart, cockpit, entry, sizing, or exit page in the current ap
 
 The sidebar always exposes:
 
-- `Config Path`
 - `Manual Symbols (optional)`
 - `Force Weekly Universe Refresh`
-- page selection radio
 - `Refresh` button
+
+The default config path is resolved internally to `config/default.yaml` and is not currently exposed in the sidebar UI.
+
+The main content area exposes a top page tab bar:
+
+- `Today's Watchlist`
+- `RS Radar`
+- `Market Dashboard`
+
+Current navigation behavior:
+
+- page switching uses a single-select top tab control, not a sidebar radio
+- the app resolves the active page from a page-definition registry so additional tabs can be added without reshaping the main flow
+- page-specific sidebar controls are rendered from the active page definition only
 
 The app reloads artifacts when the user presses `Refresh` or when the tuple `(config_path, manual_symbols, force_universe_refresh)` changes.
 
@@ -249,7 +261,6 @@ The page does not render the older top stat-card row or a separate component-sco
 
 The hero panel shows:
 
-- a short explanation of how market conditions are determined
 - the current `label`
 - the current `score`
 - a semicircle gauge filled from `score / 100`
@@ -277,10 +288,11 @@ Current `Performance Overview` items:
 - `% 1M`
 - `% 1Y`
 
-Current `High & VIX` items:
+Current `High, VIX & Safe Haven` items:
 
 - `S2W High`
 - `VIX`
+- `Safe Haven`
 
 ### 5.5 Core / Leadership / External
 
@@ -292,6 +304,12 @@ The page renders three snapshot sections using the same card layout:
 
 `Core` is the only universe used for the current Market Score when `market.calculation_mode = etf`.
 `Leadership` and `External` are display-only sections and do not feed the score directly.
+
+Current market-score composition notes:
+
+- raw breadth and participation percentages are still shown in the metric panels
+- the composite score itself now applies score-specific transforms instead of directly summing raw percentages
+- `Safe Haven` is derived from the configured risk-on vs risk-off ETF spread
 
 Each card currently shows:
 
@@ -331,6 +349,7 @@ The underlying result object may still carry `result.s5th_series`, but the activ
 
 ## 6. Current UI Conventions
 
+- page navigation is defined from a centralized page-definition list and rendered as a top tab selector
 - the app loads all page data through `PlatformArtifacts`
 - the watchlist page then performs additional UI projection from raw watchlist data and raw scan hits
 - numeric display formatting is handled in page-specific helpers

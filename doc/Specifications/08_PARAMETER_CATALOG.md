@@ -284,6 +284,12 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 - misplaced scan names inside `enabled_annotation_filters` are coerced into `enabled_scan_rules` during config loading
 - `annotation_filters`: available annotation-filter definitions and display names
 - `watchlist_presets`: built-in watchlist preset definitions loaded into the sidebar preset picker
+  - each preset supports `preset_name`, `selected_scan_names`, `selected_annotation_filters`, `selected_duplicate_subfilters`, `duplicate_threshold`, and `export_enabled`
+- `preset_csv_export`: automatic preset CSV export settings
+  - `enabled`: turn automatic batch export on or off
+  - `output_dir`: root output directory for day-based export folders
+  - `write_details`: whether to also write `preset_details.csv`
+  - `top_ticker_limit`: max number of top tickers included in `preset_summary.csv`
 - `card_sections`: scan-based card definitions, display names, and optional `sort_columns`
 
 ## 8. Market Dashboard
@@ -296,18 +302,23 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 - `positive_threshold`: `60.0`
 - `neutral_threshold`: `40.0`
 - `negative_threshold`: `20.0`
+- `vix_neutral_level`: `17.0`
+- `vix_score_slope`: `5.0`
+- `safe_haven_risk_on_symbol`: `SPY`
+- `safe_haven_risk_off_symbol`: `TLT`
+- `safe_haven_window`: `20`
+- `safe_haven_score_scale`: `4.0`
 
 ### Component weights
-- `pct_above_sma10`: `0.12`
 - `pct_above_sma20`: `0.12`
 - `pct_above_sma50`: `0.14`
 - `pct_above_sma200`: `0.14`
-- `pct_sma20_gt_sma50`: `0.10`
-- `pct_sma50_gt_sma200`: `0.10`
-- `pct_positive_1m`: `0.10`
-- `pct_positive_ytd`: `0.08`
+- `pct_sma50_gt_sma200`: `0.08`
+- `pct_positive_1m`: `0.09`
+- `pct_positive_3m`: `0.08`
 - `pct_2w_high`: `0.05`
-- `vix_score`: `0.05`
+- `safe_haven_score`: `0.15`
+- `vix_score`: `0.15`
 
 ### Universes
 - `market_condition_etf_universe`: core ETF universe used for market scoring

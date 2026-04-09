@@ -143,6 +143,7 @@ class WatchlistPresetConfig:
     selected_annotation_filters: tuple[str, ...] = field(default_factory=tuple)
     selected_duplicate_subfilters: tuple[str, ...] = field(default_factory=tuple)
     duplicate_threshold: int = 1
+    export_enabled: bool = True
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> "WatchlistPresetConfig":
@@ -166,6 +167,7 @@ class WatchlistPresetConfig:
             selected_annotation_filters=selected_annotation_filters,
             selected_duplicate_subfilters=selected_duplicate_subfilters,
             duplicate_threshold=duplicate_threshold,
+            export_enabled=bool(payload.get("export_enabled", True)),
         )
 
     def to_control_values(self) -> dict[str, object]:
@@ -175,6 +177,32 @@ class WatchlistPresetConfig:
             "selected_duplicate_subfilters": list(self.selected_duplicate_subfilters),
             "duplicate_threshold": int(self.duplicate_threshold),
         }
+
+
+@dataclass(slots=True)
+class WatchlistPresetCsvExportConfig:
+    """Config for automatic preset CSV exports."""
+
+    enabled: bool = True
+    output_dir: str = "data_runs/preset_exports"
+    write_details: bool = True
+    top_ticker_limit: int = 5
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, object] | None) -> "WatchlistPresetCsvExportConfig":
+        data = payload if isinstance(payload, dict) else {}
+        try:
+            top_ticker_limit = int(data.get("top_ticker_limit", 5))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("preset_csv_export top_ticker_limit must be an integer") from exc
+        if top_ticker_limit < 1:
+            raise ValueError("preset_csv_export top_ticker_limit must be >= 1")
+        return cls(
+            enabled=bool(data.get("enabled", True)),
+            output_dir=str(data.get("output_dir", "data_runs/preset_exports")).strip() or "data_runs/preset_exports",
+            write_details=bool(data.get("write_details", True)),
+            top_ticker_limit=top_ticker_limit,
+        )
 
 
 @dataclass(slots=True)
@@ -226,6 +254,7 @@ class ScanConfig:
         default_factory=lambda: tuple(AnnotationFilterConfig.from_dict(payload) for payload in DEFAULT_ANNOTATION_FILTER_PAYLOADS)
     )
     watchlist_presets: tuple[WatchlistPresetConfig, ...] = field(default_factory=tuple)
+    preset_csv_export: WatchlistPresetCsvExportConfig = field(default_factory=WatchlistPresetCsvExportConfig)
     card_sections: tuple[ScanCardConfig, ...] = field(
         default_factory=lambda: tuple(ScanCardConfig.from_dict(payload) for payload in DEFAULT_CARD_SECTION_PAYLOADS)
     )
@@ -236,7 +265,7 @@ class ScanConfig:
             key: value
             for key, value in payload.items()
             if key in cls.__dataclass_fields__
-            and key not in {"enabled_scan_rules", "default_selected_scan_names", "enabled_annotation_filters", "annotation_filters", "watchlist_presets", "card_sections"}
+            and key not in {"enabled_scan_rules", "default_selected_scan_names", "enabled_annotation_filters", "annotation_filters", "watchlist_presets", "preset_csv_export", "card_sections"}
         }
         enabled_scan_rules = _normalize_name_tuple(payload.get("enabled_scan_rules", DEFAULT_SCAN_RULE_NAMES))
         if "default_selected_scan_names" in payload:
@@ -256,6 +285,7 @@ class ScanConfig:
         annotation_filters = tuple(AnnotationFilterConfig.from_dict(item) for item in annotation_payloads)
         watchlist_preset_payloads = payload.get("watchlist_presets", ())
         watchlist_presets = tuple(WatchlistPresetConfig.from_dict(item) for item in watchlist_preset_payloads)
+        preset_csv_export = WatchlistPresetCsvExportConfig.from_dict(payload.get("preset_csv_export"))
         card_payloads = payload.get("card_sections", DEFAULT_CARD_SECTION_PAYLOADS)
         card_sections = tuple(ScanCardConfig.from_dict(item) for item in card_payloads)
         config = cls(
@@ -265,6 +295,7 @@ class ScanConfig:
             enabled_annotation_filters=enabled_annotation_filters,
             annotation_filters=annotation_filters,
             watchlist_presets=watchlist_presets,
+            preset_csv_export=preset_csv_export,
             card_sections=card_sections,
         )
         _validate_rule_names(config.enabled_scan_rules, SCAN_RULE_REGISTRY, "scan")

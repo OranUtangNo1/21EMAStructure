@@ -228,10 +228,7 @@ class ResearchPlatform:
         if (
             loaded.path is None
             or loaded.metadata is None
-            or loaded.snapshot is None
-            or loaded.eligible_snapshot is None
             or loaded.watchlist is None
-            or loaded.fetch_status is None
             or loaded.scan_hits is None
             or loaded.market_metadata is None
             or loaded.radar_metadata is None
@@ -242,7 +239,7 @@ class ResearchPlatform:
         if not self._saved_run_matches_request(loaded.metadata, requested_manual_symbols):
             return None
 
-        trade_date = self._latest_trade_date_from_snapshot(loaded.snapshot)
+        trade_date = self._trade_date_from_metadata(loaded.metadata)
         expected_trade_date = self._expected_trade_date()
         if trade_date is None or expected_trade_date is None or trade_date.normalize() != expected_trade_date.normalize():
             return None
@@ -252,25 +249,29 @@ class ResearchPlatform:
         if market_result is None or radar_result is None:
             return None
 
+        minimal_snapshot = self._minimal_snapshot_for_saved_run(loaded.watchlist.index.tolist(), trade_date)
+        eligible_snapshot = minimal_snapshot.copy()
+
         duplicate_tickers = self.watchlist_builder.build_duplicate_tickers(
             loaded.watchlist,
             loaded.scan_hits,
             self.scan_config.duplicate_min_count,
         )
         watchlist_cards = self.watchlist_builder.build_scan_cards(loaded.watchlist, loaded.scan_hits)
-        earnings_today = self.watchlist_builder.build_earnings_today(loaded.eligible_snapshot)
-        data_health_summary = summarize_data_health(loaded.fetch_status)
-        data_source_label = str(loaded.metadata.get("data_source_label") or summarize_data_source_label(loaded.fetch_status))
-        used_sample_data = bool((loaded.fetch_status["source"] == "sample").any()) if "source" in loaded.fetch_status.columns else False
+        earnings_today = pd.DataFrame(columns=["Ticker", "Name", "Sector", "Industry", "Hybrid-RS"])
+        fetch_status = pd.DataFrame()
+        data_health_summary = self._data_health_summary_from_metadata(loaded.metadata)
+        data_source_label = str(loaded.metadata.get("data_source_label") or "unknown")
+        used_sample_data = bool(loaded.metadata.get("used_sample_data", False))
 
         requested_symbols = loaded.metadata.get("requested_symbols", [])
         resolved_symbols = self._normalize_symbols(requested_symbols) if isinstance(requested_symbols, list) else []
         if not resolved_symbols:
-            resolved_symbols = self._normalize_symbols(list(loaded.snapshot.index))
+            resolved_symbols = self._normalize_symbols(list(loaded.watchlist.index))
 
         return PlatformArtifacts(
-            snapshot=loaded.snapshot,
-            eligible_snapshot=loaded.eligible_snapshot,
+            snapshot=minimal_snapshot,
+            eligible_snapshot=eligible_snapshot,
             watchlist=loaded.watchlist,
             duplicate_tickers=duplicate_tickers,
             watchlist_cards=watchlist_cards,
@@ -282,7 +283,7 @@ class ResearchPlatform:
             radar_result=radar_result,
             used_sample_data=used_sample_data,
             data_source_label=data_source_label,
-            fetch_status=loaded.fetch_status,
+            fetch_status=fetch_status,
             data_health_summary=data_health_summary,
             run_directory=loaded.path,
             universe_mode=str(loaded.metadata.get("universe_mode", "persisted_run")),
@@ -326,12 +327,15 @@ class ResearchPlatform:
         metadata: dict[str, object] | None,
         frames: dict[str, pd.DataFrame],
     ) -> MarketConditionResult | None:
-        required_frames = {"market_snapshot", "leadership_snapshot", "external_snapshot", "factors_vs_sp500"}
-        if metadata is None or not required_frames.issubset(frames):
+        if metadata is None:
             return None
 
         trade_date_raw = metadata.get("trade_date")
         trade_date = pd.Timestamp(trade_date_raw) if trade_date_raw else None
+        market_snapshot = self._frame_from_records(metadata.get("market_snapshot"))
+        leadership_snapshot = self._frame_from_records(metadata.get("leadership_snapshot"))
+        external_snapshot = self._frame_from_records(metadata.get("external_snapshot"))
+        factors_vs_sp500 = self._frame_from_records(metadata.get("factors_vs_sp500"))
         return MarketConditionResult(
             trade_date=trade_date,
             score=float(metadata.get("score", 0.0)),
@@ -348,10 +352,10 @@ class ResearchPlatform:
             breadth_summary=self._float_mapping(metadata.get("breadth_summary")),
             performance_overview=self._float_mapping(metadata.get("performance_overview")),
             high_vix_summary=self._float_mapping(metadata.get("high_vix_summary")),
-            market_snapshot=frames["market_snapshot"],
-            leadership_snapshot=frames["leadership_snapshot"],
-            external_snapshot=frames["external_snapshot"],
-            factors_vs_sp500=frames["factors_vs_sp500"],
+            market_snapshot=market_snapshot,
+            leadership_snapshot=leadership_snapshot,
+            external_snapshot=external_snapshot,
+            factors_vs_sp500=factors_vs_sp500,
             s5th_series=pd.DataFrame(),
             vix_close=self._optional_float(metadata.get("vix_close")),
             update_time=str(metadata.get("update_time", "")),
@@ -362,14 +366,13 @@ class ResearchPlatform:
         metadata: dict[str, object] | None,
         frames: dict[str, pd.DataFrame],
     ) -> RadarResult | None:
-        required_frames = {"sector_leaders", "industry_leaders", "top_daily", "top_weekly"}
-        if metadata is None or not required_frames.issubset(frames):
+        if metadata is None:
             return None
         return RadarResult(
-            sector_leaders=frames["sector_leaders"],
-            industry_leaders=frames["industry_leaders"],
-            top_daily=frames["top_daily"],
-            top_weekly=frames["top_weekly"],
+            sector_leaders=self._frame_from_records(metadata.get("sector_leaders")),
+            industry_leaders=self._frame_from_records(metadata.get("industry_leaders")),
+            top_daily=self._frame_from_records(metadata.get("top_daily")),
+            top_weekly=self._frame_from_records(metadata.get("top_weekly")),
             update_time=str(metadata.get("update_time", "")),
         )
 
@@ -393,6 +396,46 @@ class ResearchPlatform:
                 continue
             result[str(key)] = float(value)
         return result
+
+    def _frame_from_records(self, payload: object) -> pd.DataFrame:
+        if not isinstance(payload, list):
+            return pd.DataFrame()
+        return pd.DataFrame(payload)
+
+    def _trade_date_from_metadata(self, metadata: dict[str, object]) -> pd.Timestamp | None:
+        raw_value = metadata.get("trade_date")
+        if raw_value is None:
+            return None
+        trade_date = pd.to_datetime(raw_value, errors="coerce")
+        if pd.isna(trade_date):
+            return None
+        return pd.Timestamp(trade_date)
+
+    def _minimal_snapshot_for_saved_run(self, tickers: list[str], trade_date: pd.Timestamp | None) -> pd.DataFrame:
+        if trade_date is None:
+            return pd.DataFrame(index=pd.Index(tickers, name="ticker"))
+        return pd.DataFrame({"trade_date": [trade_date] * len(tickers)}, index=pd.Index(tickers, name="ticker"))
+
+    def _data_health_summary_from_metadata(self, metadata: dict[str, object]) -> dict[str, float | int]:
+        payload = metadata.get("data_health_summary")
+        if isinstance(payload, dict):
+            return payload  # type: ignore[return-value]
+        fetch_summary = metadata.get("fetch_summary")
+        if not isinstance(fetch_summary, dict):
+            return {
+                "live_price_coverage_pct": 0.0,
+                "real_price_coverage_pct": 0.0,
+                "stale_cache_count": 0,
+                "sample_count": 0,
+                "missing_count": 0,
+            }
+        return {
+            "live_price_coverage_pct": 0.0,
+            "real_price_coverage_pct": 0.0,
+            "stale_cache_count": int(fetch_summary.get("cache", 0)),
+            "sample_count": int(fetch_summary.get("sample", 0)),
+            "missing_count": int(fetch_summary.get("missing", 0)),
+        }
 
     def _resolve_active_symbols(self, symbols: list[str] | None, force_universe_refresh: bool) -> tuple[list[str], str, str | None, pd.DataFrame | None]:
         manual_symbols = self._normalize_symbols(symbols or [])
