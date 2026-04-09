@@ -1,7 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import html
 import sys
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -9,7 +11,7 @@ import streamlit as st
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
-    sys.path.append(str(ROOT))
+    sys.path.insert(0, str(ROOT))
 
 from src.configuration import load_settings
 from src.dashboard.watchlist import WatchlistViewModelBuilder
@@ -20,12 +22,19 @@ from src.ui_preferences import UserPreferenceStore
 
 st.set_page_config(page_title="Growth Trading Screener", layout="wide")
 
+WATCHLIST_PRESET_GROUP = "watchlist_presets"
+WATCHLIST_PRESET_KIND = "watchlist_controls"
+WATCHLIST_PRESET_SCHEMA_VERSION = 1
+WATCHLIST_PRESET_LIMIT = 10
+PAGE_SELECTION_KEY = "active_page"
+
 GLOBAL_CSS = """
 <style>
 :root { --bg:#f3f5fb; --panel:#ffffff; --panel-border:#dbe4f3; --text:#223045; --muted:#6f7f98; }
 html, body, [class*="css"] { font-family:"Aptos","Segoe UI","Yu Gothic UI",sans-serif; }
 [data-testid="stAppViewContainer"] { background:radial-gradient(circle at top left, rgba(86,138,237,.12), transparent 26%), linear-gradient(180deg, #f8fbff 0%, var(--bg) 100%); color:var(--text); }
-.block-container { max-width:1440px; padding-top:1.6rem; padding-bottom:2.3rem; }
+header[data-testid="stHeader"] { display:none; }
+.block-container { max-width:1440px; padding-top:.9rem; padding-bottom:2.3rem; }
 section[data-testid="stSidebar"] { background:linear-gradient(180deg, #fbfdff 0%, #f4f8ff 100%); border-right:1px solid var(--panel-border); }
 div.stButton > button { background:linear-gradient(135deg, #2d6cdf 0%, #528eee 100%); color:#fff; border:none; border-radius:14px; font-weight:700; box-shadow:0 12px 24px rgba(45,108,223,.18); }
 div[data-testid="stDataFrame"], div[data-testid="stExpander"] { background:rgba(255,255,255,.9); border:1px solid var(--panel-border); border-radius:18px; overflow:hidden; box-shadow:0 16px 34px rgba(34,48,69,.05); }
@@ -84,6 +93,8 @@ div[data-testid="stDataFrame"], div[data-testid="stExpander"] { background:rgba(
 .oratek-priority-count { color:#2d6cdf; font-size:.9rem; font-weight:800; white-space:nowrap; padding-top:.25rem; }
 .oratek-priority-grid { display:grid; grid-template-columns:repeat(8, minmax(0,1fr)); gap:.7rem 1rem; margin-top:.95rem; }
 .oratek-priority-item { background:rgba(255,255,255,.78); border:1px solid rgba(45,108,223,.12); border-radius:14px; padding:.72rem .75rem; color:var(--text); font-size:.98rem; font-weight:800; text-align:center; }
+.oratek-priority-item-rs { color:#2d6cdf; font-size:.74rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase; margin-bottom:.18rem; }
+.oratek-priority-item-ticker { color:var(--text); font-size:.98rem; font-weight:800; }
 .oratek-market-panel { background:rgba(255,255,255,.95); border:1px solid var(--panel-border); border-radius:24px; box-shadow:0 18px 36px rgba(34,48,69,.06); padding:1rem 1.05rem 1.1rem; margin-bottom:1rem; }
 .oratek-market-panel-title { color:var(--text); font-size:.82rem; font-weight:800; text-transform:uppercase; letter-spacing:.08em; margin-bottom:.85rem; }
 .oratek-market-panel-title.centered { text-align:center; }
@@ -153,6 +164,33 @@ div[data-testid="stDataFrame"], div[data-testid="stExpander"] { background:rgba(
 @media (max-width:768px) { .oratek-page-meta, .oratek-page-submeta { text-align:left; padding-top:.15rem; } .oratek-ticker-grid { grid-template-columns:repeat(3, minmax(0,1fr)); } .oratek-priority-grid { grid-template-columns:repeat(4, minmax(0,1fr)); } .oratek-mover-row { grid-template-columns:1fr; } .oratek-mover-side { text-align:left; } .oratek-market-gauge { width:180px; height:96px; } .oratek-market-metric-grid.cols-6, .oratek-market-metric-grid.cols-4 { grid-template-columns:repeat(2, minmax(0,1fr)); } .oratek-market-metric-grid.cols-2, .oratek-market-factor-metrics { grid-template-columns:repeat(2, minmax(0,1fr)); } .oratek-market-snapshot-grid { grid-template-columns:1fr; } .oratek-market-snapshot-price-row { align-items:flex-start; flex-direction:column; } }
 </style>
 """
+
+
+@dataclass(frozen=True)
+class AppPageDefinition:
+    key: str
+    label: str
+
+
+@dataclass(frozen=True)
+class WatchlistSidebarState:
+    scan_config: ScanConfig
+    selected_scan_names: list[str]
+    selected_annotation_filters: list[str]
+    selected_duplicate_subfilters: list[str]
+    duplicate_threshold: int
+    selected_preset_export_name: str | None = None
+    selected_preset_export_values: dict[str, object] | None = None
+
+
+APP_PAGES: tuple[AppPageDefinition, ...] = (
+    AppPageDefinition("watchlist", "Today's Watchlist"),
+    AppPageDefinition("rs_radar", "RS Radar"),
+    AppPageDefinition("market_dashboard", "Market Dashboard"),
+)
+APP_PAGE_KEYS = tuple(page.key for page in APP_PAGES)
+APP_PAGE_LABELS = {page.key: page.label for page in APP_PAGES}
+DEFAULT_PAGE_KEY = APP_PAGES[0].key
 
 def inject_global_styles() -> None:
     st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
@@ -258,7 +296,7 @@ def render_ticker_card(title: str, tickers: list[str], empty_text: str) -> None:
 
 def render_priority_ticker_band(title: str, tickers: list[str], note: str, empty_text: str) -> None:
     count = len(tickers)
-    body = "".join(f"<div class='oratek-priority-item'>{html.escape(ticker)}</div>" for ticker in tickers)
+    body = "".join(f"<div class='oratek-priority-item'><div class='oratek-priority-item-ticker'>{html.escape(ticker)}</div></div>" for ticker in tickers)
     if not body:
         body = f"<div class='oratek-empty-state'>{html.escape(empty_text)}</div>"
     else:
@@ -267,6 +305,45 @@ def render_priority_ticker_band(title: str, tickers: list[str], note: str, empty
         f"<div class='oratek-priority-band'><div class='oratek-priority-head'><div><div class='oratek-priority-kicker'>Priority Focus</div><div class='oratek-priority-title'>{html.escape(title)}</div><div class='oratek-priority-note'>{html.escape(note)}</div></div><div class='oratek-priority-count'>{count} tickers</div></div>{body}</div>",
         unsafe_allow_html=True,
     )
+
+
+def render_priority_band_from_frame(
+    title: str,
+    frame: pd.DataFrame,
+    note: str,
+    empty_text: str,
+    metric_label: str = "RS",
+    metric_column: str = "Hybrid-RS",
+) -> None:
+    count = len(frame.index) if frame is not None else 0
+    if frame is None or frame.empty or "Ticker" not in frame.columns:
+        body = f"<div class='oratek-empty-state'>{html.escape(empty_text)}</div>"
+    else:
+        items: list[str] = []
+        for _, row in frame.iterrows():
+            ticker = str(row.get("Ticker", "")).strip()
+            if not ticker:
+                continue
+            metric_value = row.get(metric_column)
+            metric_html = ""
+            if pd.notna(metric_value):
+                metric_text = _format_metric_value(metric_value)
+                metric_html = f"<div class='oratek-priority-item-rs'>{html.escape(metric_label)} {html.escape(metric_text)}</div>"
+            items.append(
+                f"<div class='oratek-priority-item'>{metric_html}<div class='oratek-priority-item-ticker'>{html.escape(ticker)}</div></div>"
+            )
+        body = f"<div class='oratek-priority-grid'>{''.join(items)}</div>" if items else f"<div class='oratek-empty-state'>{html.escape(empty_text)}</div>"
+    st.markdown(
+        f"<div class='oratek-priority-band'><div class='oratek-priority-head'><div><div class='oratek-priority-kicker'>Priority Focus</div><div class='oratek-priority-title'>{html.escape(title)}</div><div class='oratek-priority-note'>{html.escape(note)}</div></div><div class='oratek-priority-count'>{count} tickers</div></div>{body}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _format_metric_value(value: object) -> str:
+    number = _coerce_number(value)
+    if number is None:
+        return str(value).strip()
+    return f"{number:.1f}"
 
 
 def _format_radar_value(column: str, value: object) -> str:
@@ -343,6 +420,64 @@ def load_scan_config(config_path: str) -> ScanConfig:
     return ScanConfig.from_dict(settings.get("scan", {}))
 
 
+def _latest_trade_date_for_export(artifacts: PlatformArtifacts) -> str:
+    if artifacts.snapshot.empty or "trade_date" not in artifacts.snapshot.columns:
+        return datetime.now().strftime("%Y-%m-%d")
+    trade_date = pd.to_datetime(artifacts.snapshot["trade_date"], errors="coerce").max()
+    if pd.isna(trade_date):
+        return datetime.now().strftime("%Y-%m-%d")
+    return pd.Timestamp(trade_date).strftime("%Y-%m-%d")
+
+
+def _export_folder_name(artifacts: PlatformArtifacts) -> str:
+    trade_date = _latest_trade_date_for_export(artifacts)
+    return trade_date.replace("-", "")
+
+
+def _resolve_preset_export_directory(config_path: str, output_dir: str, artifacts: PlatformArtifacts) -> Path:
+    base_dir = Path(output_dir).expanduser()
+    if not base_dir.is_absolute():
+        base_dir = ROOT / base_dir
+    return base_dir / _export_folder_name(artifacts)
+
+
+def export_watchlist_preset_csvs(config_path: str, artifacts: PlatformArtifacts) -> Path | None:
+    scan_config = load_scan_config(config_path)
+    export_config = scan_config.preset_csv_export
+    if not export_config.enabled:
+        return None
+
+    export_presets = [preset for preset in scan_config.watchlist_presets if preset.export_enabled]
+    if not export_presets:
+        return None
+
+    builder = WatchlistViewModelBuilder(scan_config)
+    trade_date = _latest_trade_date_for_export(artifacts)
+    output_date = datetime.now().strftime("%Y-%m-%d")
+    export_dir = _resolve_preset_export_directory(config_path, export_config.output_dir, artifacts)
+    export_dir.mkdir(parents=True, exist_ok=True)
+
+    summary_frame = builder.build_preset_summary_exports(
+        export_presets,
+        artifacts.watchlist,
+        artifacts.scan_hits,
+        trade_date=trade_date,
+        output_date=output_date,
+        top_ticker_limit=export_config.top_ticker_limit,
+    )
+    summary_frame.to_csv(export_dir / "preset_summary.csv", index=False)
+
+    if export_config.write_details:
+        details_frame = builder.build_preset_detail_exports(
+            export_presets,
+            artifacts.watchlist,
+            artifacts.scan_hits,
+        )
+        details_frame.to_csv(export_dir / "preset_details.csv", index=False)
+
+    return export_dir
+
+
 def load_user_preference_store(config_path: str) -> UserPreferenceStore:
     settings = load_settings(config_path)
     app_settings = settings.get("app", {}) if isinstance(settings.get("app", {}), dict) else {}
@@ -361,6 +496,494 @@ def load_user_preference_store(config_path: str) -> UserPreferenceStore:
 
 def watchlist_preference_namespace(config_path: str) -> str:
     return str(Path(config_path).expanduser().resolve(strict=False))
+
+
+def current_page_key() -> str:
+    page_key = str(st.session_state.get(PAGE_SELECTION_KEY, DEFAULT_PAGE_KEY))
+    if page_key not in APP_PAGE_LABELS:
+        page_key = DEFAULT_PAGE_KEY
+        st.session_state[PAGE_SELECTION_KEY] = page_key
+    return page_key
+
+
+def render_page_tabs() -> str:
+    page_key = current_page_key()
+    selected_page = st.segmented_control(
+        "Page",
+        options=list(APP_PAGE_KEYS),
+        default=page_key,
+        format_func=lambda key: APP_PAGE_LABELS.get(key, str(key)),
+        selection_mode="single",
+        key=PAGE_SELECTION_KEY,
+        label_visibility="collapsed",
+    )
+    if selected_page is None:
+        return page_key
+    return str(selected_page)
+
+
+def _normalize_watchlist_preset_name(raw_value: object) -> str:
+    return str(raw_value).strip()
+
+
+def _build_watchlist_control_values(
+    selected_scan_names: list[str],
+    selected_annotation_filters: list[str],
+    selected_duplicate_subfilters: list[str],
+    duplicate_threshold: int,
+) -> dict[str, object]:
+    return {
+        "selected_scan_names": list(selected_scan_names),
+        "selected_annotation_filters": list(selected_annotation_filters),
+        "selected_duplicate_subfilters": list(selected_duplicate_subfilters),
+        "duplicate_threshold": int(duplicate_threshold),
+    }
+
+
+def _watchlist_controls_equal(left: dict[str, object] | None, right: dict[str, object] | None) -> bool:
+    if left is None or right is None:
+        return False
+    return _build_watchlist_control_values(
+        list(left.get("selected_scan_names", [])),
+        list(left.get("selected_annotation_filters", [])),
+        list(left.get("selected_duplicate_subfilters", [])),
+        int(left.get("duplicate_threshold", 1)),
+    ) == _build_watchlist_control_values(
+        list(right.get("selected_scan_names", [])),
+        list(right.get("selected_annotation_filters", [])),
+        list(right.get("selected_duplicate_subfilters", [])),
+        int(right.get("duplicate_threshold", 1)),
+    )
+
+
+def _build_watchlist_preset_record(values: dict[str, object]) -> dict[str, object]:
+    return {
+        "schema_version": WATCHLIST_PRESET_SCHEMA_VERSION,
+        "kind": WATCHLIST_PRESET_KIND,
+        "values": values,
+    }
+
+
+def _build_builtin_watchlist_presets(scan_config: ScanConfig) -> dict[str, dict[str, object]]:
+    presets: dict[str, dict[str, object]] = {}
+    for preset in scan_config.watchlist_presets:
+        preset_name = _normalize_watchlist_preset_name(preset.preset_name)
+        if not preset_name:
+            continue
+        presets[preset_name] = preset.to_control_values()
+    return presets
+
+
+def _read_watchlist_preset_values(
+    record: object,
+    *,
+    available_scan_names: list[str],
+    available_annotation_names: list[str],
+    available_duplicate_subfilters: list[str],
+    default_duplicate_threshold: int,
+) -> dict[str, object] | None:
+    if not isinstance(record, dict):
+        return None
+    if any(key in record for key in ("schema_version", "kind", "values")):
+        schema_version = record.get("schema_version")
+        if schema_version not in (None, WATCHLIST_PRESET_SCHEMA_VERSION):
+            return None
+        kind = str(record.get("kind", WATCHLIST_PRESET_KIND)).strip()
+        if kind != WATCHLIST_PRESET_KIND:
+            return None
+        values = record.get("values", {})
+        if not isinstance(values, dict):
+            return None
+    else:
+        values = record
+
+    selected_scan_names = [
+        str(name)
+        for name in values.get("selected_scan_names", [])
+        if str(name) in available_scan_names
+    ]
+    selected_annotation_filters = [
+        str(name)
+        for name in values.get("selected_annotation_filters", [])
+        if str(name) in available_annotation_names
+    ]
+    selected_duplicate_subfilters = [
+        str(name)
+        for name in values.get("selected_duplicate_subfilters", [])
+        if str(name) in available_duplicate_subfilters
+    ]
+
+    try:
+        duplicate_threshold = int(values.get("duplicate_threshold", default_duplicate_threshold))
+    except (TypeError, ValueError):
+        duplicate_threshold = int(default_duplicate_threshold)
+    max_threshold = max(1, len(selected_scan_names)) if selected_scan_names else 1
+    duplicate_threshold = max(1, min(duplicate_threshold, max_threshold))
+
+    return _build_watchlist_control_values(
+        selected_scan_names,
+        selected_annotation_filters,
+        selected_duplicate_subfilters,
+        duplicate_threshold,
+    )
+
+
+def _apply_watchlist_preset_to_session_state(
+    values: dict[str, object],
+    *,
+    selection_key: str,
+    annotation_key: str,
+    duplicate_subfilter_key: str,
+    threshold_key: str,
+) -> None:
+    st.session_state[selection_key] = list(values.get("selected_scan_names", []))
+    st.session_state[annotation_key] = list(values.get("selected_annotation_filters", []))
+    st.session_state[duplicate_subfilter_key] = list(values.get("selected_duplicate_subfilters", []))
+    st.session_state[threshold_key] = int(values.get("duplicate_threshold", 1))
+
+
+def _build_watchlist_preset_export_filename(preset_name: str) -> str:
+    safe_name = "".join(char if char.isalnum() else "_" for char in str(preset_name).strip())
+    safe_name = safe_name.strip("_") or "preset"
+    return f"watchlist_preset_{safe_name.lower()}.csv"
+
+
+def _dataframe_to_csv_bytes(frame: pd.DataFrame) -> bytes:
+    return frame.to_csv(index=False).encode("utf-8-sig")
+
+
+def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState:
+    watchlist_scan_config = load_scan_config(config_path)
+    watchlist_preference_store = load_user_preference_store(config_path)
+    watchlist_preferences_namespace = watchlist_preference_namespace(config_path)
+    watchlist_preferences = watchlist_preference_store.load_group("watchlist_controls", watchlist_preferences_namespace)
+    raw_watchlist_presets = watchlist_preference_store.load_collection(
+        WATCHLIST_PRESET_GROUP,
+        watchlist_preferences_namespace,
+    )
+    builtin_watchlist_presets = _build_builtin_watchlist_presets(watchlist_scan_config)
+    card_sections = watchlist_scan_config.card_sections
+    annotation_filters = watchlist_scan_config.annotation_filters
+    available_duplicate_subfilters = list(WatchlistViewModelBuilder(watchlist_scan_config).available_duplicate_subfilters())
+    available_scan_names = [section.scan_name for section in card_sections]
+    display_names = {section.scan_name: section.display_name or section.scan_name for section in card_sections}
+    available_annotation_names = [section.filter_name for section in annotation_filters]
+    annotation_display_names = {
+        section.filter_name: section.display_name or section.filter_name
+        for section in annotation_filters
+    }
+
+    selection_key = "watchlist_selected_scan_names"
+    selection_defaults_key = "watchlist_selected_scan_names_defaults"
+    annotation_key = "watchlist_selected_annotation_filters"
+    annotation_defaults_key = "watchlist_selected_annotation_filters_defaults"
+    duplicate_subfilter_key = "watchlist_selected_duplicate_subfilters"
+    duplicate_subfilter_defaults_key = "watchlist_selected_duplicate_subfilters_defaults"
+    threshold_key = "watchlist_duplicate_threshold"
+    threshold_defaults_key = "watchlist_duplicate_threshold_defaults"
+    preset_select_key = "watchlist_selected_preset_name"
+    preset_name_key = "watchlist_preset_name"
+    preset_feedback_key = "watchlist_preset_feedback"
+
+    default_selected_scan_names = list(watchlist_scan_config.startup_selected_scan_names())
+    persisted_selected_scan_names = watchlist_preferences.get("selected_scan_names", default_selected_scan_names)
+    if not isinstance(persisted_selected_scan_names, list):
+        persisted_selected_scan_names = default_selected_scan_names
+    persisted_selected_scan_names = [
+        str(name) for name in persisted_selected_scan_names if str(name) in available_scan_names
+    ]
+    selection_defaults_signature = (
+        watchlist_preferences_namespace,
+        tuple(available_scan_names),
+        tuple(default_selected_scan_names),
+    )
+
+    default_annotation_names = [
+        name
+        for name in watchlist_scan_config.enabled_annotation_filters
+        if name in available_annotation_names
+    ]
+    persisted_annotation_names = watchlist_preferences.get("selected_annotation_filters", default_annotation_names)
+    if not isinstance(persisted_annotation_names, list):
+        persisted_annotation_names = default_annotation_names
+    persisted_annotation_names = [
+        str(name) for name in persisted_annotation_names if str(name) in available_annotation_names
+    ]
+    annotation_defaults_signature = (
+        watchlist_preferences_namespace,
+        tuple(available_annotation_names),
+        tuple(default_annotation_names),
+    )
+
+    default_duplicate_subfilters: list[str] = []
+    persisted_duplicate_subfilters = watchlist_preferences.get(
+        "selected_duplicate_subfilters",
+        default_duplicate_subfilters,
+    )
+    if not isinstance(persisted_duplicate_subfilters, list):
+        persisted_duplicate_subfilters = default_duplicate_subfilters
+    persisted_duplicate_subfilters = [
+        str(name) for name in persisted_duplicate_subfilters if str(name) in available_duplicate_subfilters
+    ]
+    duplicate_subfilter_defaults_signature = (
+        watchlist_preferences_namespace,
+        tuple(available_duplicate_subfilters),
+        tuple(default_duplicate_subfilters),
+    )
+
+    persisted_duplicate_threshold = watchlist_preferences.get(
+        "duplicate_threshold",
+        int(watchlist_scan_config.duplicate_min_count),
+    )
+    try:
+        persisted_duplicate_threshold_int = int(persisted_duplicate_threshold)
+    except (TypeError, ValueError):
+        persisted_duplicate_threshold_int = int(watchlist_scan_config.duplicate_min_count)
+    persisted_duplicate_threshold_int = max(
+        1,
+        min(persisted_duplicate_threshold_int, max(1, len(persisted_selected_scan_names)) if persisted_selected_scan_names else 1),
+    )
+
+    saved_watchlist_presets: dict[str, dict[str, object]] = {}
+    for raw_name, raw_record in raw_watchlist_presets.items():
+        preset_name = _normalize_watchlist_preset_name(raw_name)
+        if not preset_name:
+            continue
+        preset_values = _read_watchlist_preset_values(
+            raw_record,
+            available_scan_names=available_scan_names,
+            available_annotation_names=available_annotation_names,
+            available_duplicate_subfilters=available_duplicate_subfilters,
+            default_duplicate_threshold=persisted_duplicate_threshold_int,
+        )
+        if preset_values is None:
+            continue
+        saved_watchlist_presets[preset_name] = preset_values
+    watchlist_presets: dict[str, dict[str, object]] = {
+        **builtin_watchlist_presets,
+        **saved_watchlist_presets,
+    }
+
+    st.markdown("**Watchlist Presets**")
+    feedback_message = st.session_state.pop(preset_feedback_key, "")
+    if feedback_message:
+        st.success(feedback_message)
+
+    preset_options = [""] + list(watchlist_presets)
+    selected_preset_name = st.selectbox(
+        "Saved preset",
+        options=preset_options,
+        key=preset_select_key,
+        format_func=lambda name: name if name else "Select a preset",
+    )
+    selected_preset_is_builtin = bool(selected_preset_name and selected_preset_name in builtin_watchlist_presets)
+    selected_preset_export_name = selected_preset_name or None
+    selected_preset_export_values = watchlist_presets.get(selected_preset_name) if selected_preset_name else None
+    preset_action_columns = st.columns(2)
+    load_preset = preset_action_columns[0].button(
+        "Load Preset",
+        use_container_width=True,
+        disabled=not selected_preset_name,
+    )
+    delete_preset = preset_action_columns[1].button(
+        "Delete Preset",
+        use_container_width=True,
+        disabled=not selected_preset_name or selected_preset_is_builtin,
+    )
+
+    if load_preset and selected_preset_name:
+        loaded_values = watchlist_presets.get(selected_preset_name)
+        if loaded_values is not None:
+            _apply_watchlist_preset_to_session_state(
+                loaded_values,
+                selection_key=selection_key,
+                annotation_key=annotation_key,
+                duplicate_subfilter_key=duplicate_subfilter_key,
+                threshold_key=threshold_key,
+            )
+            st.session_state[selection_defaults_key] = selection_defaults_signature
+            st.session_state[annotation_defaults_key] = annotation_defaults_signature
+            st.session_state[duplicate_subfilter_defaults_key] = duplicate_subfilter_defaults_signature
+            st.session_state[threshold_defaults_key] = (
+                watchlist_preferences_namespace,
+                max(1, len(loaded_values["selected_scan_names"])) if loaded_values["selected_scan_names"] else 1,
+            )
+            st.session_state[preset_name_key] = selected_preset_name
+            st.success(f"Loaded preset '{selected_preset_name}'.")
+
+    if delete_preset and selected_preset_name:
+        watchlist_preference_store.delete_collection_item(
+            WATCHLIST_PRESET_GROUP,
+            watchlist_preferences_namespace,
+            selected_preset_name,
+        )
+        st.session_state[preset_select_key] = ""
+        st.session_state[preset_name_key] = ""
+        st.session_state[preset_feedback_key] = f"Deleted preset '{selected_preset_name}'."
+        st.rerun()
+
+    st.caption(
+        f"Built-in: {len(builtin_watchlist_presets)} | Saved: {len(saved_watchlist_presets)}/{WATCHLIST_PRESET_LIMIT}"
+    )
+
+    st.markdown("**Watchlist Controls**")
+    current_selected_scan_names = st.session_state.get(
+        selection_key,
+        persisted_selected_scan_names,
+    )
+    if st.session_state.get(selection_defaults_key) != selection_defaults_signature:
+        st.session_state[selection_key] = persisted_selected_scan_names
+        st.session_state[selection_defaults_key] = selection_defaults_signature
+    else:
+        st.session_state[selection_key] = [
+            name for name in current_selected_scan_names if name in available_scan_names
+        ]
+
+    selected_watchlist_scans = st.multiselect(
+        "Cards used for display and Duplicate counting",
+        options=available_scan_names,
+        format_func=lambda name: display_names.get(name, name),
+        key=selection_key,
+    )
+
+    if st.session_state.get(annotation_defaults_key) != annotation_defaults_signature:
+        st.session_state[annotation_key] = persisted_annotation_names
+        st.session_state[annotation_defaults_key] = annotation_defaults_signature
+    else:
+        st.session_state[annotation_key] = [
+            name for name in st.session_state.get(annotation_key, persisted_annotation_names)
+            if name in available_annotation_names
+        ]
+
+    selected_annotation_filters = st.multiselect(
+        "Post-scan filters (AND)",
+        options=available_annotation_names,
+        format_func=lambda name: annotation_display_names.get(name, name),
+        key=annotation_key,
+        help="Filters are applied after scan eligibility. They narrow displayed cards and Duplicate Tickers without changing the underlying scan candidate set.",
+    )
+
+    if st.session_state.get(duplicate_subfilter_defaults_key) != duplicate_subfilter_defaults_signature:
+        st.session_state[duplicate_subfilter_key] = persisted_duplicate_subfilters
+        st.session_state[duplicate_subfilter_defaults_key] = duplicate_subfilter_defaults_signature
+    else:
+        st.session_state[duplicate_subfilter_key] = [
+            name
+            for name in st.session_state.get(duplicate_subfilter_key, persisted_duplicate_subfilters)
+            if name in available_duplicate_subfilters
+        ]
+
+    selected_duplicate_subfilters = st.multiselect(
+        "Duplicate subfilters",
+        options=available_duplicate_subfilters,
+        key=duplicate_subfilter_key,
+        help="Applied only to Duplicate Tickers after duplicate thresholding. Top3 HybridRS keeps the three highest hybrid_score names among duplicate candidates.",
+    )
+
+    max_threshold = max(1, len(selected_watchlist_scans)) if selected_watchlist_scans else 1
+    threshold_defaults_signature = (watchlist_preferences_namespace, max_threshold)
+    if st.session_state.get(threshold_defaults_key) != threshold_defaults_signature:
+        st.session_state[threshold_key] = min(persisted_duplicate_threshold_int, max_threshold)
+        st.session_state[threshold_defaults_key] = threshold_defaults_signature
+    else:
+        st.session_state[threshold_key] = max(
+            1,
+            min(int(st.session_state.get(threshold_key, persisted_duplicate_threshold_int)), max_threshold),
+        )
+
+    duplicate_threshold = int(
+        st.number_input(
+            "Duplicate threshold",
+            min_value=1,
+            max_value=max_threshold,
+            step=1,
+            key=threshold_key,
+            help="A ticker is shown in Duplicate Tickers only if it appears in at least this many selected scan cards.",
+        )
+    )
+
+    current_watchlist_controls = _build_watchlist_control_values(
+        selected_watchlist_scans,
+        selected_annotation_filters,
+        selected_duplicate_subfilters,
+        duplicate_threshold,
+    )
+    selected_saved_preset_values = (
+        saved_watchlist_presets.get(selected_preset_name)
+        if selected_preset_name and not selected_preset_is_builtin
+        else None
+    )
+    preset_has_unsaved_changes = not _watchlist_controls_equal(
+        current_watchlist_controls,
+        selected_saved_preset_values,
+    )
+
+    st.markdown("**Preset Editor**")
+    st.text_input(
+        "Preset name",
+        key=preset_name_key,
+        placeholder="e.g. Momentum Core",
+    )
+    preset_editor_columns = st.columns(2)
+    save_preset = preset_editor_columns[0].button("Save Preset", use_container_width=True)
+    update_preset = preset_editor_columns[1].button(
+        "Update Preset",
+        use_container_width=True,
+        disabled=(
+            not selected_preset_name
+            or selected_preset_is_builtin
+            or not preset_has_unsaved_changes
+        ),
+    )
+
+    if save_preset:
+        preset_name = _normalize_watchlist_preset_name(st.session_state.get(preset_name_key, ""))
+        if not preset_name:
+            st.warning("Enter a preset name before saving.")
+        elif preset_name in watchlist_presets:
+            st.warning("That preset already exists. Load it and use Update Preset to overwrite it.")
+        elif len(saved_watchlist_presets) >= WATCHLIST_PRESET_LIMIT:
+            st.warning(f"You can save up to {WATCHLIST_PRESET_LIMIT} presets.")
+        else:
+            watchlist_preference_store.save_collection_item(
+                WATCHLIST_PRESET_GROUP,
+                watchlist_preferences_namespace,
+                preset_name,
+                _build_watchlist_preset_record(current_watchlist_controls),
+            )
+            st.session_state[preset_select_key] = preset_name
+            st.session_state[preset_name_key] = preset_name
+            st.session_state[preset_feedback_key] = f"Saved preset '{preset_name}'."
+            st.rerun()
+
+    if update_preset and selected_preset_name:
+        watchlist_preference_store.save_collection_item(
+            WATCHLIST_PRESET_GROUP,
+            watchlist_preferences_namespace,
+            selected_preset_name,
+            _build_watchlist_preset_record(current_watchlist_controls),
+        )
+        st.session_state[preset_name_key] = selected_preset_name
+        st.session_state[preset_feedback_key] = f"Updated preset '{selected_preset_name}'."
+        st.rerun()
+
+    watchlist_preference_store.save_group(
+        "watchlist_controls",
+        watchlist_preferences_namespace,
+        current_watchlist_controls,
+    )
+    st.caption("Load any preset to apply it. Only saved presets can be updated or deleted; built-in presets are read-only.")
+    st.caption("Selected cards drive card display and Duplicate Tickers. Post-scan filters narrow the displayed watchlist after scan hits are computed. Duplicate subfilters apply only inside Duplicate Tickers.")
+
+    return WatchlistSidebarState(
+        scan_config=watchlist_scan_config,
+        selected_scan_names=selected_watchlist_scans,
+        selected_annotation_filters=selected_annotation_filters,
+        selected_duplicate_subfilters=selected_duplicate_subfilters,
+        duplicate_threshold=duplicate_threshold,
+        selected_preset_export_name=selected_preset_export_name,
+        selected_preset_export_values=selected_preset_export_values,
+    )
 
 
 def render_data_health_banner(artifacts: PlatformArtifacts) -> None:
@@ -428,25 +1051,8 @@ def render_watchlist(
         selected_scan_names=effective_selected_scan_names,
     )
 
-    title_col, meta_col = st.columns([4.2, 1.8])
-    with title_col:
-        st.markdown("<div class='oratek-page-title'>Today's Watchlist</div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='oratek-page-subtitle'>{html.escape(_format_trade_date(artifacts))}</div>", unsafe_allow_html=True)
-    with meta_col:
-        filter_meta = (
-            f"Post-scan Filters: {len(effective_selected_annotation_filters)}"
-            if effective_selected_annotation_filters
-            else "Post-scan Filters: 0"
-        )
-        duplicate_subfilter_meta = (
-            f"Duplicate Subfilters: {len(effective_selected_duplicate_subfilters)}"
-            if effective_selected_duplicate_subfilters
-            else "Duplicate Subfilters: 0"
-        )
-        st.markdown(
-            f"<div class='oratek-page-meta'>Sorted by Hybrid-RS</div><div class='oratek-page-submeta'>Universe Mode: {html.escape(str(artifacts.universe_mode))}<br>Universe Size: {len(artifacts.resolved_symbols)}<br>Cards Selected: {len(effective_selected_scan_names)}<br>{html.escape(filter_meta)}<br>{html.escape(duplicate_subfilter_meta)}<br>Duplicate Threshold: {duplicate_threshold}+</div>",
-            unsafe_allow_html=True,
-        )
+    st.markdown("<div class='oratek-page-title'>Today's Watchlist</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='oratek-page-subtitle'>{html.escape(_format_trade_date(artifacts))}</div>", unsafe_allow_html=True)
 
     cards: list[tuple[str, list[str], str]] = [
         (card.display_name, _to_ticker_list(card.rows), "No tickers matched this scan.")
@@ -461,8 +1067,6 @@ def render_watchlist(
         selected_scan_names=effective_selected_scan_names,
         selected_duplicate_subfilters=effective_selected_duplicate_subfilters,
     )
-    duplicate_tickers = _to_ticker_list(duplicate_frame)
-
     if effective_selected_scan_names:
         duplicate_note = f"Counted from {len(effective_selected_scan_names)} selected cards"
         if effective_selected_annotation_filters:
@@ -475,9 +1079,9 @@ def render_watchlist(
         duplicate_note = "No cards are selected. Choose one or more watchlist cards in the sidebar to enable duplicate counting."
         duplicate_empty_text = "No cards selected."
 
-    render_priority_ticker_band(
+    render_priority_band_from_frame(
         "Duplicate Tickers",
-        duplicate_tickers,
+        duplicate_frame,
         duplicate_note,
         duplicate_empty_text,
     )
@@ -558,6 +1162,12 @@ def _vix_label_from_score(score: float | None) -> str:
     return _breadth_label(float(score))
 
 
+def _safe_haven_label_from_score(score: float | None) -> str:
+    if score is None or pd.isna(score):
+        return "Neutral"
+    return _breadth_label(float(score))
+
+
 def _format_market_number(value: float | None, decimals: int = 1) -> str:
     if value is None or pd.isna(value):
         return "N/A"
@@ -603,7 +1213,7 @@ def render_market_conditions_panel(result) -> None:
     filled = arc_length * (score_pct / 100.0)
     remaining = max(arc_length - filled, 0.0)
     st.markdown(
-        f"<div class='oratek-market-panel'><div class='oratek-market-panel-title'>Market Conditions</div><div class='oratek-market-copy-head'>What are Market Conditions?</div><div class='oratek-market-copy'>Market conditions are determined by the percentage of positive signals across breadth, trend metrics, performance overview, 2-week highs, and the VIX.</div><div class='oratek-market-score-chip {tone}'>{html.escape(str(result.label))} {_format_market_number(result.score, 0)}</div><div class='oratek-market-gauge'><svg class='oratek-market-gauge-svg' viewBox='0 0 220 120' aria-hidden='true'><path class='oratek-market-gauge-track' d='M20 110 A90 90 0 0 1 200 110'></path><path class='oratek-market-gauge-value {tone}' d='M20 110 A90 90 0 0 1 200 110' style='--market-score-filled:{filled:.3f}; --market-score-remaining:{remaining:.3f};'></path><path class='oratek-market-gauge-inner' d='M49 110 A61 61 0 0 1 171 110'></path><path class='oratek-market-gauge-core' d='M67 110 A43 43 0 0 1 153 110 L153 110 L67 110 Z'></path></svg></div><div class='oratek-market-gauge-caption'>Composite score (0-100)</div></div>",
+        f"<div class='oratek-market-panel'><div class='oratek-market-panel-title'>Market Conditions</div><div class='oratek-market-score-chip {tone}'>{html.escape(str(result.label))} {_format_market_number(result.score, 0)}</div><div class='oratek-market-gauge'><svg class='oratek-market-gauge-svg' viewBox='0 0 220 120' aria-hidden='true'><path class='oratek-market-gauge-track' d='M20 110 A90 90 0 0 1 200 110'></path><path class='oratek-market-gauge-value {tone}' d='M20 110 A90 90 0 0 1 200 110' style='--market-score-filled:{filled:.3f}; --market-score-remaining:{remaining:.3f};'></path><path class='oratek-market-gauge-inner' d='M49 110 A61 61 0 0 1 171 110'></path><path class='oratek-market-gauge-core' d='M67 110 A43 43 0 0 1 153 110 L153 110 L67 110 Z'></path></svg></div><div class='oratek-market-gauge-caption'>Composite score (0-100)</div></div>",
         unsafe_allow_html=True,
     )
 
@@ -667,9 +1277,12 @@ def _market_metric_items(result) -> tuple[list[tuple[str, str, str, str]], list[
     high_status = _breadth_label(float(high_value)) if high_value is not None and not pd.isna(high_value) else "Neutral"
     vix_value = result.high_vix_summary.get("VIX")
     vix_status = _vix_label_from_score(result.component_scores.get("vix_score"))
+    safe_haven_value = result.high_vix_summary.get("SAFE HAVEN %")
+    safe_haven_status = _safe_haven_label_from_score(result.component_scores.get("safe_haven_score"))
     high_vix_items = [
         ("S2W High", _format_market_percent(high_value, signed=False, decimals=2), high_status, _tone_class(high_status)),
         ("VIX", _format_market_number(vix_value, 2), vix_status, _tone_class(vix_status)),
+        ("Safe Haven", _format_market_percent(safe_haven_value, signed=True, decimals=2), safe_haven_status, _tone_class(safe_haven_status)),
     ]
     return breadth_items, performance_items, high_vix_items
 
@@ -733,7 +1346,7 @@ def render_market_dashboard(artifacts: PlatformArtifacts) -> None:
         with performance_col:
             render_market_metric_panel("Performance Overview", performance_items, 4, "No performance metrics available.")
         with high_vix_col:
-            render_market_metric_panel("High & VIX", high_vix_items, 2, "No High & VIX metrics available.")
+            render_market_metric_panel("High, VIX & Safe Haven", high_vix_items, 3, "No High, VIX & Safe Haven metrics available.")
 
     snapshot_col, factor_col = st.columns([2.3, 1.1])
     with snapshot_col:
@@ -750,188 +1363,45 @@ def render_market_dashboard(artifacts: PlatformArtifacts) -> None:
     render_data_health_table(artifacts)
 
 
+def render_active_page(
+    page_key: str,
+    artifacts: PlatformArtifacts,
+    watchlist_state: WatchlistSidebarState | None,
+) -> None:
+    if page_key == "watchlist":
+        if watchlist_state is None:
+            st.error("Watchlist controls could not be initialized.")
+            return
+        render_watchlist(
+            artifacts,
+            scan_config=watchlist_state.scan_config,
+            selected_scan_names=watchlist_state.selected_scan_names,
+            duplicate_min_count=watchlist_state.duplicate_threshold,
+            selected_annotation_filters=watchlist_state.selected_annotation_filters,
+            selected_duplicate_subfilters=watchlist_state.selected_duplicate_subfilters,
+        )
+        return
+    if page_key == "rs_radar":
+        render_rs_radar(artifacts)
+        return
+    render_market_dashboard(artifacts)
+
+
 def main() -> None:
     inject_global_styles()
     default_config = ROOT / "config" / "default.yaml"
-    watchlist_scan_config: ScanConfig | None = None
-    selected_watchlist_scans: list[str] | None = None
-    selected_annotation_filters: list[str] | None = None
-    duplicate_threshold: int | None = None
-    watchlist_preference_store: UserPreferenceStore | None = None
-    watchlist_preferences: dict[str, object] = {}
-    watchlist_preferences_namespace: str | None = None
+    page_key = current_page_key()
+    watchlist_state: WatchlistSidebarState | None = None
 
     with st.sidebar:
         st.markdown("<div class='oratek-sidebar-title'>Growth Trading Screener</div>", unsafe_allow_html=True)
-        st.markdown(
-            "<div class='oratek-sidebar-caption'>Refresh cached universes and inspect watchlist, radar, and market conditions without changing the underlying pipeline.</div>",
-            unsafe_allow_html=True,
-        )
         st.markdown("**Controls**")
-        config_path = st.text_input("Config Path", value=str(default_config))
+        config_path = str(default_config)
         symbols_raw = st.text_area("Manual Symbols (optional)", value="", height=120, placeholder="Leave blank to use weekly universe snapshot")
         force_universe_refresh = st.checkbox("Force Weekly Universe Refresh", value=False)
-        page = st.radio("Page", ["Today's Watchlist", "RS Radar", "Market Dashboard"])
 
-        if page == "Today's Watchlist":
-            watchlist_scan_config = load_scan_config(config_path)
-            watchlist_preference_store = load_user_preference_store(config_path)
-            watchlist_preferences_namespace = watchlist_preference_namespace(config_path)
-            watchlist_preferences = watchlist_preference_store.load_group("watchlist_controls", watchlist_preferences_namespace)
-            card_sections = watchlist_scan_config.card_sections
-            annotation_filters = watchlist_scan_config.annotation_filters
-            available_duplicate_subfilters = list(WatchlistViewModelBuilder(watchlist_scan_config).available_duplicate_subfilters())
-            available_scan_names = [section.scan_name for section in card_sections]
-            display_names = {section.scan_name: section.display_name or section.scan_name for section in card_sections}
-            available_annotation_names = [section.filter_name for section in annotation_filters]
-            annotation_display_names = {
-                section.filter_name: section.display_name or section.filter_name
-                for section in annotation_filters
-            }
-
-            st.markdown("**Watchlist Controls**")
-            selection_key = "watchlist_selected_scan_names"
-            selection_defaults_key = "watchlist_selected_scan_names_defaults"
-            default_selected_scan_names = list(watchlist_scan_config.startup_selected_scan_names())
-            persisted_selected_scan_names = watchlist_preferences.get("selected_scan_names", default_selected_scan_names)
-            if not isinstance(persisted_selected_scan_names, list):
-                persisted_selected_scan_names = default_selected_scan_names
-            persisted_selected_scan_names = [
-                str(name) for name in persisted_selected_scan_names if str(name) in available_scan_names
-            ]
-            selection_defaults_signature = (
-                watchlist_preferences_namespace,
-                tuple(available_scan_names),
-                tuple(default_selected_scan_names),
-            )
-            current_selected_scan_names = st.session_state.get(
-                selection_key,
-                persisted_selected_scan_names,
-            )
-            if st.session_state.get(selection_defaults_key) != selection_defaults_signature:
-                st.session_state[selection_key] = persisted_selected_scan_names
-                st.session_state[selection_defaults_key] = selection_defaults_signature
-            else:
-                st.session_state[selection_key] = [
-                    name for name in current_selected_scan_names if name in available_scan_names
-                ]
-
-            selected_watchlist_scans = st.multiselect(
-                "Cards used for display and Duplicate counting",
-                options=available_scan_names,
-                format_func=lambda name: display_names.get(name, name),
-                key=selection_key,
-            )
-
-            annotation_key = "watchlist_selected_annotation_filters"
-            annotation_defaults_key = "watchlist_selected_annotation_filters_defaults"
-            default_annotation_names = [
-                name
-                for name in watchlist_scan_config.enabled_annotation_filters
-                if name in available_annotation_names
-            ]
-            persisted_annotation_names = watchlist_preferences.get("selected_annotation_filters", default_annotation_names)
-            if not isinstance(persisted_annotation_names, list):
-                persisted_annotation_names = default_annotation_names
-            persisted_annotation_names = [
-                str(name) for name in persisted_annotation_names if str(name) in available_annotation_names
-            ]
-            annotation_defaults_signature = (
-                watchlist_preferences_namespace,
-                tuple(available_annotation_names),
-                tuple(default_annotation_names),
-            )
-            if st.session_state.get(annotation_defaults_key) != annotation_defaults_signature:
-                st.session_state[annotation_key] = persisted_annotation_names
-                st.session_state[annotation_defaults_key] = annotation_defaults_signature
-            else:
-                st.session_state[annotation_key] = [
-                    name for name in st.session_state.get(annotation_key, persisted_annotation_names) if name in available_annotation_names
-                ]
-
-            selected_annotation_filters = st.multiselect(
-                "Post-scan filters (AND)",
-                options=available_annotation_names,
-                format_func=lambda name: annotation_display_names.get(name, name),
-                key=annotation_key,
-                help="Filters are applied after scan eligibility. They narrow displayed cards and Duplicate Tickers without changing the underlying scan candidate set.",
-            )
-
-            duplicate_subfilter_key = "watchlist_selected_duplicate_subfilters"
-            duplicate_subfilter_defaults_key = "watchlist_selected_duplicate_subfilters_defaults"
-            default_duplicate_subfilters: list[str] = []
-            persisted_duplicate_subfilters = watchlist_preferences.get(
-                "selected_duplicate_subfilters",
-                default_duplicate_subfilters,
-            )
-            if not isinstance(persisted_duplicate_subfilters, list):
-                persisted_duplicate_subfilters = default_duplicate_subfilters
-            persisted_duplicate_subfilters = [
-                str(name) for name in persisted_duplicate_subfilters if str(name) in available_duplicate_subfilters
-            ]
-            duplicate_subfilter_defaults_signature = (
-                watchlist_preferences_namespace,
-                tuple(available_duplicate_subfilters),
-                tuple(default_duplicate_subfilters),
-            )
-            if st.session_state.get(duplicate_subfilter_defaults_key) != duplicate_subfilter_defaults_signature:
-                st.session_state[duplicate_subfilter_key] = persisted_duplicate_subfilters
-                st.session_state[duplicate_subfilter_defaults_key] = duplicate_subfilter_defaults_signature
-            else:
-                st.session_state[duplicate_subfilter_key] = [
-                    name
-                    for name in st.session_state.get(duplicate_subfilter_key, persisted_duplicate_subfilters)
-                    if name in available_duplicate_subfilters
-                ]
-
-            selected_duplicate_subfilters = st.multiselect(
-                "Duplicate subfilters",
-                options=available_duplicate_subfilters,
-                key=duplicate_subfilter_key,
-                help="Applied only to Duplicate Tickers after duplicate thresholding. Top3 HybridRS keeps the three highest hybrid_score names among duplicate candidates.",
-            )
-
-            threshold_key = "watchlist_duplicate_threshold"
-            threshold_defaults_key = "watchlist_duplicate_threshold_defaults"
-            max_threshold = max(1, len(selected_watchlist_scans)) if selected_watchlist_scans else 1
-            persisted_duplicate_threshold = watchlist_preferences.get(
-                "duplicate_threshold",
-                int(watchlist_scan_config.duplicate_min_count),
-            )
-            try:
-                persisted_duplicate_threshold_int = int(persisted_duplicate_threshold)
-            except (TypeError, ValueError):
-                persisted_duplicate_threshold_int = int(watchlist_scan_config.duplicate_min_count)
-            persisted_duplicate_threshold_int = max(1, min(persisted_duplicate_threshold_int, max_threshold))
-            threshold_defaults_signature = (watchlist_preferences_namespace, max_threshold)
-            if st.session_state.get(threshold_defaults_key) != threshold_defaults_signature:
-                st.session_state[threshold_key] = persisted_duplicate_threshold_int
-                st.session_state[threshold_defaults_key] = threshold_defaults_signature
-            else:
-                st.session_state[threshold_key] = max(1, min(int(st.session_state.get(threshold_key, persisted_duplicate_threshold_int)), max_threshold))
-
-            duplicate_threshold = int(
-                st.number_input(
-                    "Duplicate threshold",
-                    min_value=1,
-                    max_value=max_threshold,
-                    step=1,
-                    key=threshold_key,
-                    help="A ticker is shown in Duplicate Tickers only if it appears in at least this many selected scan cards.",
-                )
-            )
-            if watchlist_preference_store is not None and watchlist_preferences_namespace is not None:
-                watchlist_preference_store.save_group(
-                    "watchlist_controls",
-                    watchlist_preferences_namespace,
-                    {
-                        "selected_scan_names": list(selected_watchlist_scans),
-                        "selected_annotation_filters": list(selected_annotation_filters),
-                        "selected_duplicate_subfilters": list(selected_duplicate_subfilters),
-                        "duplicate_threshold": duplicate_threshold,
-                    },
-                )
-            st.caption("Selected cards drive card display and Duplicate Tickers. Post-scan filters narrow the displayed watchlist after scan hits are computed. Duplicate subfilters apply only inside Duplicate Tickers.")
+        if page_key == "watchlist":
+            watchlist_state = render_watchlist_sidebar_controls(config_path)
 
         refresh = st.button("Refresh", type="primary")
 
@@ -940,25 +1410,43 @@ def main() -> None:
     if refresh or st.session_state.get("artifacts_key") != cache_key:
         with st.spinner("Loading screening artifacts..."):
             st.session_state["artifacts"] = load_artifacts(config_path, symbols, force_universe_refresh)
+            st.session_state["preset_export_directory"] = (
+                str(export_watchlist_preset_csvs(config_path, st.session_state["artifacts"]) or "")
+            )
             st.session_state["artifacts_key"] = cache_key
 
     artifacts: PlatformArtifacts = st.session_state["artifacts"]
+    page_key = render_page_tabs()
     render_context_strip([f"Data source: {artifacts.data_source_label}"])
     render_data_health_banner(artifacts)
 
-    if page == "Today's Watchlist":
-        render_watchlist(
-            artifacts,
-            scan_config=watchlist_scan_config,
-            selected_scan_names=selected_watchlist_scans,
-            duplicate_min_count=duplicate_threshold,
-            selected_annotation_filters=selected_annotation_filters,
-            selected_duplicate_subfilters=selected_duplicate_subfilters,
+    if (
+        page_key == "watchlist"
+        and watchlist_state is not None
+        and watchlist_state.selected_preset_export_name
+        and watchlist_state.selected_preset_export_values is not None
+    ):
+        preset_export_frame = WatchlistViewModelBuilder(watchlist_state.scan_config).build_preset_export(
+            watchlist_state.selected_preset_export_name,
+            artifacts.watchlist,
+            artifacts.scan_hits,
+            selected_scan_names=list(watchlist_state.selected_preset_export_values.get("selected_scan_names", [])),
+            min_count=int(watchlist_state.selected_preset_export_values.get("duplicate_threshold", watchlist_state.scan_config.duplicate_min_count)),
+            selected_annotation_filters=list(watchlist_state.selected_preset_export_values.get("selected_annotation_filters", [])),
+            selected_duplicate_subfilters=list(watchlist_state.selected_preset_export_values.get("selected_duplicate_subfilters", [])),
         )
-    elif page == "RS Radar":
-        render_rs_radar(artifacts)
-    else:
-        render_market_dashboard(artifacts)
+        with st.sidebar:
+            st.markdown("**Preset Export**")
+            st.download_button(
+                "Export Preset CSV",
+                data=_dataframe_to_csv_bytes(preset_export_frame),
+                file_name=_build_watchlist_preset_export_filename(watchlist_state.selected_preset_export_name),
+                mime="text/csv",
+                use_container_width=True,
+            )
+            st.caption("Exports the selected preset's duplicate tickers and each selected scan card's hit tickers.")
+
+    render_active_page(page_key, artifacts, watchlist_state)
 
 
 if __name__ == "__main__":

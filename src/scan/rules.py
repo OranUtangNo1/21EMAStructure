@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -12,6 +12,8 @@ RuleEvaluator = Callable[[pd.Series, "ScanConfig"], bool]
 
 DEFAULT_SCAN_RULE_NAMES = (
     "21EMA scan",
+    "Pullback Quality scan",
+    "Reclaim scan",
     "4% bullish",
     "Vol Up",
     "Volume Accumulation",
@@ -26,20 +28,29 @@ DEFAULT_SCAN_RULE_NAMES = (
     "Near 52W High",
     "Three Weeks Tight",
     "RS Acceleration",
+    "Fundamental Demand",
+    "Sustained Leadership",
+    "Trend Reversal Setup",
 )
 
 DEFAULT_ANNOTATION_FILTER_NAMES = (
     "RS 21 >= 63",
     "High Est. EPS Growth",
+    "PP Count (20d)",
 )
 
 ANNOTATION_FILTER_NAME_ALIASES = {
     "Relative Strength 21 > 63": "RS 21 >= 63",
+    "PP Count": "PP Count (20d)",
+    "2+ Pocket Pivots (20d)": "PP Count (20d)",
+    "3+ Pocket Pivots (20d)": "PP Count (20d)",
 }
 
 DEFAULT_CARD_SORT_COLUMNS = ("hybrid_score", "overlap_count", "vcs")
 DEFAULT_CARD_SECTION_PAYLOADS = (
     {"scan_name": "21EMA scan", "display_name": "21EMA"},
+    {"scan_name": "Pullback Quality scan", "display_name": "PB Quality"},
+    {"scan_name": "Reclaim scan", "display_name": "Reclaim"},
     {"scan_name": "4% bullish", "display_name": "4% bullish"},
     {"scan_name": "Vol Up", "display_name": "Vol Up"},
     {"scan_name": "Volume Accumulation", "display_name": "Volume Accumulation"},
@@ -49,19 +60,25 @@ DEFAULT_CARD_SECTION_PAYLOADS = (
     {"scan_name": "VCS 52 High", "display_name": "VCS 52 High"},
     {"scan_name": "VCS 52 Low", "display_name": "VCS 52 Low"},
     {"scan_name": "Pocket Pivot", "display_name": "Pocket Pivot"},
-    {"scan_name": "PP Count", "display_name": "3+ Pocket Pivots (30d)"},
+    {"scan_name": "PP Count", "display_name": "PP Count"},
     {"scan_name": "Weekly 20% plus gainers", "display_name": "Weekly 20%+ Gainers"},
     {"scan_name": "Near 52W High", "display_name": "Near 52W High"},
     {"scan_name": "Three Weeks Tight", "display_name": "3WT"},
     {"scan_name": "RS Acceleration", "display_name": "RS Accel"},
+    {"scan_name": "Fundamental Demand", "display_name": "Fund Demand"},
+    {"scan_name": "Sustained Leadership", "display_name": "RS Leader"},
+    {"scan_name": "Trend Reversal Setup", "display_name": "Reversal Setup"},
 )
 DEFAULT_ANNOTATION_FILTER_PAYLOADS = (
     {"filter_name": "RS 21 >= 63", "display_name": "RS 21 >= 63"},
     {"filter_name": "High Est. EPS Growth", "display_name": "High Est. EPS Growth"},
+    {"filter_name": "PP Count (20d)", "display_name": "PP Count (20d)"},
 )
 ANNOTATION_FILTER_COLUMN_NAMES = {
     "RS 21 >= 63": "annotation_rs21_gte_63",
     "High Est. EPS Growth": "annotation_high_eps_growth",
+    "PP Count (20d)": "annotation_pp_count_20d",
+    "3+ Pocket Pivots (20d)": "annotation_pp_count_20d",
 }
 
 
@@ -118,6 +135,77 @@ class AnnotationFilterConfig:
 
 
 @dataclass(slots=True)
+class WatchlistPresetConfig:
+    """Built-in watchlist preset definition loaded from config."""
+
+    preset_name: str
+    selected_scan_names: tuple[str, ...]
+    selected_annotation_filters: tuple[str, ...] = field(default_factory=tuple)
+    selected_duplicate_subfilters: tuple[str, ...] = field(default_factory=tuple)
+    duplicate_threshold: int = 1
+    export_enabled: bool = True
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, object]) -> "WatchlistPresetConfig":
+        preset_name = str(payload.get("preset_name", payload.get("name", ""))).strip()
+        if not preset_name:
+            raise ValueError("watchlist_presets items require preset_name")
+        selected_scan_names = _normalize_name_tuple(payload.get("selected_scan_names", ()))
+        if not selected_scan_names:
+            raise ValueError("watchlist_presets items require selected_scan_names")
+        selected_annotation_filters = _normalize_annotation_name_tuple(payload.get("selected_annotation_filters", ()))
+        selected_duplicate_subfilters = _normalize_name_tuple(payload.get("selected_duplicate_subfilters", ()))
+        try:
+            duplicate_threshold = int(payload.get("duplicate_threshold", 1))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("watchlist_presets duplicate_threshold must be an integer") from exc
+        if duplicate_threshold < 1:
+            raise ValueError("watchlist_presets duplicate_threshold must be >= 1")
+        return cls(
+            preset_name=preset_name,
+            selected_scan_names=selected_scan_names,
+            selected_annotation_filters=selected_annotation_filters,
+            selected_duplicate_subfilters=selected_duplicate_subfilters,
+            duplicate_threshold=duplicate_threshold,
+            export_enabled=bool(payload.get("export_enabled", True)),
+        )
+
+    def to_control_values(self) -> dict[str, object]:
+        return {
+            "selected_scan_names": list(self.selected_scan_names),
+            "selected_annotation_filters": list(self.selected_annotation_filters),
+            "selected_duplicate_subfilters": list(self.selected_duplicate_subfilters),
+            "duplicate_threshold": int(self.duplicate_threshold),
+        }
+
+
+@dataclass(slots=True)
+class WatchlistPresetCsvExportConfig:
+    """Config for automatic preset CSV exports."""
+
+    enabled: bool = True
+    output_dir: str = "data_runs/preset_exports"
+    write_details: bool = True
+    top_ticker_limit: int = 5
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, object] | None) -> "WatchlistPresetCsvExportConfig":
+        data = payload if isinstance(payload, dict) else {}
+        try:
+            top_ticker_limit = int(data.get("top_ticker_limit", 5))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("preset_csv_export top_ticker_limit must be an integer") from exc
+        if top_ticker_limit < 1:
+            raise ValueError("preset_csv_export top_ticker_limit must be >= 1")
+        return cls(
+            enabled=bool(data.get("enabled", True)),
+            output_dir=str(data.get("output_dir", "data_runs/preset_exports")).strip() or "data_runs/preset_exports",
+            write_details=bool(data.get("write_details", True)),
+            top_ticker_limit=top_ticker_limit,
+        )
+
+
+@dataclass(slots=True)
 class ScanConfig:
     """Configurable thresholds, rule selection, and scan-card settings."""
 
@@ -129,12 +217,14 @@ class ScanConfig:
     club_97_hybrid_threshold: float = 90.0
     club_97_rs21_threshold: float = 97.0
     vcs_min_threshold: float = 60.0
-    vcs_52_high_vcs_min: float = 60.0
-    vcs_52_high_rs21_min: float = 60.0
-    vcs_52_high_dist_max: float = -15.0
+    vcs_52_high_vcs_min: float = 55.0
+    vcs_52_high_rs21_min: float = 25.0
+    vcs_52_high_dist_max: float = -20.0
+    vcs_52_high_require_trend_base: bool = True
     vcs_52_low_vcs_min: float = 60.0
-    vcs_52_low_rs21_min: float = 60.0
+    vcs_52_low_rs21_min: float = 80.0
     vcs_52_low_dist_max: float = 25.0
+    vcs_52_low_dist_from_52w_high_max: float = -65.0
     vol_accum_ud_ratio_min: float = 1.5
     vol_accum_rel_vol_min: float = 1.0
     weekly_gainer_threshold: float = 20.0
@@ -142,8 +232,19 @@ class ScanConfig:
     near_52w_high_hybrid_min: float = 70.0
     three_weeks_tight_vcs_min: float = 50.0
     rs_acceleration_rs21_min: float = 70.0
+    fund_demand_fundamental_min: float = 70.0
+    fund_demand_rs21_min: float = 60.0
+    fund_demand_rel_vol_min: float = 1.0
+    sustained_rs21_min: float = 80.0
+    sustained_rs63_min: float = 70.0
+    sustained_rs126_min: float = 60.0
+    reversal_dist_52w_low_max: float = 40.0
+    reversal_dist_52w_high_min: float = -40.0
+    reversal_rs21_min: float = 50.0
     duplicate_min_count: int = 3
     high_eps_growth_rank_threshold: float = 90.0
+    pp_count_scan_min: int = 3
+    pp_count_annotation_min: int = 2
     earnings_warning_days: int = 7
     watchlist_sort_mode: str = "hybrid_score"
     enabled_scan_rules: tuple[str, ...] = field(default_factory=lambda: DEFAULT_SCAN_RULE_NAMES)
@@ -152,6 +253,8 @@ class ScanConfig:
     annotation_filters: tuple[AnnotationFilterConfig, ...] = field(
         default_factory=lambda: tuple(AnnotationFilterConfig.from_dict(payload) for payload in DEFAULT_ANNOTATION_FILTER_PAYLOADS)
     )
+    watchlist_presets: tuple[WatchlistPresetConfig, ...] = field(default_factory=tuple)
+    preset_csv_export: WatchlistPresetCsvExportConfig = field(default_factory=WatchlistPresetCsvExportConfig)
     card_sections: tuple[ScanCardConfig, ...] = field(
         default_factory=lambda: tuple(ScanCardConfig.from_dict(payload) for payload in DEFAULT_CARD_SECTION_PAYLOADS)
     )
@@ -162,7 +265,7 @@ class ScanConfig:
             key: value
             for key, value in payload.items()
             if key in cls.__dataclass_fields__
-            and key not in {"enabled_scan_rules", "default_selected_scan_names", "enabled_annotation_filters", "annotation_filters", "card_sections"}
+            and key not in {"enabled_scan_rules", "default_selected_scan_names", "enabled_annotation_filters", "annotation_filters", "watchlist_presets", "preset_csv_export", "card_sections"}
         }
         enabled_scan_rules = _normalize_name_tuple(payload.get("enabled_scan_rules", DEFAULT_SCAN_RULE_NAMES))
         if "default_selected_scan_names" in payload:
@@ -174,9 +277,15 @@ class ScanConfig:
         else:
             legacy_names = payload.get("enabled_list_rules", ())
             raw_annotation_names = [name for name in legacy_names if _canonical_annotation_filter_name(name) in ANNOTATION_FILTER_REGISTRY]
-        enabled_annotation_filters = _normalize_annotation_name_tuple(raw_annotation_names)
+        enabled_scan_rules, enabled_annotation_filters = _coerce_enabled_annotation_filters(
+            raw_annotation_names,
+            enabled_scan_rules,
+        )
         annotation_payloads = payload.get("annotation_filters", DEFAULT_ANNOTATION_FILTER_PAYLOADS)
         annotation_filters = tuple(AnnotationFilterConfig.from_dict(item) for item in annotation_payloads)
+        watchlist_preset_payloads = payload.get("watchlist_presets", ())
+        watchlist_presets = tuple(WatchlistPresetConfig.from_dict(item) for item in watchlist_preset_payloads)
+        preset_csv_export = WatchlistPresetCsvExportConfig.from_dict(payload.get("preset_csv_export"))
         card_payloads = payload.get("card_sections", DEFAULT_CARD_SECTION_PAYLOADS)
         card_sections = tuple(ScanCardConfig.from_dict(item) for item in card_payloads)
         config = cls(
@@ -185,6 +294,8 @@ class ScanConfig:
             default_selected_scan_names=default_selected_scan_names,
             enabled_annotation_filters=enabled_annotation_filters,
             annotation_filters=annotation_filters,
+            watchlist_presets=watchlist_presets,
+            preset_csv_export=preset_csv_export,
             card_sections=card_sections,
         )
         _validate_rule_names(config.enabled_scan_rules, SCAN_RULE_REGISTRY, "scan")
@@ -196,6 +307,7 @@ class ScanConfig:
             raise ValueError(f"enabled_annotation_filters must be defined in annotation_filters: {', '.join(sorted(unknown_enabled))}")
         _validate_card_sections(config.card_sections)
         available_scan_names = {section.scan_name for section in config.card_sections}
+        _validate_watchlist_presets(config.watchlist_presets, available_scan_names, available_filter_names)
         if config.default_selected_scan_names is not None:
             unknown_default_selected = [name for name in config.default_selected_scan_names if name not in available_scan_names]
             if unknown_default_selected:
@@ -286,6 +398,32 @@ def _normalize_annotation_name_tuple(raw_names: object) -> tuple[str, ...]:
     )
 
 
+def _merge_name_tuples(*name_groups: tuple[str, ...]) -> tuple[str, ...]:
+    merged: list[str] = []
+    for group in name_groups:
+        for name in group:
+            if name not in merged:
+                merged.append(name)
+    return tuple(merged)
+
+
+def _coerce_enabled_annotation_filters(
+    raw_names: object,
+    enabled_scan_rules: tuple[str, ...],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    annotation_names = _normalize_annotation_name_tuple(raw_names)
+    compatible_annotation_names = tuple(name for name in annotation_names if name in ANNOTATION_FILTER_REGISTRY)
+    misplaced_scan_names = tuple(name for name in annotation_names if name in SCAN_RULE_REGISTRY and name not in ANNOTATION_FILTER_REGISTRY)
+    unknown_names = tuple(
+        name
+        for name in annotation_names
+        if name not in ANNOTATION_FILTER_REGISTRY and name not in SCAN_RULE_REGISTRY
+    )
+    if unknown_names:
+        raise ValueError(f"Unknown annotation filter rule(s): {', '.join(sorted(unknown_names))}")
+    return _merge_name_tuples(enabled_scan_rules, misplaced_scan_names), compatible_annotation_names
+
+
 def _evaluate_rule_set(
     row: pd.Series,
     rule_names: tuple[str, ...],
@@ -319,6 +457,28 @@ def _validate_annotation_filters(annotation_filters: tuple[AnnotationFilterConfi
         raise ValueError(f"Unknown annotation filter section(s): {', '.join(sorted(unknown))}")
 
 
+def _validate_watchlist_presets(
+    watchlist_presets: tuple[WatchlistPresetConfig, ...],
+    available_scan_names: set[str],
+    available_filter_names: set[str],
+) -> None:
+    seen_names: set[str] = set()
+    for preset in watchlist_presets:
+        if preset.preset_name in seen_names:
+            raise ValueError(f"Duplicate watchlist preset name: {preset.preset_name}")
+        seen_names.add(preset.preset_name)
+        unknown_scans = [name for name in preset.selected_scan_names if name not in available_scan_names]
+        if unknown_scans:
+            raise ValueError(
+                f"watchlist preset '{preset.preset_name}' references unknown card_sections scan(s): {', '.join(sorted(unknown_scans))}"
+            )
+        unknown_filters = [name for name in preset.selected_annotation_filters if name not in available_filter_names]
+        if unknown_filters:
+            raise ValueError(
+                f"watchlist preset '{preset.preset_name}' references unknown annotation filter(s): {', '.join(sorted(unknown_filters))}"
+            )
+
+
 def _scan_21ema(row: pd.Series, config: ScanConfig) -> bool:
     weekly_return = row.get("weekly_return", float("nan"))
     return bool(
@@ -327,8 +487,39 @@ def _scan_21ema(row: pd.Series, config: ScanConfig) -> bool:
         and row.get("dcr_percent", 0.0) > 20.0
         and -0.5 <= row.get("atr_21ema_zone", float("nan")) <= 1.0
         and 0.0 <= row.get("atr_50sma_zone", float("nan")) <= 3.0
-        and row.get("pp_count_30d", 0) > 1
         and row.get("trend_base", False)
+    )
+
+
+def _scan_pullback_quality(row: pd.Series, config: ScanConfig) -> bool:
+    weekly_return = row.get("weekly_return", float("nan"))
+    return bool(
+        row.get("trend_base", False)
+        and row.get("ema21_slope_5d_pct", float("nan")) > 0.0
+        and row.get("sma50_slope_10d_pct", float("nan")) > 0.0
+        and -1.25 <= row.get("atr_21ema_zone", float("nan")) <= 0.25
+        and 0.75 <= row.get("atr_50sma_zone", float("nan")) <= 3.5
+        and -8.0 <= weekly_return <= 3.0
+        and row.get("dcr_percent", 0.0) >= 50.0
+        and 3.0 <= row.get("drawdown_from_20d_high_pct", float("nan")) <= 15.0
+        and row.get("volume_ma5_to_ma20_ratio", float("nan")) <= 0.85
+    )
+
+
+def _scan_reclaim(row: pd.Series, config: ScanConfig) -> bool:
+    weekly_return = row.get("weekly_return", float("nan"))
+    return bool(
+        row.get("trend_base", False)
+        and row.get("ema21_slope_5d_pct", float("nan")) > 0.0
+        and row.get("sma50_slope_10d_pct", float("nan")) > 0.0
+        and 0.0 <= row.get("atr_21ema_zone", float("nan")) <= 1.0
+        and 0.75 <= row.get("atr_50sma_zone", float("nan")) <= 4.0
+        and -3.0 <= weekly_return <= 10.0
+        and row.get("dcr_percent", 0.0) >= 60.0
+        and 2.0 <= row.get("drawdown_from_20d_high_pct", float("nan")) <= 12.0
+        and row.get("volume_ratio_20d", float("nan")) >= 1.10
+        and row.get("close_crossed_above_ema21", False)
+        and row.get("min_atr_21ema_zone_5d", float("nan")) <= -0.25
     )
 
 
@@ -385,6 +576,7 @@ def _scan_vcs_52_high(row: pd.Series, config: ScanConfig) -> bool:
         row.get("vcs", 0.0) >= config.vcs_52_high_vcs_min
         and raw_rs21 > config.vcs_52_high_rs21_min
         and row.get("dist_from_52w_high", float("nan")) >= config.vcs_52_high_dist_max
+        and (not config.vcs_52_high_require_trend_base or row.get("trend_base", False))
     )
 
 
@@ -394,6 +586,7 @@ def _scan_vcs_52_low(row: pd.Series, config: ScanConfig) -> bool:
         row.get("vcs", 0.0) >= config.vcs_52_low_vcs_min
         and raw_rs21 > config.vcs_52_low_rs21_min
         and row.get("dist_from_52w_low", float("nan")) <= config.vcs_52_low_dist_max
+        and row.get("dist_from_52w_high", float("nan")) <= config.vcs_52_low_dist_from_52w_high_max
     )
 
 
@@ -402,7 +595,7 @@ def _scan_pocket_pivot(row: pd.Series, config: ScanConfig) -> bool:
 
 
 def _scan_pp_count(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(row.get("pp_count_30d", 0) > 3 and row.get("trend_base", False))
+    return bool(row.get("pp_count_window", 0) >= config.pp_count_scan_min and row.get("trend_base", False))
 
 
 def _scan_weekly_gainer(row: pd.Series, config: ScanConfig) -> bool:
@@ -440,6 +633,46 @@ def _scan_rs_acceleration(row: pd.Series, config: ScanConfig) -> bool:
     )
 
 
+def _scan_fundamental_demand(row: pd.Series, config: ScanConfig) -> bool:
+    raw_rs21 = _raw_rs(row, 21)
+    return bool(
+        row.get("fundamental_score", 0.0) >= config.fund_demand_fundamental_min
+        and raw_rs21 >= config.fund_demand_rs21_min
+        and row.get("rel_volume", 0.0) >= config.fund_demand_rel_vol_min
+        and row.get("daily_change_pct", 0.0) > 0.0
+        and row.get("trend_base", False)
+    )
+
+
+def _scan_sustained_leadership(row: pd.Series, config: ScanConfig) -> bool:
+    rs21 = _raw_rs(row, 21)
+    rs63 = row.get("rs63", float("nan"))
+    rs126 = row.get("rs126", float("nan"))
+    return bool(
+        pd.notna(rs21)
+        and float(rs21) >= config.sustained_rs21_min
+        and pd.notna(rs63)
+        and float(rs63) >= config.sustained_rs63_min
+        and pd.notna(rs126)
+        and float(rs126) >= config.sustained_rs126_min
+        and row.get("trend_base", False)
+    )
+
+
+def _scan_trend_reversal_setup(row: pd.Series, config: ScanConfig) -> bool:
+    pocket_pivot_count = row.get("pp_count_30d", row.get("pp_count_window", 0))
+    raw_rs21 = _raw_rs(row, 21)
+    return bool(
+        row.get("close", 0.0) > row.get("sma50", float("inf"))
+        and row.get("sma50", float("inf")) <= row.get("sma200", float("inf"))
+        and row.get("sma50_slope_10d_pct", float("nan")) > 0.0
+        and row.get("dist_from_52w_low", float("nan")) <= config.reversal_dist_52w_low_max
+        and row.get("dist_from_52w_high", float("nan")) >= config.reversal_dist_52w_high_min
+        and raw_rs21 >= config.reversal_rs21_min
+        and pocket_pivot_count >= 1
+    )
+
+
 def _annotation_rs21_gte_63(row: pd.Series, config: ScanConfig) -> bool:
     rs21 = _raw_rs(row, 21)
     return bool(pd.notna(rs21) and float(rs21) >= 63.0)
@@ -449,8 +682,14 @@ def _annotation_high_eps_growth(row: pd.Series, config: ScanConfig) -> bool:
     return bool(row.get("eps_growth_rank", 0.0) >= config.high_eps_growth_rank_threshold)
 
 
+def _annotation_pp_count_20d(row: pd.Series, config: ScanConfig) -> bool:
+    return bool(row.get("pp_count_window", 0) >= config.pp_count_annotation_min)
+
+
 SCAN_RULE_REGISTRY: dict[str, RuleEvaluator] = {
     "21EMA scan": _scan_21ema,
+    "Pullback Quality scan": _scan_pullback_quality,
+    "Reclaim scan": _scan_reclaim,
     "4% bullish": _scan_bullish_4pct,
     "Vol Up": _scan_vol_up,
     "Volume Accumulation": _scan_volume_accumulation,
@@ -465,11 +704,16 @@ SCAN_RULE_REGISTRY: dict[str, RuleEvaluator] = {
     "Near 52W High": _scan_near_52w_high,
     "Three Weeks Tight": _scan_three_weeks_tight,
     "RS Acceleration": _scan_rs_acceleration,
+    "Fundamental Demand": _scan_fundamental_demand,
+    "Sustained Leadership": _scan_sustained_leadership,
+    "Trend Reversal Setup": _scan_trend_reversal_setup,
 }
 
 ANNOTATION_FILTER_REGISTRY: dict[str, RuleEvaluator] = {
     "RS 21 >= 63": _annotation_rs21_gte_63,
     "High Est. EPS Growth": _annotation_high_eps_growth,
+    "PP Count (20d)": _annotation_pp_count_20d,
+    "3+ Pocket Pivots (20d)": _annotation_pp_count_20d,
 }
 
 

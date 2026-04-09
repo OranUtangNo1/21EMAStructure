@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 import pandas as pd
@@ -73,3 +73,20 @@ class UniverseSnapshotLoadResult:
     snapshot: pd.DataFrame | None
     metadata: dict[str, object] | None
     path: str | None
+
+
+@dataclass(slots=True)
+class RunArtifactsLoadResult:
+    """Loaded persisted run bundle plus optional dashboard payloads."""
+
+    path: str | None
+    metadata: dict[str, object] | None
+    snapshot: pd.DataFrame | None
+    eligible_snapshot: pd.DataFrame | None
+    watchlist: pd.DataFrame | None
+    fetch_status: pd.DataFrame | None
+    scan_hits: pd.DataFrame | None
+    market_metadata: dict[str, object] | None = None
+    radar_metadata: dict[str, object] | None = None
+    market_frames: dict[str, pd.DataFrame] = field(default_factory=dict)
+    radar_frames: dict[str, pd.DataFrame] = field(default_factory=dict)

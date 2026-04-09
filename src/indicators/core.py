@@ -34,7 +34,7 @@ class IndicatorConfig:
     ema21_low_pct_reduce_max: float = 8.0
     atr_pct_from_50sma_overheat: float = 7.0
     show_overheat_dot: bool = True
-    pp_count_window_days: int = 30
+    pp_count_window_days: int = 20
     pocket_pivot_lookback: int = 10
 
     @classmethod
@@ -122,6 +122,10 @@ class IndicatorCalculator:
         range_width = (df["high"] - df["low"]).replace(0, np.nan)
         df["dcr_percent"] = ((df["close"] - df["low"]) / range_width * 100.0).fillna(50.0)
         df["rel_volume"] = df["volume"] / df["avg_volume_50d"].replace(0, np.nan)
+        df["volume_ma5"] = df["volume"].rolling(5).mean()
+        df["volume_ma20"] = df["volume"].rolling(20).mean()
+        df["volume_ma5_to_ma20_ratio"] = df["volume_ma5"] / df["volume_ma20"].replace(0, np.nan)
+        df["volume_ratio_20d"] = df["volume"] / df["volume_ma20"].replace(0, np.nan)
 
         df["daily_change_pct"] = df["close"].pct_change() * 100.0
         df["rsi21"] = self._calculate_rsi(df["close"], self.config.rsi_short_period)
@@ -130,11 +134,21 @@ class IndicatorCalculator:
         df["weekly_return"] = df["close"].pct_change(5) * 100.0
         df["monthly_return"] = df["close"].pct_change(21) * 100.0
         df["quarterly_return"] = df["close"].pct_change(63) * 100.0
+        df["rolling_20d_close_high"] = df["close"].rolling(20).max()
+        df["drawdown_from_20d_high_pct"] = (
+            (df["rolling_20d_close_high"] - df["close"]) / df["rolling_20d_close_high"].replace(0, np.nan) * 100.0
+        )
 
         atr = df["atr"].replace(0, np.nan)
         df["atr_21ema_zone"] = (df["close"] - df["ema21_close"]) / atr
         df["atr_10wma_zone"] = (df["close"] - df["wma10_weekly"]) / atr
         df["atr_50sma_zone"] = (df["close"] - df["sma50"]) / atr
+        df["min_atr_21ema_zone_5d"] = df["atr_21ema_zone"].rolling(5).min()
+        df["close_crossed_above_ema21"] = (df["close"] > df["ema21_close"]) & (
+            df["close"].shift(1) <= df["ema21_close"].shift(1)
+        )
+        df["ema21_slope_5d_pct"] = ((df["ema21_close"] / df["ema21_close"].shift(5)) - 1.0) * 100.0
+        df["sma50_slope_10d_pct"] = ((df["sma50"] / df["sma50"].shift(10)) - 1.0) * 100.0
 
         above_ema21_low = df["close"] >= df["ema21_low"]
         df["ema21_low_pct"] = np.where(
@@ -157,7 +171,7 @@ class IndicatorCalculator:
         df["ema21_low_size_bucket"] = df["ema21_low_pct"].apply(self._size_bucket)
 
         df["pocket_pivot"] = self._calculate_pocket_pivot(df)
-        df["pp_count_30d"] = df["pocket_pivot"].rolling(self.config.pp_count_window_days).sum().fillna(0).astype(int)
+        df["pp_count_window"] = df["pocket_pivot"].rolling(self.config.pp_count_window_days).sum().fillna(0).astype(int)
         df["trend_base"] = (df["close"] > df["sma50"]) & (df["wma10_weekly"] > df["wma30_weekly"])
         return df
 

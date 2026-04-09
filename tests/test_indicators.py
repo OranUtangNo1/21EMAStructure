@@ -307,3 +307,121 @@ def test_indicator_calculator_adds_rsi_columns() -> None:
     assert "rsi63" in result.columns
     assert pd.notna(result.iloc[-1]["rsi21"])
     assert pd.notna(result.iloc[-1]["rsi63"])
+
+
+def test_indicator_calculator_adds_pullback_and_reclaim_fields() -> None:
+    dates = pd.date_range("2025-01-01", periods=30, freq="D")
+    close = [
+        100.0,
+        101.0,
+        102.0,
+        103.0,
+        104.0,
+        105.0,
+        106.0,
+        107.0,
+        108.0,
+        109.0,
+        110.0,
+        111.0,
+        112.0,
+        113.0,
+        114.0,
+        115.0,
+        116.0,
+        117.0,
+        118.0,
+        119.0,
+        120.0,
+        118.0,
+        116.0,
+        114.0,
+        113.0,
+        112.0,
+        111.0,
+        112.0,
+        114.0,
+        116.0,
+    ]
+    volume = [
+        100.0,
+        105.0,
+        110.0,
+        115.0,
+        120.0,
+        125.0,
+        130.0,
+        135.0,
+        140.0,
+        145.0,
+        150.0,
+        155.0,
+        160.0,
+        165.0,
+        170.0,
+        175.0,
+        180.0,
+        185.0,
+        190.0,
+        195.0,
+        200.0,
+        180.0,
+        170.0,
+        160.0,
+        150.0,
+        145.0,
+        140.0,
+        150.0,
+        180.0,
+        260.0,
+    ]
+    frame = pd.DataFrame(
+        {
+            "open": [value - 0.5 for value in close],
+            "high": [value + 1.0 for value in close],
+            "low": [value - 1.0 for value in close],
+            "close": close,
+            "adjusted_close": close,
+            "volume": volume,
+        },
+        index=dates,
+    )
+    calculator = IndicatorCalculator(
+        IndicatorConfig(
+            ema_period=3,
+            sma_short_period=5,
+            sma_long_period=10,
+            atr_period=3,
+            adr_period=3,
+            relvol_period=5,
+            enable_3wt=False,
+        )
+    )
+
+    result = calculator.calculate(frame)
+    latest = result.iloc[-1]
+    previous = result.iloc[-2]
+
+    expected_rolling_high = frame["close"].iloc[-20:].max()
+    expected_drawdown = ((expected_rolling_high - frame["close"].iloc[-1]) / expected_rolling_high) * 100.0
+    expected_ema_slope = ((latest["ema21_close"] / result.iloc[-6]["ema21_close"]) - 1.0) * 100.0
+    expected_sma_slope = ((latest["sma50"] / result.iloc[-11]["sma50"]) - 1.0) * 100.0
+    expected_volume_ma5 = frame["volume"].iloc[-5:].mean()
+    expected_volume_ma20 = frame["volume"].iloc[-20:].mean()
+    expected_volume_ma5_to_ma20 = expected_volume_ma5 / expected_volume_ma20
+    expected_volume_ratio_20d = frame["volume"].iloc[-1] / expected_volume_ma20
+    expected_cross = bool(
+        frame["close"].iloc[-1] > latest["ema21_close"] and frame["close"].iloc[-2] <= previous["ema21_close"]
+    )
+    expected_min_atr_21ema_zone_5d = result["atr_21ema_zone"].iloc[-5:].min()
+
+    assert round(float(latest["rolling_20d_close_high"]), 6) == round(float(expected_rolling_high), 6)
+    assert round(float(latest["drawdown_from_20d_high_pct"]), 6) == round(float(expected_drawdown), 6)
+    assert round(float(latest["ema21_slope_5d_pct"]), 6) == round(float(expected_ema_slope), 6)
+    assert round(float(latest["sma50_slope_10d_pct"]), 6) == round(float(expected_sma_slope), 6)
+    assert round(float(latest["volume_ma5"]), 6) == round(float(expected_volume_ma5), 6)
+    assert round(float(latest["volume_ma20"]), 6) == round(float(expected_volume_ma20), 6)
+    assert round(float(latest["volume_ma5_to_ma20_ratio"]), 6) == round(float(expected_volume_ma5_to_ma20), 6)
+    assert round(float(latest["volume_ratio_20d"]), 6) == round(float(expected_volume_ratio_20d), 6)
+    assert bool(latest["close_crossed_above_ema21"]) is expected_cross
+    assert round(float(latest["min_atr_21ema_zone_5d"]), 6) == round(float(expected_min_atr_21ema_zone_5d), 6)

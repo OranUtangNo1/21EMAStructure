@@ -26,7 +26,6 @@ matched = bool(
     and row.get("dcr_percent", 0.0) > 20.0
     and -0.5 <= row.get("atr_21ema_zone", float("nan")) <= 1.0
     and 0.0 <= row.get("atr_50sma_zone", float("nan")) <= 3.0
-    and row.get("pp_count_30d", 0) > 1
     and row.get("trend_base", False)
 )
 ```
@@ -39,7 +38,6 @@ matched = bool(
 | `dcr_percent` | `src/indicators/core.py::IndicatorCalculator.calculate` | `0.0` | `> 20.0` |
 | `atr_21ema_zone` | `src/indicators/core.py::IndicatorCalculator.calculate` | `float("nan")` | `-0.5 <= value <= 1.0` |
 | `atr_50sma_zone` | `src/indicators/core.py::IndicatorCalculator.calculate` | `float("nan")` | `0.0 <= value <= 3.0` |
-| `pp_count_30d` | `src/indicators/core.py::IndicatorCalculator.calculate` | `0` | `> 1` |
 | `trend_base` | `src/indicators/core.py::IndicatorCalculator.calculate` | `False` | must be `True` |
 
 ## Direct Config Dependencies
@@ -52,5 +50,4 @@ None. `_scan_21ema` uses hard-coded thresholds only.
 - `dcr_percent = ((close - low) / (high - low)) * 100.0`, zero-width range is filled with `50.0`
 - `atr_21ema_zone = (close - ema21_close) / atr`
 - `atr_50sma_zone = (close - sma50) / atr`
-- `pp_count_30d = pocket_pivot.rolling(pp_count_window_days).sum().fillna(0).astype(int)`
 - `trend_base = (close > sma50) & (wma10_weekly > wma30_weekly)`

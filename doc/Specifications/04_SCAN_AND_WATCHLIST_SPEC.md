@@ -1,25 +1,21 @@
-# Scan and Watchlist Spec
+﻿# Scan and Watchlist Spec
 
 ## 1. Purpose
 
-This document defines the stable watchlist-generation workflow.
+This document defines the stable backend watchlist workflow and the current UI projection rules built on top of it.
 
 Important principle:
 
-- the watchlist workflow is stable product behavior
-- the concrete scan family can change over time through config and implementation updates
-- detailed scan definitions are not duplicated in this specification
-- exact per-scan definitions live under `doc/Scan/`
+- backend watchlist generation is stable product behavior
+- the concrete scan family can change through config and implementation updates
+- exact per-scan formulas live under `doc/Scan/`
+- the watchlist page adds a display-layer projection on top of the raw watchlist
 
 Primary scan reference:
 
 - `doc/Scan/scan_00_index.md`
 
-That index links to one document per scan.
-
----
-
-## 2. Stable watchlist workflow
+## 2. Backend Watchlist Workflow
 
 ### 2.1 Eligible snapshot
 
@@ -29,20 +25,33 @@ Current default filter:
 
 - `market_cap >= 1B`
 - `avg_volume_50d >= 1M`
-- `close >= min_price` where the current default is `0.0`
+- `close >= 0.0`
 - `adr_percent` between `3.5` and `10.0`
 - sector exclusion: `Healthcare`
 
 All scan rules and annotation rules run only on this eligible snapshot.
 
-### 2.2 Watchlist eligibility
+### 2.2 Scan-context enrichment
 
-The watchlist candidate set is determined only by enabled scan rules.
+`ScanRunner.run()` first calls `enrich_with_scan_context()` on the eligible snapshot.
+
+Current enrichment fields:
+
+- `weekly_return_rank = percent_rank(weekly_return)`
+- `quarterly_return_rank = percent_rank(quarterly_return)`
+- `eps_growth_rank = percent_rank(eps_growth)` when `eps_growth` exists, otherwise `NaN`
+
+These are cross-sectional ranks over the current eligible snapshot.
+
+### 2.3 Watchlist eligibility
+
+The raw watchlist candidate set is determined only by enabled scan rules.
 
 Current implemented rule:
 
 - evaluate all enabled scan rules on the eligible snapshot
-- create `scan_hit_count` for each ticker
+- create one `scan_hits` row per matched scan per ticker
+- compute `scan_hit_count` per ticker
 - keep only tickers where `scan_hit_count > 0`
 
 This means:
@@ -50,141 +59,196 @@ This means:
 - scan hits create watchlist candidates
 - annotation hits do not create watchlist candidates by themselves
 
-### 2.3 Supporting annotations
+### 2.4 Annotation evaluation
 
-The application also evaluates configured annotation rules on the same eligible snapshot.
+The application also evaluates configured annotation filters on the same eligible snapshot.
 
 Current implemented behavior:
 
-- annotation rules are still evaluated in the scan pipeline
-- annotation results are not used to populate the watchlist overlap aliases
-- `hit_lists` now mirrors `hit_scans` for compatibility
-- `list_overlap_count` now mirrors `scan_hit_count` for compatibility
-- the default annotation family currently includes `RS 21 >= 63` and `High Est. EPS Growth`
-- `RS 21 >= 63` uses the app RS field and currently means `rs21 >= 63`
+- annotation filters are defined by `scan.annotation_filters`
+- the default config ships three available filters:
+  - `RS 21 >= 63`
+  - `High Est. EPS Growth`
+  - `PP Count (20d)`
+- the default config enables none of them at runtime because `enabled_annotation_filters` is `[]`
+- annotation results are attached to the raw watchlist as:
+  - one boolean column per configured filter
+  - `annotation_hits`
+  - `annotation_hit_count`
 
-The current annotation family and scan-to-list relationships are documented in `doc/Scan/scan_00_index.md`.
+Compatibility fields remain in the raw watchlist:
 
-### 2.4 Duplicate tickers
+- `hit_lists = hit_scans`
+- `list_overlap_count = scan_hit_count`
+- `hit_count = scan_hit_count`
+
+These compatibility aliases do not represent a separate list engine.
+
+### 2.5 Duplicate tickers
 
 Backend duplicate logic is based on scan overlap only.
 
 Current implemented rule:
 
-- `scan_hit_count = number of unique scan hits for the ticker`
+- `scan_hit_count = number of raw scan hits for the ticker`
 - `overlap_count = scan_hit_count`
-- `hit_lists = hit_scans` as a compatibility alias
-- `list_overlap_count = scan_hit_count` as a compatibility alias
 - `duplicate_ticker = scan_hit_count >= duplicate_min_count`
-- the default backend threshold remains `3` even with `15` default scan families enabled
 
-The backend duplicate flag is not derived from annotation lists.
+The backend duplicate flag is not derived from annotation filters.
 
-### 2.5 Watchlist sorting
+### 2.6 Watchlist sorting
 
-The runner sorts the final watchlist after scan eligibility and duplicate marking.
+The runner sorts the final raw watchlist after scan eligibility and duplicate marking.
 
 Default config uses `watchlist_sort_mode: hybrid_score`.
 
-This produces the active default sort priority:
+This produces the default priority:
 
 1. `hybrid_score`
 2. `overlap_count`
 3. `vcs`
 4. `rs21`
 
-If `watchlist_sort_mode = overlap_then_hybrid`, the sort priority becomes:
+If `watchlist_sort_mode = overlap_then_hybrid`, the priority becomes:
 
 1. `overlap_count`
 2. `hybrid_score`
 3. `vcs`
 4. `rs21`
 
----
+## 3. Current Today's Watchlist UI Projection
 
-## 3. Watchlist UI behavior
+### 3.1 Sidebar-driven state
 
-### 3.1 Card rendering
+The page builds a projected watchlist from raw artifacts plus page-local controls.
 
-The Today's Watchlist page renders scan cards only.
+Current controls:
+
+- selected scan cards
+- selected annotation filters
+- selected duplicate subfilters
+- duplicate threshold
+
+These values are persisted under the `watchlist_controls` group in the user-preferences store and are namespaced by the resolved config path.
+
+Named presets come from two sources:
+
+- built-in presets defined in `scan.watchlist_presets`
+- saved presets stored under the `watchlist_presets` group in the same namespace
+
+Current preset behavior:
+
+- record shape: `schema_version`, `kind`, `values`
+- `kind` is currently `watchlist_controls`
+- `values` stores the same four sidebar control fields
+- the active UI supports save, load, update, and delete
+- built-in presets can be loaded and exported but not deleted or updated from the UI
+- at most 10 presets are stored per config namespace
+- preset load drops scan or filter names that no longer exist in the current config and clamps duplicate threshold to the selected-card count
+
+### 3.2 Annotation-filter projection
+
+`WatchlistViewModelBuilder.filter_by_annotation_filters()` applies selected annotation filters with `AND` semantics.
+
+Current implemented behavior:
+
+- no selected filters -> raw watchlist passes through unchanged
+- one or more selected filters -> keep only rows where every selected boolean annotation column is true
+- missing annotation columns are treated as false
+
+This projection narrows the displayed watchlist only. It does not rewrite raw scan hits.
+
+### 3.3 Selected-scan projection
+
+`WatchlistViewModelBuilder.apply_selected_scan_metrics()` recalculates display-only overlap state from selected scan names.
+
+Current projected fields:
+
+- `selected_scan_hit_count`
+- `selected_overlap_count`
+- `duplicate_ticker`
+- `overlap_count`
+
+Current implemented behavior:
+
+- selected scans are filtered from raw `scan_hits`
+- `duplicate_ticker` is recalculated against the current UI duplicate threshold
+- `overlap_count` is overwritten with the selected-scan overlap count
+- if no scan cards are selected, the projection forces:
+  - `selected_scan_hit_count = 0`
+  - `selected_overlap_count = 0`
+  - `overlap_count = 0`
+  - `duplicate_ticker = False`
+
+This means the card-level duplicate flag shown in the UI is a projected session value, not always the raw backend duplicate flag.
+
+### 3.4 Duplicate band
+
+The duplicate band is a second display-layer projection on top of the projected watchlist.
+
+Current implemented behavior:
+
+- start from the projected watchlist after annotation filtering and selected-scan recomputation
+- keep only rows where projected `duplicate_ticker` is true
+- optional duplicate subfilters run after thresholding
+- current supported duplicate subfilter:
+  - `Top3 HybridRS`
+
+`Top3 HybridRS` sorts by:
+
+1. `hybrid_score`
+2. `selected_scan_hit_count`
+3. `selected_overlap_count`
+4. `vcs` when present
+
+and keeps the top three rows.
+
+### 3.5 Scan-card grid
+
+The watchlist page rebuilds scan cards from raw `scan_hits` plus the projected watchlist. It does not use the prebuilt `artifacts.watchlist_cards`.
 
 Current implemented behavior:
 
 - cards are built from `scan.card_sections`
-- each card corresponds to one configured scan name
-- each card shows the subset of watchlist rows that hit that scan
-- the default config currently exposes `15` scan cards, including `VCS 52 High`, `VCS 52 Low`, and `Volume Accumulation`
-- detailed card meaning is defined by the referenced scan document in `doc/Scan/`
+- only scan-based cards are supported
+- selected scan names determine which cards render
+- each card shows ticker symbols only
+- card ticker order follows each section's configured `sort_columns`
 
-### 3.2 Card selection
+## 4. Current Scan Reference Model
 
-The UI allows the user to choose which configured scan cards are active in the current view.
-
-Current implemented behavior:
-
-- selected cards control which watchlist cards are displayed
-- the initial selected-card state can be configured via `scan.default_selected_scan_names`
-- if `scan.default_selected_scan_names` is omitted, all configured cards start selected
-- this selection does not change the underlying watchlist candidate set
-- unselected cards are hidden from the page, but their symbols remain in the watchlist if they passed any enabled scan
-
-### 3.3 Duplicate band in the UI
-
-The UI duplicate band is a presentation-layer recomputation based on selected cards.
-
-Current implemented behavior:
-
-- the page recomputes duplicate tickers from raw scan hits filtered to the currently selected cards
-- the page allows a user-selected duplicate threshold
-- the page allows duplicate-only sidebar subfilters after duplicate rows are formed
-- `Top3 HybridRS` keeps only the three highest `hybrid_score` duplicate rows
-- this UI threshold does not change backend watchlist eligibility
-- this UI threshold does not rewrite the stored `duplicate_ticker` field on raw watchlist rows
-
-Therefore two duplicate concepts coexist:
-
-- backend duplicate flag: fixed by `duplicate_min_count` in the scan config
-- UI duplicate band: recalculated from selected cards plus the current sidebar threshold and any duplicate-only subfilters
-
----
-
-## 4. Current scan reference model
-
-The numbered specifications no longer duplicate scan-level formulas.
+The numbered specifications do not duplicate scan-level formulas.
 
 Instead:
 
 - one scan is documented in one file under `doc/Scan/`
 - `doc/Scan/scan_00_index.md` is the entry point
 - active scan availability is controlled by `enabled_scan_rules`
-- active annotation availability is controlled by `enabled_annotation_filters`
+- available annotation-filter definitions are controlled by `annotation_filters`
+- startup-enabled annotation filters come from `enabled_annotation_filters`
 - the legacy config alias `enabled_list_rules` is still accepted for backward compatibility
+- if `enabled_annotation_filters` mistakenly includes scan names, the loader moves those names into `enabled_scan_rules` and keeps only real annotation filters in the enabled annotation set
 
-This structure is intended to reduce maintenance when scan types are added, removed, renamed, or reworked.
+## 5. Active Watchlist Outputs
 
----
+### 5.1 Raw backend watchlist fields
 
-## 5. Watchlist generation sequence
+The raw watchlist produced by `ScanRunner.run()` currently carries these backend-oriented fields when available:
 
-Current end-to-end sequence:
+- `hit_scans`
+- `scan_hit_count`
+- `overlap_count`
+- `hit_lists`
+- `list_overlap_count`
+- `hit_count`
+- `duplicate_ticker`
+- `annotation_hits`
+- `annotation_hit_count`
+- one boolean column per configured annotation filter
 
-1. resolve the active symbols
-2. load prices, profile data, and fundamentals
-3. build indicator histories
-4. build the latest snapshot
-5. apply scoring: RS, Fundamental, Industry, Hybrid, VCS
-6. apply the local universe filter
-7. evaluate enabled scan rules and enabled annotation rules
-8. keep only symbols with `scan_hit_count > 0`
-9. mark backend duplicate tickers from scan overlap
-10. sort the watchlist
-11. build scan cards, the duplicate band, and earnings rows for the UI
+### 5.2 Display watchlist table fields
 
----
-
-## 6. Active watchlist outputs
-
-The display-oriented watchlist table currently exposes these fields when available:
+`WatchlistViewModelBuilder.build()` currently exposes these columns when present:
 
 - `name`
 - `sector`
@@ -193,16 +257,16 @@ The display-oriented watchlist table currently exposes these fields when availab
 - `rs5`
 - `overlap_count`
 - `scan_hit_count`
-- `list_overlap_count`
+- `annotation_hit_count`
 - `duplicate_ticker`
 - `hit_scans`
-- `hit_lists`
+- `annotation_hits`
 - `vcs`
 - `dist_from_52w_high`
 - `dist_from_52w_low`
 - `ud_volume_ratio`
 - `earnings`
-- `pp_count_30d`
+- `pp_count_window`
 - `ema21_low_pct`
 - `atr_21ema_zone`
 - `atr_50sma_zone`
@@ -213,21 +277,40 @@ The display-oriented watchlist table currently exposes these fields when availab
 - `data_quality_label`
 - `data_quality_score`
 - `data_warning`
+- one boolean column per configured annotation filter
 
----
+## 6. Watchlist Generation Sequence
 
-## 7. Configurable areas
+Current end-to-end sequence:
+
+1. resolve the active symbols
+2. load prices, profile data, and fundamentals
+3. build indicator histories
+4. build the latest snapshot
+5. apply status, score, earnings, and data-quality enrichment
+6. apply the local universe filter
+7. enrich the eligible snapshot with scan-context ranks
+8. evaluate enabled scan rules and configured annotation filters
+9. keep only symbols with `scan_hit_count > 0`
+10. mark backend duplicate tickers from scan overlap
+11. sort the raw watchlist
+12. in the app, project the raw watchlist through selected scan names, annotation filters, duplicate subfilters, and the current duplicate threshold
+
+## 7. Configurable Areas
 
 The active implementation keeps these areas configurable:
 
 - scan thresholds
 - enabled scan rules
-- enabled annotation rules
+- available annotation filters
+- enabled annotation filters
 - card sections and their display names
-- config-driven default selected scan cards for the Watchlist sidebar
+- built-in watchlist presets
+- startup-selected watchlist cards
 - backend duplicate minimum count
 - watchlist sort mode
 - universe thresholds
-- UI-selected card subset for display and duplicate-band counting
+- UI-selected scan subset for display and duplicate counting
+- UI-selected annotation filters for display narrowing
 - UI duplicate threshold for the current page session
 - UI duplicate-only subfilters for the current page session

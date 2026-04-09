@@ -1,0 +1,11 @@
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+[windows]
+sandbox = "unelevated"
+
+[agents.default]
+description = "Default agent for Python development in this project"
+instructions = """
+Always use the local .venv environment if it exists.
+Never use system Python.
+"""

@@ -80,16 +80,15 @@ DEFAULT_FACTOR_ETFS = (
 )
 
 DEFAULT_COMPONENT_WEIGHTS = {
-    "pct_above_sma10": 0.12,
     "pct_above_sma20": 0.12,
     "pct_above_sma50": 0.14,
     "pct_above_sma200": 0.14,
-    "pct_sma20_gt_sma50": 0.10,
-    "pct_sma50_gt_sma200": 0.10,
-    "pct_positive_1m": 0.10,
-    "pct_positive_ytd": 0.08,
+    "pct_sma50_gt_sma200": 0.08,
+    "pct_positive_1m": 0.09,
+    "pct_positive_3m": 0.08,
     "pct_2w_high": 0.05,
-    "vix_score": 0.05,
+    "safe_haven_score": 0.15,
+    "vix_score": 0.15,
 }
 
 VALID_MARKET_CALCULATION_MODES = frozenset({"etf", "active_symbols", "blended"})
@@ -112,6 +111,12 @@ class MarketConditionConfig:
     positive_threshold: float = 60.0
     neutral_threshold: float = 40.0
     negative_threshold: float = 20.0
+    vix_neutral_level: float = 17.0
+    vix_score_slope: float = 5.0
+    safe_haven_risk_on_symbol: str = "SPY"
+    safe_haven_risk_off_symbol: str = "TLT"
+    safe_haven_window: int = 20
+    safe_haven_score_scale: float = 4.0
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> "MarketConditionConfig":
@@ -149,6 +154,12 @@ class MarketConditionConfig:
             positive_threshold=float(payload.get("positive_threshold", 60.0)),
             neutral_threshold=float(payload.get("neutral_threshold", 40.0)),
             negative_threshold=float(payload.get("negative_threshold", 20.0)),
+            vix_neutral_level=float(payload.get("vix_neutral_level", 17.0)),
+            vix_score_slope=float(payload.get("vix_score_slope", 5.0)),
+            safe_haven_risk_on_symbol=str(payload.get("safe_haven_risk_on_symbol", "SPY")).strip().upper() or "SPY",
+            safe_haven_risk_off_symbol=str(payload.get("safe_haven_risk_off_symbol", "TLT")).strip().upper() or "TLT",
+            safe_haven_window=int(payload.get("safe_haven_window", 20)),
+            safe_haven_score_scale=float(payload.get("safe_haven_score_scale", 4.0)),
         )
 
 
@@ -292,7 +303,7 @@ class MarketConditionScorer:
             item.ticker
             for item in [*self.config.condition_etfs, *self.config.leadership_etfs, *self.config.external_etfs, *self.config.factor_etfs]
         ]
-        symbols.append("^VIX")
+        symbols.extend(["^VIX", self.config.safe_haven_risk_on_symbol, self.config.safe_haven_risk_off_symbol])
         return list(dict.fromkeys(symbols))
 
     def score(
@@ -304,7 +315,8 @@ class MarketConditionScorer:
         if benchmark_history.empty or "close" not in benchmark_history.columns:
             return self._empty_result()
 
-        latest_components = self._component_scores_at_offset(stock_histories, market_histories, 0)
+        latest_raw_components = self._raw_component_values_at_offset(stock_histories, market_histories, 0)
+        latest_components = self._score_components(latest_raw_components, market_histories, 0)
         score = self._score_from_components(latest_components)
         score_1d_ago = self._rounded_score_at_offset(stock_histories, market_histories, 1)
         score_1w_ago = self._rounded_score_at_offset(stock_histories, market_histories, 5)
@@ -332,11 +344,12 @@ class MarketConditionScorer:
             label_1m_ago=self._label_for_optional_score(score_1m_ago),
             label_3m_ago=self._label_for_optional_score(score_3m_ago),
             component_scores={key: round(value, 2) for key, value in latest_components.items()},
-            breadth_summary={key: round(latest_components[key], 2) for key in self._breadth_keys() if key in latest_components},
+            breadth_summary={key: round(latest_raw_components[key], 2) for key in self._breadth_keys() if key in latest_raw_components},
             performance_overview={key: round(value, 2) for key, value in performance_overview.items()},
             high_vix_summary={
-                "S2W HIGH %": round(latest_components.get("pct_2w_high", 0.0), 2),
+                "S2W HIGH %": round(latest_raw_components.get("pct_2w_high", 0.0), 2),
                 "VIX": round(vix_close, 2) if vix_close is not None else np.nan,
+                "SAFE HAVEN %": round(self._safe_haven_spread(market_histories, 0), 2),
             },
             market_snapshot=market_snapshot,
             leadership_snapshot=leadership_snapshot,
@@ -374,21 +387,18 @@ class MarketConditionScorer:
             update_time=datetime.now().isoformat(timespec="seconds"),
         )
 
-    def _component_scores_at_offset(
+    def _raw_component_values_at_offset(
         self,
         stock_histories: dict[str, pd.DataFrame],
         market_histories: dict[str, pd.DataFrame],
         offset: int,
     ) -> dict[str, float]:
-        vix_history = market_histories.get("^VIX", pd.DataFrame())
-        etf_components, etf_count = self._component_scores_for_histories(
+        etf_components, etf_count = self._raw_component_values_for_histories(
             [market_histories.get(item.ticker, pd.DataFrame()) for item in self.config.condition_etfs],
-            vix_history,
             offset,
         )
-        active_components, active_count = self._component_scores_for_histories(
+        active_components, active_count = self._raw_component_values_for_histories(
             list(stock_histories.values()),
-            vix_history,
             offset,
         )
 
@@ -407,10 +417,9 @@ class MarketConditionScorer:
             self.config.active_symbols_weight,
         )
 
-    def _component_scores_for_histories(
+    def _raw_component_values_for_histories(
         self,
         histories: list[pd.DataFrame],
-        vix_history: pd.DataFrame,
         offset: int,
     ) -> tuple[dict[str, float], int]:
         rows: list[dict[str, float]] = []
@@ -431,17 +440,33 @@ class MarketConditionScorer:
             "pct_sma50_gt_sma200": float((frame["sma50"] >= frame["sma200"]).mean() * 100.0),
             "pct_positive_1w": float((frame["ret_1w"] > 0).mean() * 100.0),
             "pct_positive_1m": float((frame["ret_1m"] > 0).mean() * 100.0),
+            "pct_positive_3m": float((frame["ret_3m"] > 0).mean() * 100.0),
             "pct_positive_1y": float((frame["ret_1y"] > 0).mean() * 100.0),
             "pct_positive_ytd": float((frame["ret_ytd"] > 0).mean() * 100.0),
             "pct_2w_high": float(frame["is_2w_high"].mean() * 100.0),
         }
-        components["vix_score"] = self._vix_score(vix_history, offset)
         return components, len(rows)
 
     def _empty_components(self) -> dict[str, float]:
         component_names = set(self.config.component_weights)
-        component_names.update({"pct_positive_1w", "pct_positive_1y"})
+        component_names.update({"pct_above_sma10", "pct_sma20_gt_sma50", "pct_positive_1w", "pct_positive_1y", "pct_positive_ytd"})
         return {name: 0.0 for name in component_names}
+
+    def _score_components(
+        self,
+        raw_components: dict[str, float],
+        market_histories: dict[str, pd.DataFrame],
+        offset: int,
+    ) -> dict[str, float]:
+        component_names = set(raw_components) | set(self.config.component_weights)
+        scored = {
+            name: self._ratio_component_score(raw_components.get(name, 50.0))
+            for name in component_names
+            if name not in {"vix_score", "safe_haven_score"}
+        }
+        scored["vix_score"] = self._vix_score(market_histories.get("^VIX", pd.DataFrame()), offset)
+        scored["safe_haven_score"] = self._safe_haven_score(market_histories, offset)
+        return scored
 
     def _blend_components(
         self,
@@ -483,6 +508,7 @@ class MarketConditionScorer:
         sma200 = self._series_or_fallback(history, "sma200", 200).iloc[index_position]
         ret_1w = close.pct_change(5).iloc[index_position] * 100.0
         ret_1m = close.pct_change(21).iloc[index_position] * 100.0
+        ret_3m = close.pct_change(63).iloc[index_position] * 100.0
         ret_1y = close.pct_change(252).iloc[index_position] * 100.0
         ret_ytd = self._ytd_return(close, current_date, index_position)
         two_week_high = close.rolling(10).max().iloc[index_position]
@@ -494,10 +520,17 @@ class MarketConditionScorer:
             "sma200": float(sma200) if pd.notna(sma200) else np.nan,
             "ret_1w": float(ret_1w) if pd.notna(ret_1w) else np.nan,
             "ret_1m": float(ret_1m) if pd.notna(ret_1m) else np.nan,
+            "ret_3m": float(ret_3m) if pd.notna(ret_3m) else np.nan,
             "ret_1y": float(ret_1y) if pd.notna(ret_1y) else np.nan,
             "ret_ytd": float(ret_ytd) if pd.notna(ret_ytd) else np.nan,
             "is_2w_high": float(current_close >= two_week_high) if pd.notna(two_week_high) else 0.0,
         }
+
+    def _ratio_component_score(self, value: float) -> float:
+        clamped = max(0.0, min(float(value), 100.0))
+        if clamped <= 50.0:
+            return clamped
+        return min(100.0, 50.0 + ((clamped - 50.0) / 50.0) * 30.0)
 
     def _series_or_fallback(self, history: pd.DataFrame, column: str, window: int) -> pd.Series:
         if column in history.columns:
@@ -519,7 +552,21 @@ class MarketConditionScorer:
         vix_close = self._close_at_offset(vix_history, offset)
         if vix_close is None:
             return 50.0
-        return max(0.0, min(100.0, 100.0 - max(vix_close - 12.0, 0.0) * 4.0))
+        centered_score = 50.0 - ((vix_close - self.config.vix_neutral_level) * self.config.vix_score_slope)
+        return max(0.0, min(100.0, centered_score))
+
+    def _safe_haven_score(self, market_histories: dict[str, pd.DataFrame], offset: int) -> float:
+        spread = self._safe_haven_spread(market_histories, offset)
+        return max(0.0, min(100.0, 50.0 + (spread * self.config.safe_haven_score_scale)))
+
+    def _safe_haven_spread(self, market_histories: dict[str, pd.DataFrame], offset: int) -> float:
+        risk_on_history = market_histories.get(self.config.safe_haven_risk_on_symbol, pd.DataFrame())
+        risk_off_history = market_histories.get(self.config.safe_haven_risk_off_symbol, pd.DataFrame())
+        risk_on_return = self._return_at_offset(risk_on_history, self.config.safe_haven_window, offset)
+        risk_off_return = self._return_at_offset(risk_off_history, self.config.safe_haven_window, offset)
+        if risk_on_return is None or risk_off_return is None:
+            return 0.0
+        return float(risk_on_return - risk_off_return)
 
     def _score_from_components(self, components: dict[str, float]) -> float:
         return float(sum(components.get(name, 50.0) * weight for name, weight in self.config.component_weights.items()))
@@ -530,7 +577,8 @@ class MarketConditionScorer:
         market_histories: dict[str, pd.DataFrame],
         offset: int,
     ) -> float | None:
-        components = self._component_scores_at_offset(stock_histories, market_histories, offset)
+        raw_components = self._raw_component_values_at_offset(stock_histories, market_histories, offset)
+        components = self._score_components(raw_components, market_histories, offset)
         if not components:
             return None
         return round(self._score_from_components(components), 2)
@@ -560,6 +608,17 @@ class MarketConditionScorer:
             return 0.0
         value = close.pct_change(periods).iloc[-1] * 100.0
         return float(value) if pd.notna(value) else 0.0
+
+    def _return_at_offset(self, history: pd.DataFrame, periods: int, offset: int) -> float | None:
+        if history.empty or "close" not in history.columns:
+            return None
+        close = history["close"].astype(float)
+        if len(close) <= (periods + offset):
+            return None
+        value = close.pct_change(periods).iloc[-1 - offset] * 100.0
+        if pd.isna(value):
+            return None
+        return float(value)
 
     def _build_s5th_series(self, stock_histories: dict[str, pd.DataFrame]) -> pd.DataFrame:
         signals: list[pd.Series] = []

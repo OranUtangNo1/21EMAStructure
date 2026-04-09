@@ -16,18 +16,19 @@ The product does not perform final chart-based trade execution decisions.
 
 ### 2.1 Universe Preparation
 
-The application prepares a weekly universe snapshot and then applies daily calculations on top of that universe.
+The application prepares a reusable weekly universe snapshot and then applies daily calculations on top of that universe.
 
 Current flow:
 
-1. discover the weekly universe with Finviz
-2. store the universe snapshot locally
+1. reuse a fresh weekly universe snapshot when available
+2. otherwise discover a new weekly universe live
 3. load daily price history from Yahoo Finance
-4. apply the local eligible-universe filter
-5. calculate indicators and scores
-6. run the enabled scan rules
-7. create the watchlist as the union of scan hits
-8. mark duplicate tickers when a ticker appears in `duplicate_min_count` or more enabled scans
+4. source profile and fundamental data from the snapshot first, then fill missing rows from Yahoo fallback providers
+5. apply the local eligible-universe filter
+6. calculate indicators and scores
+7. run the enabled scan rules
+8. create the raw watchlist as the union of scan hits
+9. mark duplicate tickers when a ticker appears in `duplicate_min_count` or more scan hits
 
 ### 2.2 Market Review
 
@@ -37,8 +38,10 @@ This is intended to answer:
 
 - is the market supportive or hostile?
 - how broad is trend participation?
-- how strong are factor groups versus SPY?
-- where is VIX relative to the rest of the market state?
+- how are factors behaving versus SPY?
+- how is VIX interacting with the rest of the market state?
+
+In the current implementation, the dashboard can score from ETF breadth, active-symbol breadth, or a blend of the two, depending on `market.calculation_mode`.
 
 ### 2.3 RS Review
 
@@ -49,7 +52,7 @@ This is intended to answer:
 - which sectors are leading?
 - which industry ETFs are leading?
 - which groups are accelerating daily or weekly?
-- which industry groups are near highs?
+- which groups are near highs?
 
 ### 2.4 Candidate Extraction
 
@@ -58,8 +61,9 @@ The user then reviews Today's Watchlist.
 This is intended to answer:
 
 - which names pass one or more active scan rules?
-- which names appear repeatedly across scan conditions?
-- which names also carry useful research annotations such as EPS strength or RSI alignment?
+- which names survive the currently selected post-scan filters?
+- which names appear repeatedly across the currently selected scan cards?
+- which names have same-day earnings inside the current eligible universe?
 
 ## 3. Active Scan Workflow
 
@@ -69,30 +73,37 @@ The watchlist workflow is stable even if the scan family changes over time.
 
 Stable rule:
 
-- a ticker becomes a watchlist candidate if it passes at least one enabled scan
-- annotation rules do not create watchlist candidates by themselves
+- a ticker becomes a raw watchlist candidate if it passes at least one enabled scan
+- annotation filters do not create watchlist candidates by themselves
 
 The exact active scan family is documented under `doc/Scan/scan_00_index.md`.
-The default config currently enables `15` scan families, including `VCS 52 High`, `VCS 52 Low`, and `Volume Accumulation`.
+The default config currently enables 15 scan families.
 
 ### 3.2 Duplicate Tickers
 
-Duplicate Tickers are not derived from annotation rules.
+Duplicate tickers are not derived from annotation filters.
 
-Current implemented rule:
+Backend rule:
 
-- count how many enabled scans include the ticker
-- if the ticker appears in `duplicate_min_count` or more enabled scans, mark it as a duplicate ticker
+- count how many scan hits include the ticker
+- if the ticker appears in `duplicate_min_count` or more scan hits, mark it as a duplicate ticker
 
-This is the overlap rule used in the application.
+UI rule:
 
-### 3.3 Annotation Rules
+- recompute duplicate counting from the currently selected scan cards
+- apply the current duplicate threshold
+- optionally apply duplicate-only subfilters such as `Top3 HybridRS`
 
-The system also computes annotation-style lists for additional context.
+### 3.3 Annotation Filters
 
-The current annotation family is documented in `doc/Scan/scan_00_index.md`.
+The system also computes annotation-style filters for additional context.
 
-These rules do not determine watchlist eligibility. They act as secondary tags on already scanned names.
+Available default definitions:
+
+- `RS 21 >= 63`
+- `High Est. EPS Growth`
+
+These rules do not determine raw watchlist eligibility. They narrow the displayed watchlist only when the user selects them in the sidebar.
 
 ## 4. Indicator Guide
 
@@ -142,7 +153,7 @@ Implemented indicators:
 Use in workflow:
 
 - `dist_from_52w_high` supports continuation-style scans near yearly highs
-- `dist_from_52w_low` supports tight-base and bottoming candidates near yearly lows
+- `dist_from_52w_low` supports VCS-style contraction setups close to yearly lows
 - `ud_volume_ratio` separates sustained accumulation from one-day volume spikes
 
 ### 4.4 Relative Strength And RSI
@@ -156,9 +167,9 @@ Implemented indicators:
 Use in workflow:
 
 - raw RS is used by the scan layer to compare stock performance versus SPY across horizons
-- the default RS score is the trailing-window percentrank of each symbol's own `close / SPY` ratio history
-- normalized RS is used in ranking and dashboard summaries
-- RSI is used as a separate momentum-style oscillator and is not the same thing as the SPY-relative RS calculation
+- the default RS score is the trailing-window percent-rank of each symbol's own `close / SPY` ratio history
+- normalized RS currently matches raw RS in the implementation
+- RSI is a separate momentum oscillator and is not the same thing as SPY-relative RS
 
 ### 4.5 Fundamental, Industry, Hybrid, And VCS
 
@@ -172,9 +183,9 @@ Implemented scores:
 Use in workflow:
 
 - fundamental score summarizes earnings and revenue growth inputs
-- industry score reflects the relative strength of grouped peers
+- industry score reflects relative strength of grouped peers
 - hybrid score combines RS, fundamental, and industry components
-- VCS estimates contraction quality and maturity using the published Pine workflow: true-range contraction, close stdev contraction, short-vs-long volume contraction, efficiency-based trend penalty, structural higher-low validation, EMA smoothing, and a consistency bonus
+- VCS estimates contraction quality and maturity using the published Pine-style workflow
 
 ## 5. What The User Should Treat As Research Output
 

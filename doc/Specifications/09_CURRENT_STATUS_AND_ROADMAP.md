@@ -2,7 +2,7 @@
 
 ## 1. Summary
 
-As of March 31, 2026, the active OraTek system is a working screening and candidate extraction platform. The implemented outputs are:
+As of April 3, 2026, the active OraTek system is a working screening and candidate extraction platform. The implemented outputs are:
 
 1. Market Dashboard
 2. RS Radar
@@ -14,6 +14,7 @@ The current implementation already covers:
 - daily price loading with cache and data lineage labels
 - local indicator and scoring calculation
 - configurable scan rules for candidate extraction
+- post-scan watchlist projection in the UI
 - duplicate ticker detection from scan overlap
 - market, radar, and watchlist Streamlit views
 
@@ -34,9 +35,10 @@ Implemented modules:
 Current behavior:
 
 - weekly universe discovery uses Finviz by default
+- Yahoo screener discovery is also supported by code
 - daily price data is loaded from Yahoo Finance
 - profile and fundamental fields are taken from the weekly snapshot when available and filled from Yahoo fallback providers when missing
-- cache lineage is preserved as `live`, `cache_fresh`, `cache_stale`, `snapshot`, `sample`, or `missing`
+- cache lineage is preserved as `live`, `cache_fresh`, `cache_stale`, `sample`, or `missing`
 - run metadata and snapshots are persisted under `data_runs/`
 
 ### 2.2 Indicator And Scoring Layer
@@ -53,7 +55,7 @@ Implemented modules:
 Current behavior:
 
 - 21EMA, SMA, ATR, ADR, DCR, RSI, return horizons, pocket pivot, PP count, trend base, and 3WT are computed from daily price history
-- raw RS and normalized RS are computed versus SPY
+- raw RS and normalized RS are computed versus SPY using trailing ratio-window scoring
 - fundamental, industry, hybrid, and VCS values are computed with configurable research formulas
 
 ### 2.3 Candidate Extraction Layer
@@ -67,9 +69,11 @@ Implemented modules:
 Current behavior:
 
 - enabled scan rules are executed against the eligible universe
-- the watchlist is the union of all scan hits
+- the default config enables 15 scan families
+- the raw watchlist is the union of all scan hits
+- annotation filters are computed separately and do not control watchlist eligibility
+- the app can narrow the displayed watchlist through post-scan filters and selected-card projection
 - duplicate tickers are determined from scan overlap only
-- list-style annotations are computed separately and do not control watchlist eligibility
 
 ### 2.4 Dashboard Layer
 
@@ -85,18 +89,19 @@ Current behavior:
 - Market Dashboard is active
 - RS Radar is active
 - Today's Watchlist is active
+- the watchlist page rebuilds cards and duplicate output from raw artifacts plus current sidebar state
 - the old chart, cockpit, and entry workflow are not part of the active application
 
 ## 3. What Is Still Research-Oriented
 
 The following parts are implemented but should still be treated as configurable research logic, not fixed truth:
 
+- exact universe discovery heuristics
 - exact fundamental score formula
 - exact industry score aggregation formula
 - hybrid missing-value handling policy and weights
 - VCS formula details
 - market condition component design and thresholds
-- universe discovery heuristics from third-party providers
 
 These areas are intentionally parameterized in `config/default.yaml` and modularized in the scoring and dashboard packages.
 
@@ -120,7 +125,7 @@ Remaining gaps:
 
 - no dedicated run-to-run comparison UI
 - no daily watchlist archive explorer in the app
-- no historical scan hit trend view
+- no historical scan-hit trend view
 
 ### 4.3 Formula Review And Calibration
 
@@ -132,6 +137,18 @@ Examples:
 - industry RS weighting scheme
 - market score weights and labeling thresholds
 - scan thresholds for momentum or earnings-sensitive environments
+
+### 4.4 Config Cleanup
+
+The shipped config set still contains some inactive keys and blocks.
+
+Current examples:
+
+- `app.refresh_on_start`
+- `indicators.show_overheat_dot`
+- `optional.*`
+
+These do not break the active workflow, but they are not part of current runtime behavior.
 
 ## 5. Near-Term Roadmap
 
@@ -156,8 +173,8 @@ Priority tasks:
 Priority tasks:
 
 1. document active formulas from code whenever they change
-2. keep parameter catalog synchronized with `config/default.yaml`
-3. treat changes in scoring formulas as product-level behavior changes
+2. keep the parameter catalog synchronized with `config/default.yaml`
+3. remove or clearly mark inactive config knobs that are not part of active behavior
 
 ## 6. Scope Boundary
 

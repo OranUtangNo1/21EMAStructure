@@ -67,3 +67,13 @@ def test_load_settings_accepts_config_directory_paths() -> None:
 
         assert settings["app"]["benchmark_symbol"] == "QQQ"
         assert settings["scan"]["watchlist_sort_mode"] == "hybrid_score"
+
+
+def test_default_settings_include_builtin_watchlist_presets() -> None:
+    settings = load_settings()
+
+    presets = settings["scan"]["watchlist_presets"]
+
+    assert len(presets) == 10
+    assert presets[0]["preset_name"] == "Leader Breakout"
+    assert presets[-1]["preset_name"] == "Pattern 5 - Early Reversal Signal"

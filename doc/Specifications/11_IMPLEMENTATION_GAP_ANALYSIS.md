@@ -8,22 +8,23 @@ The major scope-alignment work has already been completed. The active codebase n
 2. RS Radar
 3. Today's Watchlist
 
-The largest remaining gaps are no longer about removing out-of-scope entry logic. The current gaps are about data rigor, provider depth, and historical research workflow.
+The largest remaining gaps are no longer about removing out-of-scope entry logic. The current gaps are about data rigor, provider depth, historical review workflow, and cleanup of legacy config surfaces.
 
 ## 2. Status Matrix
 
 | Area | Current status | Notes |
 | --- | --- | --- |
 | Screening-only product scope | Implemented | Active app is limited to Market Dashboard, RS Radar, and Today's Watchlist |
-| Watchlist card grid | Implemented | Scan-card UI with duplicate ticker band and earnings card |
-| Duplicate ticker logic | Implemented | Based on overlap across enabled scans |
+| Watchlist projection UI | Implemented | Selected scans, post-scan filters, duplicate subfilters, and duplicate threshold all work in the active page |
+| Duplicate ticker logic | Implemented | Backend is scan-overlap based; UI can reproject from selected scan cards |
 | RS Radar | Implemented | Sector and industry ETF tables plus top RS movers |
-| Market Dashboard | Implemented | Composite score, breadth, snapshot, factors, and S5TH |
-| Weekly universe snapshot | Implemented | Finviz discovery with local persistence |
+| Market Dashboard | Implemented | Composite score, breadth, ETF snapshots, and factor panels; S5TH remains in the result object but is not rendered |
+| Weekly universe snapshot | Implemented | Finviz discovery with local persistence; Yahoo screener is also supported |
 | Daily price loading | Implemented | Yahoo Finance provider with cache lineage |
 | Common-stock security master | Not implemented | No strict master source yet |
 | Secondary provider chain | Not implemented | No FMP path yet |
 | Historical review UI | Partial | Run artifacts exist, but review tooling is thin |
+| Legacy config cleanup | Partial | Some shipped keys are not part of active runtime behavior |
 | Formula maturity | Partial | Several formulas remain configurable research logic |
 
 ## 3. Gaps Closed Since The Earlier Scope
@@ -36,23 +37,23 @@ Resolved:
 
 - chart and cockpit pages are no longer part of the active application flow
 - entry and risk modules are outside the active product scope
-- watchlist behavior is driven by scan results rather than entry evaluation concepts
+- watchlist behavior is driven by scan results rather than entry-evaluation concepts
 
 ### 3.2 Duplicate Logic Alignment
 
 Resolved:
 
-- duplicate tickers are now derived from scan overlap
-- the duplicate list is built directly from scan-hit artifacts
-- annotation rules no longer control duplicate eligibility
+- duplicate tickers are derived from scan overlap
+- the active page can reproject duplicate counting from selected scan cards without mutating raw scan output
+- annotation filters no longer control watchlist eligibility
 
 ### 3.3 Dashboard Alignment
 
 Resolved:
 
-- RS Radar is active inside the dashboard
-- Market Dashboard is active inside the dashboard
-- Watchlist cards are scan-based rather than generic ranked tables
+- RS Radar is active inside the app
+- Market Dashboard is active inside the app
+- watchlist cards are scan-based and driven by current sidebar controls
 
 ## 4. Active Remaining Gaps
 
@@ -60,7 +61,8 @@ Resolved:
 
 Current code uses a practical but heuristic approach:
 
-- weekly discovery from Finviz
+- weekly discovery from Finviz by default
+- optional Yahoo screener support
 - post-load local filters
 - no dedicated instrument master
 
@@ -73,8 +75,8 @@ Impact:
 
 Current code depends mainly on:
 
-- Finviz for weekly universe discovery
-- Yahoo Finance for prices and fallback profile/fundamental fields
+- Finviz for default weekly universe discovery
+- Yahoo Finance for prices and fallback profile and fundamental fields
 
 Impact:
 
@@ -102,19 +104,35 @@ Examples:
 - market condition score composition
 - sector and industry RS aggregation choices
 
+### 4.5 Legacy Config Surface
+
+The active config set still contains shipped keys that are not part of current runtime behavior.
+
+Current examples:
+
+- `app.refresh_on_start`
+- `indicators.show_overheat_dot`
+- `optional.enable_darvas_retest_filter`
+- `optional.enable_trend_regime_filter`
+
+Impact:
+
+- runtime behavior is still correct
+- documentation and maintenance are noisier than necessary
+
 ## 5. Priority Order For Future Work
 
 ### 5.1 Highest Priority
 
 1. strengthen universe quality and instrument classification
 2. add a secondary provider path
-3. add historical run comparison tools
+3. add historical run-comparison tools
 
 ### 5.2 Medium Priority
 
 1. improve observability for trend changes across runs
 2. refine formula documentation whenever code changes
-3. add more explicit UI surfacing for research annotations
+3. clean up or clearly mark inactive config knobs
 
 ### 5.3 Lower Priority
 
@@ -129,5 +147,6 @@ The active implementation is no longer missing its core product shape. The curre
 - stronger provider resilience
 - stronger historical review workflows
 - continued formula review
+- cleaner active config boundaries
 
 That is the correct interpretation of the present implementation gap.

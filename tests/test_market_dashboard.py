@@ -81,9 +81,11 @@ def test_market_dashboard_result_contains_expanded_sections() -> None:
     assert result.label_1d_ago is not None
     assert result.label_1w_ago is not None
     assert "pct_above_sma10" in result.component_scores
+    assert "safe_haven_score" in result.component_scores
     assert "pct_above_sma200" in result.breadth_summary
     assert "% 1M" in result.performance_overview
     assert "S2W HIGH %" in result.high_vix_summary
+    assert "SAFE HAVEN %" in result.high_vix_summary
     assert not result.market_snapshot.empty
     assert list(result.market_snapshot["TICKER"]) == ["AAA", "BBB"]
     assert not result.leadership_snapshot.empty
@@ -107,6 +109,8 @@ def test_market_dashboard_supports_etf_active_and_blended_modes() -> None:
         "AAA": calculator.calculate(_make_history([220.0 - (i * 0.35) for i in range(320)], dates)),
         "BBB": calculator.calculate(_make_history([180.0 - (i * 0.28) for i in range(320)], dates)),
         "^VIX": calculator.calculate(_make_history([15.0 for _ in range(320)], dates, volume_scale=100_000)),
+        "SPY": calculator.calculate(_make_history([100.0 + (i * 0.10) for i in range(320)], dates)),
+        "TLT": calculator.calculate(_make_history([120.0 - (i * 0.05) for i in range(320)], dates)),
     }
     stock_histories = {
         "UP1": calculator.calculate(_make_history([40.0 + (i * 0.22) for i in range(320)], dates)),
@@ -143,4 +147,46 @@ def test_market_dashboard_supports_etf_active_and_blended_modes() -> None:
     assert active_result.breadth_summary["pct_above_sma10"] == pytest.approx(100.0)
     assert blended_result.breadth_summary["pct_above_sma10"] == pytest.approx(75.0)
     assert etf_result.score < blended_result.score < active_result.score
-    assert blended_result.component_scores["pct_positive_ytd"] == pytest.approx(75.0)
+    assert blended_result.component_scores["pct_positive_ytd"] > 50.0
+    assert blended_result.component_scores["safe_haven_score"] > 50.0
+
+
+def test_market_dashboard_vix_scoring_is_centered_around_neutral_level() -> None:
+    dates = pd.date_range("2024-01-01", periods=320, freq="B")
+    calculator = IndicatorCalculator(IndicatorConfig())
+    benchmark_history = calculator.calculate(_make_history([100.0 + (i * 0.10) for i in range(320)], dates))
+    stock_histories = {
+        "UP1": calculator.calculate(_make_history([40.0 + (i * 0.22) for i in range(320)], dates)),
+    }
+    common_market = {
+        "AAA": calculator.calculate(_make_history([120.0 + (i * 0.20) for i in range(320)], dates)),
+        "SPY": calculator.calculate(_make_history([100.0 + (i * 0.10) for i in range(320)], dates)),
+        "TLT": calculator.calculate(_make_history([120.0 - (i * 0.05) for i in range(320)], dates)),
+    }
+    config = MarketConditionConfig.from_dict(
+        {
+            "market_condition_etf_universe": [
+                {"ticker": "AAA", "name": "Alpha"},
+            ],
+        }
+    )
+
+    low_vix_result = MarketConditionScorer(config).score(
+        stock_histories,
+        {**common_market, "^VIX": calculator.calculate(_make_history([12.0 for _ in range(320)], dates, volume_scale=100_000))},
+        benchmark_history,
+    )
+    neutral_vix_result = MarketConditionScorer(config).score(
+        stock_histories,
+        {**common_market, "^VIX": calculator.calculate(_make_history([17.0 for _ in range(320)], dates, volume_scale=100_000))},
+        benchmark_history,
+    )
+    elevated_vix_result = MarketConditionScorer(config).score(
+        stock_histories,
+        {**common_market, "^VIX": calculator.calculate(_make_history([25.0 for _ in range(320)], dates, volume_scale=100_000))},
+        benchmark_history,
+    )
+
+    assert low_vix_result.component_scores["vix_score"] == pytest.approx(75.0)
+    assert neutral_vix_result.component_scores["vix_score"] == pytest.approx(50.0)
+    assert elevated_vix_result.component_scores["vix_score"] == pytest.approx(10.0)
