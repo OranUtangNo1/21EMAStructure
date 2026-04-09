@@ -1,4 +1,0 @@
-interface:
-  display_name: "OraTek Sync Router"
-  short_description: "Choose the right OraTek sync direction"
-  default_prompt: "Use $oratek-doc-syncing to decide whether the OraTek request should route to $oratek-spec-to-code-syncing or $oratek-code-to-spec-syncing."

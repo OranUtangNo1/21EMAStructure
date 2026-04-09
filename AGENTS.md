@@ -13,8 +13,8 @@
 ## Source Of Truth
 
 - Treat implementation files and `config/default.yaml` as the source of truth for behavior.
-- Use `doc/Specifications/00_INDEX.md` as the navigation entry for numbered design docs.
-- Use `doc/Scan/` as the source of truth for per-scan definitions.
+- Use `doc/SystemDocs/Specifications/00_INDEX.md` as the navigation entry for numbered design docs.
+- Use `doc/SystemDocs/Scan/` as the source of truth for per-scan definitions.
 - Keep architecture and behavior docs aligned when changing pipeline flow, scoring logic, scan rules, or UI outputs.
 
 ## Architecture Rules
@@ -52,10 +52,11 @@
 - `app/` contains the active Streamlit application entrypoint.
 - `archived/` contains out-of-scope code and notes that are intentionally not active.
 - `config/` contains default and alternate configuration files.
-- `doc/Specifications/` contains numbered system specifications.
-- `doc/Scan/` contains one-file-per-scan canonical scan definitions.
+- `doc/SystemDocs/` contains the writable system specification set that must stay aligned with the active implementation.
+- `doc/Archive/` contains read-only warehouse-style reference material such as original dashboard notes and legacy logic references.
 - `doc/ForCodexOutput/` contains user-requested answer documents and Codex-generated project notes intended for user review.
 - `doc/ForUsersOnly/` contains project documents reserved for user-managed reading and writing unless a task explicitly directs Codex to use them.
+- `doc/SystemDocs/WatchlistPresets/` contains the built-in preset catalog documents for the current watchlist preset set.
 - `src/` contains active implementation modules.
 - `tests/` contains active automated tests.
 - `data_cache/` stores local cache artifacts.
@@ -67,10 +68,12 @@
 - New pipeline orchestration code belongs in `src/pipeline.py` or a nearby active `src/` module.
 - New UI files belong in `app/` or `src/dashboard/` depending on whether they are entrypoints or presentation helpers.
 - New configuration files belong in `config/`.
-- New numbered design documents belong in `doc/Specifications/` and must be linked from `doc/Specifications/00_INDEX.md`.
-- New per-scan documents belong in `doc/Scan/` and should follow the strict scan spec format.
+- New numbered design documents belong in `doc/SystemDocs/Specifications/` and must be linked from `doc/SystemDocs/Specifications/00_INDEX.md`.
+- New per-scan documents belong in `doc/SystemDocs/Scan/` and should follow the strict scan spec format.
 - New answer-style documents requested by the user should be saved in `doc/ForCodexOutput/`.
 - User-only working documents should be kept in `doc/ForUsersOnly/`; do not read or edit them unless the task explicitly requires it.
+- New warehouse-style reference material that does not need code-sync belongs in `doc/Archive/`.
+- Watchlist preset documentation should be saved in `doc/SystemDocs/WatchlistPresets/`.
 - New tests belong in `tests/` and should sit next to the subsystem they validate.
 - New out-of-scope material belongs in `archived/`.
 - Do not save generated cache data, run exports, or temporary investigation notes as new tracked source files unless the task explicitly requires fixtures or durable artifacts.
@@ -82,8 +85,9 @@
 - Do not edit generated artifacts in `data_cache/`, `data_runs/`, or `__pycache__/` unless the task explicitly targets persistence, fixtures, or cache behavior.
 - Treat `doc/ForCodexOutput/` as the default destination for user-requested explanatory documents that Codex creates during a task.
 - Treat `doc/ForUsersOnly/` as user-controlled documentation space. Do not read from it, write to it, or use it as source material unless the user explicitly asks.
+- Treat `doc/Archive/` as read-only warehouse material unless the user explicitly requests archive maintenance.
 - Keep active screening docs separate from archived entry/risk docs.
-- If numbered specs are added, moved, or repurposed, update `doc/Specifications/00_INDEX.md` in the same pass.
+- If numbered specs are added, moved, or repurposed, update `doc/SystemDocs/Specifications/00_INDEX.md` in the same pass.
 - Prefer ASCII-safe file edits by default. Only use non-ASCII text when it is explicitly needed and the write path has been verified to preserve UTF-8 without lossy replacement.
 
 ## Edit Rules
@@ -96,7 +100,7 @@
 - Keep source-of-truth rules explicit.
 - Keep directory ownership explicit so new files are saved in the right place.
 - When behavior changes, update the matching docs in the same pass unless the current task explicitly forbids doc edits.
-- When a scan definition changes, keep `doc/Scan/` aligned with implementation or call out the mismatch immediately.
+- When a scan definition changes, keep `doc/SystemDocs/Scan/` aligned with implementation or call out the mismatch immediately.
 - Do not add long narrative explanations here.
 
 ## Python Environment
@@ -114,4 +118,5 @@
 
 - Use `$oratek-spec-to-code-syncing` when the specifications are authoritative and implementation must change. Do not edit specs in that flow.
 - Use `$oratek-code-to-spec-syncing` when the implementation is authoritative and specifications must change. Do not edit implementation in that flow.
-- Use `$oratek-doc-syncing` only when the request is ambiguous and you need to choose the sync direction first.
+- Use `$handoff-save` before compaction, session end, or interruption when session state should be preserved in `tmp/handoffs/`.
+- Use `$handoff-resume` when resuming prior work from a saved handoff in `tmp/handoffs/`.

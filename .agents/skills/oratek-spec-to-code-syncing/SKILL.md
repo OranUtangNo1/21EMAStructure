@@ -1,6 +1,6 @@
 ---
 name: oratek-spec-to-code-syncing
-description: Use when the OraTek specifications are the source of truth and Codex must update implementation to match them. Trigger this skill when the user asks to implement behavior described in doc/Specifications, close a code-versus-spec gap by changing code, config, tests, or UI, or align the product with the written specification. Do not use it when the request is to update documentation from the current code.
+description: Use when the OraTek SystemDocs specifications are the source of truth and Codex must update implementation to match them. Trigger this skill when the user asks to implement behavior described in doc/SystemDocs, close a code-versus-spec gap by changing code, config, tests, or UI, or align the product with the written specification. Do not use it when the request is to update documentation from the current code.
 ---
 
 # OraTek Spec to Code Syncing
@@ -17,7 +17,7 @@ description: Use when the OraTek specifications are the source of truth and Code
 
 ## Workflow
 
-1. Read `doc/Specifications/00_INDEX.md` to identify the active spec set.
+1. Read `doc/SystemDocs/Specifications/00_INDEX.md` to identify the active spec set.
 2. Read the exact numbered specs in scope for the requested behavior.
 3. Read `references/doc-map.md` to choose the smallest correct implementation surface.
 4. Treat the selected specifications as the source of truth.
