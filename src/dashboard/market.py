@@ -283,8 +283,8 @@ class FactorRelativeStrengthCalculator:
         aligned = pd.concat([asset_close, benchmark_close], axis=1, join="inner").dropna()
         if len(aligned) <= periods:
             return None
-        asset_return = aligned.iloc[:, 0].pct_change(periods).iloc[-1] * 100.0
-        benchmark_return = aligned.iloc[:, 1].pct_change(periods).iloc[-1] * 100.0
+        asset_return = aligned.iloc[:, 0].pct_change(periods, fill_method=None).iloc[-1] * 100.0
+        benchmark_return = aligned.iloc[:, 1].pct_change(periods, fill_method=None).iloc[-1] * 100.0
         if pd.isna(asset_return) or pd.isna(benchmark_return):
             return None
         return float(asset_return - benchmark_return)
@@ -506,10 +506,10 @@ class MarketConditionScorer:
         sma20 = close.rolling(20).mean().iloc[index_position]
         sma50 = self._series_or_fallback(history, "sma50", 50).iloc[index_position]
         sma200 = self._series_or_fallback(history, "sma200", 200).iloc[index_position]
-        ret_1w = close.pct_change(5).iloc[index_position] * 100.0
-        ret_1m = close.pct_change(21).iloc[index_position] * 100.0
-        ret_3m = close.pct_change(63).iloc[index_position] * 100.0
-        ret_1y = close.pct_change(252).iloc[index_position] * 100.0
+        ret_1w = close.pct_change(5, fill_method=None).iloc[index_position] * 100.0
+        ret_1m = close.pct_change(21, fill_method=None).iloc[index_position] * 100.0
+        ret_3m = close.pct_change(63, fill_method=None).iloc[index_position] * 100.0
+        ret_1y = close.pct_change(252, fill_method=None).iloc[index_position] * 100.0
         ret_ytd = self._ytd_return(close, current_date, index_position)
         two_week_high = close.rolling(10).max().iloc[index_position]
         return {
@@ -606,7 +606,7 @@ class MarketConditionScorer:
     def _return_for_period(self, close: pd.Series, periods: int) -> float:
         if periods <= 0 or len(close) <= periods:
             return 0.0
-        value = close.pct_change(periods).iloc[-1] * 100.0
+        value = close.pct_change(periods, fill_method=None).iloc[-1] * 100.0
         return float(value) if pd.notna(value) else 0.0
 
     def _return_at_offset(self, history: pd.DataFrame, periods: int, offset: int) -> float | None:
@@ -615,7 +615,7 @@ class MarketConditionScorer:
         close = history["close"].astype(float)
         if len(close) <= (periods + offset):
             return None
-        value = close.pct_change(periods).iloc[-1 - offset] * 100.0
+        value = close.pct_change(periods, fill_method=None).iloc[-1 - offset] * 100.0
         if pd.isna(value):
             return None
         return float(value)

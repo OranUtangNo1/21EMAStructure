@@ -256,7 +256,7 @@ class RadarViewModelBuilder:
     def _pct_change(self, series: pd.Series, periods: int) -> float:
         if len(series) <= periods:
             return float("nan")
-        value = series.pct_change(periods).iloc[-1] * 100.0
+        value = series.pct_change(periods, fill_method=None).iloc[-1] * 100.0
         return float(value) if pd.notna(value) else float("nan")
 
     def _weighted_average(self, values: list[float], weights: tuple[float, float, float]) -> float:
