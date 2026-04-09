@@ -683,6 +683,7 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
     threshold_defaults_key = "watchlist_duplicate_threshold_defaults"
     preset_select_key = "watchlist_selected_preset_name"
     preset_name_key = "watchlist_preset_name"
+    preset_name_pending_key = "watchlist_preset_name_pending"
     preset_feedback_key = "watchlist_preset_feedback"
 
     default_selected_scan_names = list(watchlist_scan_config.startup_selected_scan_names())
@@ -768,6 +769,8 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
     feedback_message = st.session_state.pop(preset_feedback_key, "")
     if feedback_message:
         st.success(feedback_message)
+    if preset_name_pending_key in st.session_state:
+        st.session_state[preset_name_key] = st.session_state.pop(preset_name_pending_key)
 
     preset_options = [""] + list(watchlist_presets)
     selected_preset_name = st.selectbox(
@@ -818,7 +821,7 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
             selected_preset_name,
         )
         st.session_state[preset_select_key] = ""
-        st.session_state[preset_name_key] = ""
+        st.session_state[preset_name_pending_key] = ""
         st.session_state[preset_feedback_key] = f"Deleted preset '{selected_preset_name}'."
         st.rerun()
 
@@ -952,7 +955,7 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
                 _build_watchlist_preset_record(current_watchlist_controls),
             )
             st.session_state[preset_select_key] = preset_name
-            st.session_state[preset_name_key] = preset_name
+            st.session_state[preset_name_pending_key] = preset_name
             st.session_state[preset_feedback_key] = f"Saved preset '{preset_name}'."
             st.rerun()
 
@@ -963,7 +966,7 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
             selected_preset_name,
             _build_watchlist_preset_record(current_watchlist_controls),
         )
-        st.session_state[preset_name_key] = selected_preset_name
+        st.session_state[preset_name_pending_key] = selected_preset_name
         st.session_state[preset_feedback_key] = f"Updated preset '{selected_preset_name}'."
         st.rerun()
 
