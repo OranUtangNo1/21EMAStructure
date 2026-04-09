@@ -425,3 +425,53 @@ def test_indicator_calculator_adds_pullback_and_reclaim_fields() -> None:
     assert round(float(latest["volume_ratio_20d"]), 6) == round(float(expected_volume_ratio_20d), 6)
     assert bool(latest["close_crossed_above_ema21"]) is expected_cross
     assert round(float(latest["min_atr_21ema_zone_5d"]), 6) == round(float(expected_min_atr_21ema_zone_5d), 6)
+
+
+def test_indicator_calculator_adds_structure_pivot_fields_from_history() -> None:
+    dates = pd.date_range("2025-01-01", periods=8, freq="D")
+    frame = pd.DataFrame(
+        {
+            "open": [11.0, 10.5, 9.5, 10.5, 10.8, 11.0, 11.4, 11.8],
+            "high": [11.5, 10.8, 10.0, 11.0, 11.2, 11.6, 12.0, 12.5],
+            "low": [10.5, 9.0, 8.0, 9.2, 8.6, 9.4, 10.0, 10.8],
+            "close": [10.8, 9.4, 8.8, 10.6, 9.4, 11.2, 11.8, 12.2],
+            "adjusted_close": [10.8, 9.4, 8.8, 10.6, 9.4, 11.2, 11.8, 12.2],
+            "volume": [1_000_000] * 8,
+        },
+        index=dates,
+    )
+    calculator = IndicatorCalculator(
+        IndicatorConfig(
+            ema_period=2,
+            sma_short_period=2,
+            sma_long_period=3,
+            atr_period=2,
+            adr_period=2,
+            relvol_period=2,
+            enable_3wt=False,
+            structure_pivot_min_length=1,
+            structure_pivot_max_length=1,
+            structure_pivot_priority_mode="tightest",
+        )
+    )
+
+    result = calculator.calculate(frame)
+    latest = result.iloc[-1]
+
+    assert bool(latest["structure_pivot_long_active"]) is True
+    assert bool(latest["structure_pivot_long_breakout"]) is True
+    assert round(float(latest["structure_pivot_long_pivot_price"]), 6) == 11.0
+    assert float(latest["structure_pivot_long_length"]) == 1.0
+    assert round(float(latest["structure_pivot_long_ll_price"]), 6) == 8.0
+    assert round(float(latest["structure_pivot_long_hl_price"]), 6) == 8.6
+
+
+def test_structure_pivot_priority_mode_accepts_legacy_aliases() -> None:
+    calculator = IndicatorCalculator(IndicatorConfig(enable_3wt=False))
+
+    assert calculator._normalize_structure_pivot_priority_mode("tightest") == "tightest"
+    assert calculator._normalize_structure_pivot_priority_mode("Tightest Structure") == "tightest"
+    assert calculator._normalize_structure_pivot_priority_mode("longest") == "longest"
+    assert calculator._normalize_structure_pivot_priority_mode("Longest Length") == "longest"
+    assert calculator._normalize_structure_pivot_priority_mode("shortest") == "shortest"
+    assert calculator._normalize_structure_pivot_priority_mode("Shortest Length") == "shortest"

@@ -31,6 +31,7 @@ DEFAULT_SCAN_RULE_NAMES = (
     "Fundamental Demand",
     "Sustained Leadership",
     "Trend Reversal Setup",
+    "Structure Pivot",
 )
 
 DEFAULT_ANNOTATION_FILTER_NAMES = (
@@ -68,6 +69,7 @@ DEFAULT_CARD_SECTION_PAYLOADS = (
     {"scan_name": "Fundamental Demand", "display_name": "Fund Demand"},
     {"scan_name": "Sustained Leadership", "display_name": "RS Leader"},
     {"scan_name": "Trend Reversal Setup", "display_name": "Reversal Setup"},
+    {"scan_name": "Structure Pivot", "display_name": "Structure Pivot"},
 )
 DEFAULT_ANNOTATION_FILTER_PAYLOADS = (
     {"filter_name": "RS 21 >= 63", "display_name": "RS 21 >= 63"},
@@ -673,6 +675,10 @@ def _scan_trend_reversal_setup(row: pd.Series, config: ScanConfig) -> bool:
     )
 
 
+def _scan_structure_pivot(row: pd.Series, config: ScanConfig) -> bool:
+    return bool(row.get("structure_pivot_long_active", False))
+
+
 def _annotation_rs21_gte_63(row: pd.Series, config: ScanConfig) -> bool:
     rs21 = _raw_rs(row, 21)
     return bool(pd.notna(rs21) and float(rs21) >= 63.0)
@@ -707,6 +713,7 @@ SCAN_RULE_REGISTRY: dict[str, RuleEvaluator] = {
     "Fundamental Demand": _scan_fundamental_demand,
     "Sustained Leadership": _scan_sustained_leadership,
     "Trend Reversal Setup": _scan_trend_reversal_setup,
+    "Structure Pivot": _scan_structure_pivot,
 }
 
 ANNOTATION_FILTER_REGISTRY: dict[str, RuleEvaluator] = {

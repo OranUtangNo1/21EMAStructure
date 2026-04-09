@@ -36,6 +36,9 @@ class IndicatorConfig:
     show_overheat_dot: bool = True
     pp_count_window_days: int = 20
     pocket_pivot_lookback: int = 10
+    structure_pivot_min_length: int = 2
+    structure_pivot_max_length: int = 10
+    structure_pivot_priority_mode: str = "tightest"
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> "IndicatorConfig":
@@ -173,6 +176,13 @@ class IndicatorCalculator:
         df["pocket_pivot"] = self._calculate_pocket_pivot(df)
         df["pp_count_window"] = df["pocket_pivot"].rolling(self.config.pp_count_window_days).sum().fillna(0).astype(int)
         df["trend_base"] = (df["close"] > df["sma50"]) & (df["wma10_weekly"] > df["wma30_weekly"])
+        structure_fields = self._calculate_structure_pivot_snapshot(df)
+        for column_name, value in structure_fields.items():
+            if isinstance(value, bool):
+                df[column_name] = False
+            else:
+                df[column_name] = np.nan
+            df.iloc[-1, df.columns.get_loc(column_name)] = value
         return df
 
     def _calculate_rsi(self, close: pd.Series, period: int) -> pd.Series:
@@ -198,6 +208,157 @@ class IndicatorCalculator:
         prior_volume_high = df["volume"].rolling(self.config.pocket_pivot_lookback).max().shift(1)
         green_candle = df["close"] > df["open"]
         return (green_candle & (df["volume"] > prior_volume_high)).fillna(False)
+
+    def _calculate_structure_pivot_snapshot(self, df: pd.DataFrame) -> dict[str, float | bool]:
+        long_state = self._detect_structure_pivot_state(df, is_long=True)
+        short_state = self._detect_structure_pivot_state(df, is_long=False)
+        return {
+            "structure_pivot_long_active": bool(long_state["active"]),
+            "structure_pivot_long_breakout": bool(long_state["breakout"]),
+            "structure_pivot_long_pivot_price": long_state["pivot_price"],
+            "structure_pivot_long_length": long_state["length"],
+            "structure_pivot_long_ll_price": long_state["prior_price"],
+            "structure_pivot_long_hl_price": long_state["current_price"],
+            "structure_pivot_short_active": bool(short_state["active"]),
+            "structure_pivot_short_breakdown": bool(short_state["breakout"]),
+            "structure_pivot_short_pivot_price": short_state["pivot_price"],
+            "structure_pivot_short_length": short_state["length"],
+            "structure_pivot_short_hh_price": short_state["prior_price"],
+            "structure_pivot_short_lh_price": short_state["current_price"],
+        }
+
+    def _detect_structure_pivot_state(self, df: pd.DataFrame, *, is_long: bool) -> dict[str, float | bool]:
+        min_length = max(int(self.config.structure_pivot_min_length), 1)
+        max_length = max(int(self.config.structure_pivot_max_length), min_length)
+        lows = df["low"].reset_index(drop=True)
+        highs = df["high"].reset_index(drop=True)
+        closes = df["close"].reset_index(drop=True)
+        states = [
+            {
+                "length": length,
+                "prev_price": np.nan,
+                "prev_idx": None,
+                "curr_price": np.nan,
+                "curr_idx": None,
+                "is_setup": False,
+                "break_val": np.nan,
+            }
+            for length in range(min_length, max_length + 1)
+        ]
+
+        for current_bar in range(len(df)):
+            for state in states:
+                length = int(state["length"])
+                center = current_bar - length
+                if center - length < 0 or center + length > current_bar:
+                    pass
+                else:
+                    pivot_price = self._pivot_price_at(lows, highs, center=center, length=length, is_long=is_long)
+                    if pd.notna(pivot_price):
+                        current_price = state["curr_price"]
+                        setup_cond = bool(pd.notna(current_price) and ((pivot_price > current_price) if is_long else (pivot_price < current_price)))
+                        state["prev_price"] = current_price
+                        state["prev_idx"] = state["curr_idx"]
+                        state["curr_price"] = float(pivot_price)
+                        state["curr_idx"] = center
+                        state["is_setup"] = setup_cond
+                        state["break_val"] = np.nan
+                        if setup_cond and state["prev_idx"] is not None:
+                            start = int(state["prev_idx"]) + 1
+                            end = center - 1
+                            if end >= start:
+                                if is_long:
+                                    state["break_val"] = float(highs.iloc[start : end + 1].max())
+                                else:
+                                    state["break_val"] = float(lows.iloc[start : end + 1].min())
+
+                curr_idx = state["curr_idx"]
+                curr_price = state["curr_price"]
+                if not state["is_setup"] or curr_idx is None or pd.isna(curr_price):
+                    continue
+                if is_long and float(lows.iloc[current_bar]) < float(curr_price):
+                    state["is_setup"] = False
+                if not is_long and float(highs.iloc[current_bar]) > float(curr_price):
+                    state["is_setup"] = False
+
+        winner = self._select_structure_pivot_winner(states, is_long=is_long)
+        if winner is None:
+            return {
+                "active": False,
+                "breakout": False,
+                "pivot_price": np.nan,
+                "length": np.nan,
+                "prior_price": np.nan,
+                "current_price": np.nan,
+            }
+
+        pivot_price = float(winner["break_val"])
+        latest_close = float(closes.iloc[-1])
+        breakout = latest_close > pivot_price if is_long else latest_close < pivot_price
+        return {
+            "active": True,
+            "breakout": bool(breakout),
+            "pivot_price": pivot_price,
+            "length": float(winner["length"]),
+            "prior_price": float(winner["prev_price"]),
+            "current_price": float(winner["curr_price"]),
+        }
+
+    def _pivot_price_at(
+        self,
+        lows: pd.Series,
+        highs: pd.Series,
+        *,
+        center: int,
+        length: int,
+        is_long: bool,
+    ) -> float:
+        if is_long:
+            series = lows
+            current = float(series.iloc[center])
+            left = series.iloc[center - length : center]
+            right = series.iloc[center + 1 : center + length + 1]
+            if bool((current < left).all() and (current <= right).all()):
+                return current
+        else:
+            series = highs
+            current = float(series.iloc[center])
+            left = series.iloc[center - length : center]
+            right = series.iloc[center + 1 : center + length + 1]
+            if bool((current > left).all() and (current >= right).all()):
+                return current
+        return float("nan")
+
+    def _select_structure_pivot_winner(
+        self,
+        states: list[dict[str, object]],
+        *,
+        is_long: bool,
+    ) -> dict[str, object] | None:
+        candidates = [state for state in states if bool(state["is_setup"]) and pd.notna(state["break_val"])]
+        if not candidates:
+            return None
+
+        mode = self._normalize_structure_pivot_priority_mode(self.config.structure_pivot_priority_mode)
+        if mode == "longest":
+            return max(candidates, key=lambda item: int(item["length"]))
+        if mode == "shortest":
+            return min(candidates, key=lambda item: int(item["length"]))
+        if is_long:
+            return min(candidates, key=lambda item: (float(item["break_val"]), -int(item["length"])))
+        return max(candidates, key=lambda item: (float(item["break_val"]), int(item["length"])))
+
+    def _normalize_structure_pivot_priority_mode(self, raw_mode: object) -> str:
+        mode = str(raw_mode).strip().lower().replace("-", "_").replace(" ", "_")
+        aliases = {
+            "tightest": "tightest",
+            "tightest_structure": "tightest",
+            "longest": "longest",
+            "longest_length": "longest",
+            "shortest": "shortest",
+            "shortest_length": "shortest",
+        }
+        return aliases.get(mode, "tightest")
 
     def _zone_label(self, value: float, lower: float, upper: float) -> str:
         if pd.isna(value):

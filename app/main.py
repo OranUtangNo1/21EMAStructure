@@ -20,7 +20,11 @@ from src.scan.rules import ScanConfig
 from src.ui_preferences import UserPreferenceStore
 
 
-st.set_page_config(page_title="Growth Trading Screener", layout="wide")
+st.set_page_config(
+    page_title="Growth Trading Screener",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
 WATCHLIST_PRESET_GROUP = "watchlist_presets"
 WATCHLIST_PRESET_KIND = "watchlist_controls"

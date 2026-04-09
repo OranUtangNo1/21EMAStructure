@@ -286,6 +286,15 @@ def test_trend_reversal_setup_scan_rejects_rows_without_pocket_pivot_support() -
     assert result["Trend Reversal Setup"] is False
 
 
+def test_structure_pivot_scan_uses_bullish_structure_indicator_flag() -> None:
+    row = pd.Series({"structure_pivot_long_active": True, "structure_pivot_long_breakout": False})
+    config = ScanConfig(enabled_scan_rules=("Structure Pivot",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["Structure Pivot"] is True
+
+
 def test_watchlist_default_sort_prefers_hybrid_score() -> None:
     watchlist = pd.DataFrame(
         {
@@ -676,6 +685,7 @@ def test_default_scan_config_includes_new_scan_names_and_cards() -> None:
         "Fundamental Demand",
         "Sustained Leadership",
         "Trend Reversal Setup",
+        "Structure Pivot",
     }.issubset(set(config.enabled_scan_rules))
     assert "21EMA scan V2" not in set(config.enabled_scan_rules)
     assert "PP Count" in set(config.enabled_scan_rules)
@@ -688,6 +698,7 @@ def test_default_scan_config_includes_new_scan_names_and_cards() -> None:
         "Fundamental Demand",
         "Sustained Leadership",
         "Trend Reversal Setup",
+        "Structure Pivot",
     }.issubset(
         {section.scan_name for section in config.card_sections}
     )

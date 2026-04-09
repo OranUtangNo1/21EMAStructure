@@ -1,0 +1,510 @@
+//@version=6
+indicator('Structure Pivot (LL-HL / HH-LH)', overlay = true, max_lines_count = 500, max_labels_count = 500)
+
+// --- Settings ---
+grp_calc = 'Calculation'
+detect_mode = input.string("Both", "Detection Mode", options=["Long Only (LL-HL)", "Short Only (HH-LH)", "Both"], group=grp_calc)
+min_len_input = input.int(2, 'Min Length', minval = 1, group = grp_calc)
+max_len_input = input.int(10, 'Max Length', minval = 2, group = grp_calc)
+priority_mode = input.string("Tightest Structure", "Priority Mode", options=["Tightest Structure", "Longest Length", "Shortest Length"], group=grp_calc)
+
+// Visibility Settings (Current)
+grp_vis = 'Visibility Settings (Current)'
+show_Labels = input.bool(true, 'Show Labels (HH/LL/HL/LH)', group = grp_vis)
+show_Trend  = input.bool(true, 'Show Structure Line', group = grp_vis)
+show_PLine  = input.bool(true, 'Show Pivot Line', group = grp_vis)
+show_PPrice = input.bool(true, 'Show Pivot Price', group = grp_vis)
+show_Counter = input.bool(true, 'Show Counter Trend', group = grp_vis)
+lock_Counter = input.bool(true, 'Lock Line on Break', group = grp_vis)
+
+// History Settings
+grp_hist = 'History Settings'
+show_History       = input.bool(true, 'Show Pivot History', group = grp_hist)
+show_Price_History = input.bool(true, 'Show Price History (on History Lines)', group = grp_hist)
+show_Label_History = input.bool(true, 'Show Label History', group = grp_hist)
+limit_History      = input.bool(true, 'Limit History by Bars', group = grp_hist) 
+hist_bars          = input.int(100, 'Max History Bars', minval=10, maxval=5000, group=grp_hist, tooltip="Deletes lines/labels older than this number of bars")
+
+grp_style = 'Style Settings'
+lblSize = input.string(size.small, 'Text Size', options = [size.tiny, size.small, size.normal, size.large], group = grp_style)
+col_Long = input.color(color.rgb(0, 150, 255), 'Long Color (LL-HL)', group = grp_style)
+col_Short = input.color(color.rgb(255, 50, 80), 'Short Color (HH-LH)', group = grp_style)
+width_Line = input.int(1, 'Line Width', minval = 1, group = grp_style)
+style_Trend = input.string(line.style_dashed, 'Structure Line Style', options = [line.style_solid, line.style_dashed, line.style_dotted], group = grp_style)
+style_Pivot = input.string(line.style_solid, 'Pivot Line Style', options = [line.style_solid, line.style_dashed, line.style_dotted], group = grp_style)
+style_Counter = input.string(line.style_dashed, 'Counter Line Style', options = [line.style_solid, line.style_dashed, line.style_dotted], group = grp_style)
+
+// History Styles
+col_Pivot_Hist = input.color(color.gray, 'History Color', group = grp_style)
+width_Pivot_Hist = input.int(1, 'History Pivot Width', minval = 1, group = grp_style)
+style_Pivot_Hist = input.string(line.style_dotted, 'History Pivot Style', options = [line.style_solid, line.style_dashed, line.style_dotted], group = grp_style)
+
+// --- Structs ---
+type PivotState
+    int len          
+    float prev_p     
+    int prev_idx     
+    float curr_p     
+    int curr_idx     
+    bool is_setup    
+    float break_val  
+    int break_idx    
+    bool is_long     
+
+type DrawObjects
+    line l_trend = na
+    line l_pivot = na
+    line l_counter = na 
+    label lbl_price = na
+    label lbl_curr = na
+    label lbl_prev = na
+    int sig = 0
+    // Locking State
+    bool cnt_locked = false
+    int cnt_x1 = na
+    float cnt_y1 = na
+    int cnt_x2 = na
+    float cnt_y2 = na
+
+type HistoryLine
+    line l
+    label p
+
+// --- Variables ---
+var PivotState[] states_long = array.new<PivotState>()
+var PivotState[] states_short = array.new<PivotState>()
+
+var HistoryLine[] history_lines = array.new<HistoryLine>()
+var label[] history_labels = array.new<label>()
+
+if bar_index == 0
+    for i = min_len_input to max_len_input
+        array.push(states_long, PivotState.new(i, na, na, na, na, false, na, na, true))
+        array.push(states_short, PivotState.new(i, na, na, na, na, false, na, na, false))
+
+// Initialize Drawing Objects
+var DrawObjects d_long = DrawObjects.new()
+var DrawObjects d_short = DrawObjects.new()
+
+// --- Method ---
+method update(PivotState st) =>
+    float p = st.is_long ? ta.pivotlow(low, st.len, st.len) : ta.pivothigh(high, st.len, st.len)
+    
+    if not na(p)
+        bool setup_cond = false
+        if not na(st.curr_p)
+            if st.is_long
+                if p > st.curr_p // Higher Low
+                    setup_cond := true
+            else
+                if p < st.curr_p // Lower High
+                    setup_cond := true
+        
+        st.prev_p := st.curr_p
+        st.prev_idx := st.curr_idx
+        st.curr_p := p
+        st.curr_idx := bar_index - st.len
+        st.is_setup := setup_cond
+        st.break_val := na
+        st.break_idx := na
+        
+        if setup_cond and not na(st.prev_idx)
+            float best_val = st.is_long ? 0.0 : 1000000.0
+            int best_idx = -1
+            int start_s = st.prev_idx + 1
+            int end_s = st.curr_idx - 1
+            
+            if end_s >= start_s
+                for i = start_s to end_s
+                    float v = st.is_long ? high[bar_index - i] : low[bar_index - i]
+                    if st.is_long
+                        if v > best_val
+                            best_val := v
+                            best_idx := i
+                    else
+                        if v < best_val
+                            best_val := v
+                            best_idx := i
+                            
+            if best_idx != -1
+                st.break_val := best_val
+                st.break_idx := best_idx
+
+// --- Helper: Label Logic ---
+is_bottom_label(string txt) =>
+    str.contains(txt, "LL") or str.contains(txt, "HL")
+
+method push_stack(label[] arr, label lbl) =>
+    bool merged = false
+    if array.size(arr) > 0
+        int check_limit = math.min(20, array.size(arr)) 
+        for i = 1 to check_limit
+            int idx = array.size(arr) - i
+            label h_lbl = array.get(arr, idx)
+            
+            if label.get_x(h_lbl) == label.get_x(lbl)
+                string t_hist = label.get_text(h_lbl)
+                string t_new = label.get_text(lbl)
+                
+                bool hist_is_bottom = is_bottom_label(t_hist)
+                bool new_is_bottom  = is_bottom_label(t_new)
+                
+                if hist_is_bottom == new_is_bottom
+                    if not str.contains(t_hist, t_new)
+                        label.set_text(h_lbl, t_hist + "•" + t_new)
+                    label.delete(lbl)
+                    merged := true
+                    break
+    if not merged
+        array.push(arr, lbl)
+
+// --- Main Logic ---
+for st in states_long
+    st.update()
+    if st.is_setup and not na(st.curr_p) and low < st.curr_p
+        st.is_setup := false
+
+for st in states_short
+    st.update()
+    if st.is_setup and not na(st.curr_p) and high > st.curr_p
+        st.is_setup := false
+
+find_winner(PivotState[] arr, string p_mode) =>
+    PivotState w = na
+    for st in arr
+        if st.is_setup and not na(st.break_val)
+            bool upd = false
+            if na(w)
+                upd := true
+            else
+                if p_mode == "Tightest Structure"
+                    if st.is_long
+                        if st.break_val < w.break_val
+                            upd := true
+                    else
+                        if st.break_val > w.break_val
+                            upd := true
+                else if p_mode == "Longest Length"
+                    upd := true
+                else
+                    upd := false 
+            if upd
+                w := st
+    w
+
+PivotState win_long = na
+PivotState win_short = na
+
+win_long := find_winner(states_long, priority_mode)
+if na(win_long) and array.size(states_long) > 0
+    win_long := array.get(states_long, 0)
+if not win_long.is_setup and not na(win_long.curr_p) and low < win_long.curr_p
+    win_long.curr_p := low
+    win_long.curr_idx := bar_index
+
+win_short := find_winner(states_short, priority_mode)
+if na(win_short) and array.size(states_short) > 0
+    win_short := array.get(states_short, 0)
+if not win_short.is_setup and not na(win_short.curr_p) and high > win_short.curr_p
+    win_short.curr_p := high
+    win_short.curr_idx := bar_index
+
+// --- Helper: Find Counter Line Coordinates ---
+get_counter_coordinates(PivotState[] arr, int limit_idx, bool find_highs) =>
+    float anchor_val = find_highs ? -1000000.0 : 1000000.0
+    float anchor_x = na
+    float anchor_y = na
+    
+    for st in arr
+        if not na(st.prev_idx) and not na(st.prev_p)
+            if st.prev_idx <= limit_idx 
+                bool is_extreme = false
+                if find_highs
+                    if st.prev_p > anchor_val
+                        is_extreme := true
+                else
+                    if st.prev_p < anchor_val
+                        is_extreme := true
+                if is_extreme
+                    anchor_val := st.prev_p
+                    anchor_x := float(st.prev_idx)
+                    anchor_y := st.prev_p
+
+        if not na(st.curr_idx) and not na(st.curr_p)
+            if st.curr_idx <= limit_idx 
+                bool is_extreme = false
+                if find_highs
+                    if st.curr_p > anchor_val
+                        is_extreme := true
+                else
+                    if st.curr_p < anchor_val
+                        is_extreme := true
+                if is_extreme
+                    anchor_val := st.curr_p
+                    anchor_x := float(st.curr_idx)
+                    anchor_y := st.curr_p
+    
+    float best_slope = na
+    float res_x2 = na
+    float res_y2 = na
+    
+    if not na(anchor_x)
+        float x1 = anchor_x
+        float y1 = anchor_y
+        for st in arr
+            if not na(st.curr_idx) and not na(st.curr_p)
+                if st.curr_idx > x1 and st.curr_idx < limit_idx
+                    float m = (st.curr_p - y1) / (st.curr_idx - x1)
+                    bool update_best = false
+                    if na(best_slope)
+                        update_best := true
+                    else
+                        if find_highs
+                            if m > best_slope
+                                update_best := true
+                        else
+                            if m < best_slope
+                                update_best := true
+                    
+                    if update_best
+                        best_slope := m
+                        res_x2 := float(st.curr_idx)
+                        res_y2 := st.curr_p
+
+        if not na(res_x2)
+            [x1, y1, res_x2, res_y2]
+        else
+            [float(na), float(na), float(na), float(na)]
+    else
+        [float(na), float(na), float(na), float(na)]
+
+// --- Drawing Function ---
+draw_struct(PivotState w, PivotState[] opp_arr, DrawObjects d, bool is_l) =>
+    float current_cnt_val = na
+    
+    int sig = w.curr_idx * 1000 + w.len * 10 + (w.is_setup ? 1 : 0)
+    
+    if sig != d.sig
+        line.delete(d.l_trend)
+        line.delete(d.l_counter)
+        
+        // Independent History Logic
+        if not na(d.l_pivot)
+            // --- 1. Pivot Line & Price (Synchronized) ---
+            if show_History
+                line.set_color(d.l_pivot, col_Pivot_Hist)
+                line.set_width(d.l_pivot, width_Pivot_Hist)
+                line.set_style(d.l_pivot, style_Pivot_Hist)
+                
+                label saved_price_lbl = na
+                if show_Price_History and not na(d.lbl_price)
+                    // Check for duplicate prices
+                    if array.size(history_lines) > 0
+                        float new_p = label.get_y(d.lbl_price)
+                        for i = 0 to array.size(history_lines) - 1
+                            HistoryLine hl_old = array.get(history_lines, i)
+                            if not na(hl_old.p)
+                                float old_p = label.get_y(hl_old.p)
+                                if new_p == old_p
+                                    label.delete(hl_old.p) // Remove old duplicate
+                                    hl_old.p := na // Unlink
+                    
+                    label.set_textcolor(d.lbl_price, col_Pivot_Hist)
+                    saved_price_lbl := d.lbl_price
+                else
+                    label.delete(d.lbl_price)
+                
+                array.push(history_lines, HistoryLine.new(d.l_pivot, saved_price_lbl))
+            else
+                line.delete(d.l_pivot)
+                label.delete(d.lbl_price)
+
+            // --- 2. Labels (HH/LL etc) ---
+            if show_Label_History
+                if not na(d.lbl_curr)
+                    label.set_textcolor(d.lbl_curr, col_Pivot_Hist)
+                    history_labels.push_stack(d.lbl_curr)
+                if not na(d.lbl_prev)
+                    label.set_textcolor(d.lbl_prev, col_Pivot_Hist)
+                    history_labels.push_stack(d.lbl_prev)
+            else
+                label.delete(d.lbl_curr)
+                label.delete(d.lbl_prev)
+        else
+            line.delete(d.l_pivot)
+            label.delete(d.lbl_price)
+            label.delete(d.lbl_curr)
+            label.delete(d.lbl_prev)
+        
+        d.l_trend := na
+        d.l_pivot := na
+        d.l_counter := na
+        d.lbl_price := na
+        d.lbl_curr := na
+        d.lbl_prev := na
+        d.cnt_locked := false
+        d.cnt_x1 := na
+        d.cnt_y1 := na
+        d.cnt_x2 := na
+        d.cnt_y2 := na
+        
+        color c_base = is_l ? col_Long : col_Short
+
+        if not na(w.curr_p)
+            string txt_c = is_l ? (w.is_setup ? "HL" : "LL") : (w.is_setup ? "LH" : "HH")
+            string sty_c = is_l ? label.style_label_up : label.style_label_down
+            
+            if show_Labels
+                d.lbl_curr := label.new(w.curr_idx, w.curr_p, text=txt_c, style=sty_c, color=color.new(color.white, 100), textcolor=c_base, size=lblSize)
+            
+            if w.is_setup and not na(w.prev_idx)
+                string txt_p = is_l ? "LL" : "HH"
+                if show_Labels
+                    d.lbl_prev := label.new(w.prev_idx, w.prev_p, text=txt_p, style=sty_c, color=color.new(color.white, 100), textcolor=c_base, size=lblSize)
+                
+                if show_Trend
+                    d.l_trend := line.new(w.prev_idx, w.prev_p, w.curr_idx, w.curr_p, color=c_base, style=style_Trend, width=width_Line)
+                
+                if not na(w.break_idx)
+                    if show_PLine
+                        d.l_pivot := line.new(w.break_idx, w.break_val, bar_index + 5, w.break_val, color=c_base, width=width_Line, style=style_Pivot)
+                    if show_PPrice
+                        string p_txt = "Pivot = " + str.tostring(w.break_val, "#,###.#####")
+                        d.lbl_price := label.new(bar_index + 5, w.break_val, text=p_txt, style=label.style_label_left, color=color.new(color.white, 100), textcolor=c_base, size=lblSize)
+        d.sig := sig
+
+    // --- Counter Trend Logic ---
+    bool draw_cnt = false
+    if show_Counter and (not w.is_setup)
+        float c_x1 = na
+        float c_y1 = na
+        float c_x2 = na
+        float c_y2 = na
+        
+        if lock_Counter and d.cnt_locked
+            c_x1 := float(d.cnt_x1)
+            c_y1 := d.cnt_y1
+            c_x2 := float(d.cnt_x2)
+            c_y2 := d.cnt_y2
+        else
+            [tx1, ty1, tx2, ty2] = get_counter_coordinates(opp_arr, w.curr_idx, is_l)
+            c_x1 := tx1
+            c_y1 := ty1
+            c_x2 := tx2
+            c_y2 := ty2
+
+        if not na(c_x1) and not na(c_x2)
+            draw_cnt := true
+            color c_cnt = is_l ? col_Long : col_Short 
+            float m = (c_y2 - c_y1) / (c_x2 - c_x1)
+            current_cnt_val := c_y2 + m * (bar_index - c_x2)
+            int target_x = bar_index + 5
+            float target_y = c_y2 + m * (target_x - c_x2)
+            
+            line.delete(d.l_counter)
+            d.l_counter := line.new(int(c_x1), c_y1, target_x, target_y, color=c_cnt, width=width_Line, style=style_Counter, extend=extend.none)
+            
+            if lock_Counter and not d.cnt_locked
+                bool is_break = is_l ? (close > current_cnt_val) : (close < current_cnt_val)
+                if is_break
+                    d.cnt_locked := true
+                    d.cnt_x1 := int(c_x1)
+                    d.cnt_y1 := c_y1
+                    d.cnt_x2 := int(c_x2)
+                    d.cnt_y2 := c_y2
+
+    if not draw_cnt
+        line.delete(d.l_counter)
+        d.l_counter := na
+
+    if w.is_setup
+        if not na(d.l_pivot)
+            line.set_x2(d.l_pivot, bar_index + 5)
+        if not na(d.lbl_price)
+            label.set_x(d.lbl_price, bar_index + 5)
+        
+        bool fail = is_l ? (low < w.curr_p) : (high > w.curr_p)
+        if fail
+            w.is_setup := false
+            line.delete(d.l_trend)
+            line.delete(d.l_pivot)
+            label.delete(d.lbl_price)
+            label.delete(d.lbl_curr)
+            label.delete(d.lbl_prev)
+            d.l_trend := na
+            d.l_pivot := na
+            d.sig := -1
+            
+    current_cnt_val
+
+// --- History Cleanup & Extension Logic ---
+
+// 1. Pivot Lines & Prices Cleanup
+if show_History and array.size(history_lines) > 0
+    for i = array.size(history_lines) - 1 to 0
+        HistoryLine hl = array.get(history_lines, i)
+        
+        line.set_x2(hl.l, bar_index + 5)
+        
+        if not na(hl.p)
+            label.set_x(hl.p, bar_index + 5)
+        
+        if limit_History
+            int l_idx = line.get_x1(hl.l)
+            int dist = bar_index - l_idx
+            if dist > hist_bars
+                line.delete(hl.l)
+                label.delete(hl.p)
+                array.remove(history_lines, i)
+
+// 2. Label Cleanup (HH/LL)
+if show_Label_History and array.size(history_labels) > 0
+    for i = array.size(history_labels) - 1 to 0
+        label lb = array.get(history_labels, i)
+        
+        if limit_History
+            int l_idx = label.get_x(lb)
+            int dist = bar_index - l_idx
+            if dist > hist_bars
+                label.delete(lb)
+                array.remove(history_labels, i)
+
+// Execute Drawing
+float cnt_val_long = na
+float cnt_val_short = na
+
+if detect_mode != "Short Only (HH-LH)" and not na(win_long)
+    cnt_val_long := draw_struct(win_long, states_short, d_long, true)
+
+if detect_mode != "Long Only (LL-HL)" and not na(win_short)
+    cnt_val_short := draw_struct(win_short, states_long, d_short, false)
+
+// --- Alerts ---
+bool alert_l = not na(win_long) and win_long.is_setup and not na(win_long.break_val) and ta.crossover(close, win_long.break_val)
+bool alert_s = not na(win_short) and win_short.is_setup and not na(win_short.break_val) and ta.crossunder(close, win_short.break_val)
+
+bool alert_cnt_break_l = not na(cnt_val_long) and ta.crossover(close, cnt_val_long)
+bool alert_cnt_break_s = not na(cnt_val_short) and ta.crossunder(close, cnt_val_short)
+
+// Track Latest HH/LL from Structure
+var float last_hh_val = na
+var float last_ll_val = na
+
+if not na(win_short)
+    last_hh_val := win_short.prev_p 
+if not na(win_long)
+    last_ll_val := win_long.prev_p
+
+bool alert_hh_break = not na(last_hh_val) and ta.crossover(close, last_hh_val)
+bool alert_ll_break = not na(last_ll_val) and ta.crossunder(close, last_ll_val)
+
+// Consolidate All Alerts
+bool alert_any = alert_l or alert_s or alert_hh_break or alert_ll_break or alert_cnt_break_l or alert_cnt_break_s
+
+alertcondition(alert_l, "HH/LH Pivot Break", "Price broke above Pivot (Long Setup). Price: {{close}}")
+alertcondition(alert_s, "LL/HL Pivot Break", "Price broke below Pivot (Short Setup). Price: {{close}}")
+alertcondition(alert_hh_break, "HH Break", "Price broke above HH. Price: {{close}}")
+alertcondition(alert_ll_break, "LL Break", "Price broke below LL. Price: {{close}}")
+alertcondition(alert_cnt_break_l, "Counter Trend Break (Long)", "Price broke above Counter Trend Line. Price: {{close}}")
+alertcondition(alert_cnt_break_s, "Counter Trend Break (Short)", "Price broke below Counter Trend Line. Price: {{close}}")
+alertcondition(alert_any, "All Alerts", "Triggered one of the structure alerts. Price: {{close}}")

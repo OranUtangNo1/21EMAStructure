@@ -23,3 +23,6 @@ indicators:
   show_overheat_dot: true
   pp_count_window_days: 20
   pocket_pivot_lookback: 10
+  structure_pivot_min_length: 2
+  structure_pivot_max_length: 10
+  structure_pivot_priority_mode: tightest

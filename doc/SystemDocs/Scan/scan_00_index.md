@@ -40,7 +40,7 @@ Each file in this folder must allow a developer to reproduce the scan boolean lo
 
 ## Active Scan Specs
 
-The default config currently enables `20` scan families.
+The default config currently enables `21` scan families.
 
 | File | Canonical scan name | Implementation owner |
 |---|---|---|
@@ -64,6 +64,7 @@ The default config currently enables `20` scan families.
 | [scan_18_fundamental_demand.md](scan_18_fundamental_demand.md) | `Fundamental Demand` | `src/scan/rules.py::_scan_fundamental_demand` |
 | [scan_19_sustained_leadership.md](scan_19_sustained_leadership.md) | `Sustained Leadership` | `src/scan/rules.py::_scan_sustained_leadership` |
 | [scan_20_trend_reversal_setup.md](scan_20_trend_reversal_setup.md) | `Trend Reversal Setup` | `src/scan/rules.py::_scan_trend_reversal_setup` |
+| [scan_21_structure_pivot.md](scan_21_structure_pivot.md) | `Structure Pivot` | `src/scan/rules.py::_scan_structure_pivot` |
 
 ## Out Of Scope
 

@@ -58,6 +58,7 @@
   - Fundamental Demand
   - Sustained Leadership
   - Trend Reversal Setup
+  - Structure Pivot
   default_selected_scan_names:
   - 21EMA scan
   - Pullback Quality scan
@@ -79,6 +80,7 @@
   - Fundamental Demand
   - Sustained Leadership
   - Trend Reversal Setup
+  - Structure Pivot
   enabled_annotation_filters: []
   annotation_filters:
   - filter_name: RS 21 >= 63
@@ -194,3 +196,5 @@
     display_name: RS Leader
   - scan_name: Trend Reversal Setup
     display_name: Reversal Setup
+  - scan_name: Structure Pivot
+    display_name: Structure Pivot
