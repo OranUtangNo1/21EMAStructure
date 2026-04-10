@@ -243,6 +243,8 @@ class ScanConfig:
     reversal_dist_52w_low_max: float = 40.0
     reversal_dist_52w_high_min: float = -40.0
     reversal_rs21_min: float = 50.0
+    structure_pivot_breakout_rel_volume_min: float = 1.4
+    structure_pivot_include_gap_up_breakouts: bool = True
     duplicate_min_count: int = 3
     high_eps_growth_rank_threshold: float = 90.0
     pp_count_scan_min: int = 3
@@ -676,7 +678,15 @@ def _scan_trend_reversal_setup(row: pd.Series, config: ScanConfig) -> bool:
 
 
 def _scan_structure_pivot(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(row.get("structure_pivot_long_active", False))
+    if not bool(row.get("structure_pivot_long_active", False)):
+        return False
+    if not bool(row.get("structure_pivot_long_breakout_first_day", False)):
+        return False
+    if float(row.get("rel_volume", float("nan"))) < config.structure_pivot_breakout_rel_volume_min:
+        return False
+    if not config.structure_pivot_include_gap_up_breakouts and bool(row.get("structure_pivot_long_breakout_gap_up", False)):
+        return False
+    return True
 
 
 def _annotation_rs21_gte_63(row: pd.Series, config: ScanConfig) -> bool:

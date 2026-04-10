@@ -70,6 +70,8 @@ class WatchlistViewModelBuilder:
             "ud_volume_ratio",
             "structure_pivot_long_active",
             "structure_pivot_long_breakout",
+            "structure_pivot_long_breakout_first_day",
+            "structure_pivot_long_breakout_gap_up",
             "structure_pivot_long_pivot_price",
             "structure_pivot_long_length",
             "earnings",

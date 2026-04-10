@@ -460,10 +460,48 @@ def test_indicator_calculator_adds_structure_pivot_fields_from_history() -> None
 
     assert bool(latest["structure_pivot_long_active"]) is True
     assert bool(latest["structure_pivot_long_breakout"]) is True
+    assert bool(latest["structure_pivot_long_breakout_first_day"]) is False
+    assert bool(latest["structure_pivot_long_breakout_gap_up"]) is False
     assert round(float(latest["structure_pivot_long_pivot_price"]), 6) == 11.0
     assert float(latest["structure_pivot_long_length"]) == 1.0
     assert round(float(latest["structure_pivot_long_ll_price"]), 6) == 8.0
     assert round(float(latest["structure_pivot_long_hl_price"]), 6) == 8.6
+
+
+def test_indicator_calculator_flags_first_day_structure_pivot_breakout() -> None:
+    dates = pd.date_range("2025-01-01", periods=6, freq="D")
+    frame = pd.DataFrame(
+        {
+            "open": [11.0, 10.5, 9.5, 10.5, 10.8, 11.0],
+            "high": [11.5, 10.8, 10.0, 11.0, 11.2, 11.6],
+            "low": [10.5, 9.0, 8.0, 9.2, 8.6, 9.4],
+            "close": [10.8, 9.4, 8.8, 10.6, 9.4, 11.2],
+            "adjusted_close": [10.8, 9.4, 8.8, 10.6, 9.4, 11.2],
+            "volume": [1_000_000] * 6,
+        },
+        index=dates,
+    )
+    calculator = IndicatorCalculator(
+        IndicatorConfig(
+            ema_period=2,
+            sma_short_period=2,
+            sma_long_period=3,
+            atr_period=2,
+            adr_period=2,
+            relvol_period=2,
+            enable_3wt=False,
+            structure_pivot_min_length=1,
+            structure_pivot_max_length=1,
+            structure_pivot_priority_mode="tightest",
+        )
+    )
+
+    result = calculator.calculate(frame)
+    latest = result.iloc[-1]
+
+    assert bool(latest["structure_pivot_long_breakout"]) is True
+    assert bool(latest["structure_pivot_long_breakout_first_day"]) is True
+    assert bool(latest["structure_pivot_long_breakout_gap_up"]) is False
 
 
 def test_structure_pivot_priority_mode_accepts_legacy_aliases() -> None:

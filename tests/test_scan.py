@@ -286,13 +286,71 @@ def test_trend_reversal_setup_scan_rejects_rows_without_pocket_pivot_support() -
     assert result["Trend Reversal Setup"] is False
 
 
-def test_structure_pivot_scan_uses_bullish_structure_indicator_flag() -> None:
-    row = pd.Series({"structure_pivot_long_active": True, "structure_pivot_long_breakout": False})
+def test_structure_pivot_scan_requires_first_day_breakout_and_volume_confirmation() -> None:
+    row = pd.Series(
+        {
+            "structure_pivot_long_active": True,
+            "structure_pivot_long_breakout_first_day": True,
+            "structure_pivot_long_breakout_gap_up": False,
+            "rel_volume": 1.4,
+        }
+    )
     config = ScanConfig(enabled_scan_rules=("Structure Pivot",))
 
     result = evaluate_scan_rules(row, config)
 
     assert result["Structure Pivot"] is True
+
+
+def test_structure_pivot_scan_rejects_non_first_day_breakout() -> None:
+    row = pd.Series(
+        {
+            "structure_pivot_long_active": True,
+            "structure_pivot_long_breakout_first_day": False,
+            "structure_pivot_long_breakout_gap_up": False,
+            "rel_volume": 2.0,
+        }
+    )
+    config = ScanConfig(enabled_scan_rules=("Structure Pivot",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["Structure Pivot"] is False
+
+
+def test_structure_pivot_scan_rejects_breakout_without_required_volume() -> None:
+    row = pd.Series(
+        {
+            "structure_pivot_long_active": True,
+            "structure_pivot_long_breakout_first_day": True,
+            "structure_pivot_long_breakout_gap_up": False,
+            "rel_volume": 1.39,
+        }
+    )
+    config = ScanConfig(enabled_scan_rules=("Structure Pivot",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["Structure Pivot"] is False
+
+
+def test_structure_pivot_scan_can_exclude_gap_up_breakouts() -> None:
+    row = pd.Series(
+        {
+            "structure_pivot_long_active": True,
+            "structure_pivot_long_breakout_first_day": True,
+            "structure_pivot_long_breakout_gap_up": True,
+            "rel_volume": 2.0,
+        }
+    )
+    config = ScanConfig(
+        enabled_scan_rules=("Structure Pivot",),
+        structure_pivot_include_gap_up_breakouts=False,
+    )
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["Structure Pivot"] is False
 
 
 def test_watchlist_default_sort_prefers_hybrid_score() -> None:

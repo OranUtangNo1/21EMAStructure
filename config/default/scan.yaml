@@ -31,6 +31,8 @@
   reversal_dist_52w_low_max: 40.0
   reversal_dist_52w_high_min: -40.0
   reversal_rs21_min: 50.0
+  structure_pivot_breakout_rel_volume_min: 1.4
+  structure_pivot_include_gap_up_breakouts: true
   duplicate_min_count: 3
   high_eps_growth_rank_threshold: 90.0
   pp_count_scan_min: 3
