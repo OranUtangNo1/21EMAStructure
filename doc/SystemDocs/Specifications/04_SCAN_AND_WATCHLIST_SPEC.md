@@ -214,6 +214,8 @@ and keeps the top three rows.
 
 Preset export behavior uses the preset's own duplicate rule when one is defined in config.
 
+`preset_summary.csv` uses one row per output ticker. The `hit_presets` column lists the built-in presets that emitted that ticker, and the selected scan, annotation, duplicate-threshold, and duplicate-rule columns summarize the unique settings across those hit presets.
+
 ### 3.5 Preset effectiveness logs
 
 The app also maintains a cumulative fact log for built-in watchlist presets that are export-enabled.

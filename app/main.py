@@ -18,6 +18,8 @@ from src.dashboard.effectiveness import sync_preset_effectiveness_logs
 from src.dashboard.watchlist import WatchlistViewModelBuilder
 from src.pipeline import PlatformArtifacts, ResearchPlatform
 from src.scan.rules import DuplicateRuleConfig, ScanConfig
+from src.signals.rules import ENTRY_SIGNAL_REGISTRY, EntrySignalConfig
+from src.signals.runner import EntrySignalRunner
 from src.ui_preferences import UserPreferenceStore
 
 
@@ -38,7 +40,7 @@ GLOBAL_CSS = """
 :root { --bg:#f3f5fb; --panel:#ffffff; --panel-border:#dbe4f3; --text:#223045; --muted:#6f7f98; }
 html, body, [class*="css"] { font-family:"Aptos","Segoe UI","Yu Gothic UI",sans-serif; }
 [data-testid="stAppViewContainer"] { background:radial-gradient(circle at top left, rgba(86,138,237,.12), transparent 26%), linear-gradient(180deg, #f8fbff 0%, var(--bg) 100%); color:var(--text); }
-header[data-testid="stHeader"] { display:none; }
+header[data-testid="stHeader"] { background:transparent; box-shadow:none; }
 .block-container { max-width:1440px; padding-top:.9rem; padding-bottom:2.3rem; }
 section[data-testid="stSidebar"] { background:linear-gradient(180deg, #fbfdff 0%, #f4f8ff 100%); border-right:1px solid var(--panel-border); }
 div.stButton > button { background:linear-gradient(135deg, #2d6cdf 0%, #528eee 100%); color:#fff; border:none; border-radius:14px; font-weight:700; box-shadow:0 12px 24px rgba(45,108,223,.18); }
@@ -189,8 +191,15 @@ class WatchlistSidebarState:
     selected_preset_export_values: dict[str, object] | None = None
 
 
+@dataclass(frozen=True)
+class EntrySignalSidebarState:
+    signal_config: EntrySignalConfig
+    selected_signal_names: list[str]
+
+
 APP_PAGES: tuple[AppPageDefinition, ...] = (
     AppPageDefinition("watchlist", "Today's Watchlist"),
+    AppPageDefinition("entry_signals", "Entry Signals"),
     AppPageDefinition("rs_radar", "RS Radar"),
     AppPageDefinition("market_dashboard", "Market Dashboard"),
 )
@@ -424,6 +433,11 @@ def load_artifacts(config_path: str, symbols: list[str], force_universe_refresh:
 def load_scan_config(config_path: str) -> ScanConfig:
     settings = load_settings(config_path)
     return ScanConfig.from_dict(settings.get("scan", {}))
+
+
+def load_entry_signal_config(config_path: str) -> EntrySignalConfig:
+    settings = load_settings(config_path)
+    return EntrySignalConfig.from_dict(settings.get("entry_signals", {}))
 
 
 def _latest_trade_date_for_export(artifacts: PlatformArtifacts) -> str:
@@ -904,12 +918,8 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
             if name in available_duplicate_subfilters
         ]
 
-    selected_duplicate_subfilters = st.multiselect(
-        "Duplicate subfilters",
-        options=available_duplicate_subfilters,
-        key=duplicate_subfilter_key,
-        help="Applied only to Duplicate Tickers after duplicate thresholding. Top3 HybridRS keeps the three highest hybrid_score names among duplicate candidates.",
-    )
+    selected_duplicate_subfilters: list[str] = []
+    st.session_state[duplicate_subfilter_key] = selected_duplicate_subfilters
 
     max_threshold = max(1, len(selected_watchlist_scans)) if selected_watchlist_scans else 1
     threshold_defaults_signature = (watchlist_preferences_namespace, max_threshold)
@@ -1013,7 +1023,7 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
         current_watchlist_controls,
     )
     st.caption("Load any preset to apply it. Only saved presets can be updated or deleted; built-in presets are read-only.")
-    st.caption("Selected cards drive card display and Duplicate Tickers. Post-scan filters narrow the displayed watchlist after scan hits are computed. Duplicate subfilters apply only inside Duplicate Tickers.")
+    st.caption("Selected cards drive card display and Duplicate Tickers. Post-scan filters narrow the displayed watchlist after scan hits are computed.")
 
     return WatchlistSidebarState(
         scan_config=watchlist_scan_config,
@@ -1024,6 +1034,31 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
         duplicate_rule=st.session_state.get(duplicate_rule_key),
         selected_preset_export_name=selected_preset_export_name,
         selected_preset_export_values=selected_preset_export_values,
+    )
+
+
+def render_entry_signal_sidebar_controls(config_path: str) -> EntrySignalSidebarState:
+    signal_config = load_entry_signal_config(config_path)
+    enabled_signal_names = list(signal_config.enabled_signal_names())
+    default_selected = list(signal_config.startup_selected_signal_names())
+    display_names = {
+        name: ENTRY_SIGNAL_REGISTRY[name].display_name
+        for name in enabled_signal_names
+        if name in ENTRY_SIGNAL_REGISTRY
+    }
+    st.markdown("**Entry Signals**")
+    selected_signal_names = st.multiselect(
+        "Entry signal logic",
+        options=enabled_signal_names,
+        default=default_selected,
+        format_func=lambda name: display_names.get(name, str(name)),
+        help="Entry timing logic is evaluated only on duplicate tickers from built-in presets and the current card selection.",
+    )
+    if not selected_signal_names:
+        st.caption("Select at least one entry signal to evaluate candidate timing.")
+    return EntrySignalSidebarState(
+        signal_config=signal_config,
+        selected_signal_names=list(selected_signal_names),
     )
 
 
@@ -1160,6 +1195,55 @@ def render_watchlist(
         _to_ticker_list(earnings_frame),
         "No same-day earnings names in the current eligible universe.",
     )
+    render_data_health_table(artifacts)
+
+
+def render_entry_signals(
+    artifacts: PlatformArtifacts,
+    watchlist_state: WatchlistSidebarState,
+    signal_state: EntrySignalSidebarState,
+) -> None:
+    duplicate_threshold = int(watchlist_state.duplicate_threshold)
+    parsed_duplicate_rule = DuplicateRuleConfig.from_dict(
+        watchlist_state.duplicate_rule,
+        default_min_count=duplicate_threshold,
+    )
+    runner = EntrySignalRunner(signal_state.signal_config, watchlist_state.scan_config)
+    universe = runner.build_default_universe(
+        artifacts.watchlist,
+        artifacts.scan_hits,
+        selected_scan_names=watchlist_state.selected_scan_names,
+        duplicate_threshold=duplicate_threshold,
+        selected_annotation_filters=watchlist_state.selected_annotation_filters,
+        selected_duplicate_subfilters=watchlist_state.selected_duplicate_subfilters,
+        duplicate_rule=parsed_duplicate_rule,
+    )
+    result = runner.evaluate(universe, signal_state.selected_signal_names)
+
+    render_page_header(
+        "Entry Signals",
+        subtitle="Entry-timing checks for duplicate tickers from built-in presets and the current card selection.",
+        meta=_format_trade_date(artifacts),
+    )
+    st.caption(
+        "Signals are not scans. They evaluate whether an already-detected duplicate ticker is at a reasonable entry point today."
+    )
+    summary_col, signal_col = st.columns([1, 2])
+    with summary_col:
+        st.metric("Signal Universe", int(len(universe)))
+    with signal_col:
+        st.caption(
+            "Selected signals: "
+            + (", ".join(signal_state.selected_signal_names) if signal_state.selected_signal_names else "None")
+        )
+
+    if not signal_state.selected_signal_names:
+        st.info("Select at least one entry signal in the sidebar.")
+    elif result.empty:
+        st.caption("No duplicate ticker matched the selected entry signals.")
+    else:
+        st.dataframe(result, width="stretch", hide_index=True, height=min(760, 110 + len(result) * 35))
+
     render_data_health_table(artifacts)
 
 
@@ -1419,6 +1503,7 @@ def render_active_page(
     page_key: str,
     artifacts: PlatformArtifacts,
     watchlist_state: WatchlistSidebarState | None,
+    signal_state: EntrySignalSidebarState | None,
 ) -> None:
     if page_key == "watchlist":
         if watchlist_state is None:
@@ -1434,6 +1519,12 @@ def render_active_page(
             duplicate_rule=watchlist_state.duplicate_rule,
         )
         return
+    if page_key == "entry_signals":
+        if watchlist_state is None or signal_state is None:
+            st.error("Entry signal controls could not be initialized.")
+            return
+        render_entry_signals(artifacts, watchlist_state, signal_state)
+        return
     if page_key == "rs_radar":
         render_rs_radar(artifacts)
         return
@@ -1445,6 +1536,7 @@ def main() -> None:
     default_config = ROOT / "config" / "default.yaml"
     page_key = current_page_key()
     watchlist_state: WatchlistSidebarState | None = None
+    signal_state: EntrySignalSidebarState | None = None
 
     with st.sidebar:
         st.markdown("<div class='oratek-sidebar-title'>Growth Trading Screener</div>", unsafe_allow_html=True)
@@ -1453,8 +1545,10 @@ def main() -> None:
         symbols_raw = st.text_area("Manual Symbols (optional)", value="", height=120, placeholder="Leave blank to use weekly universe snapshot")
         force_universe_refresh = st.checkbox("Force Weekly Universe Refresh", value=False)
 
-        if page_key == "watchlist":
+        if page_key in {"watchlist", "entry_signals"}:
             watchlist_state = render_watchlist_sidebar_controls(config_path)
+        if page_key == "entry_signals":
+            signal_state = render_entry_signal_sidebar_controls(config_path)
 
         refresh = st.button("Refresh", type="primary")
 
@@ -1509,7 +1603,23 @@ def main() -> None:
             )
             st.caption("Exports the selected preset's duplicate tickers and each selected scan card's hit tickers.")
 
-    render_active_page(page_key, artifacts, watchlist_state)
+    if page_key == "entry_signals" and signal_state is None:
+        signal_state = EntrySignalSidebarState(
+            signal_config=load_entry_signal_config(config_path),
+            selected_signal_names=list(load_entry_signal_config(config_path).startup_selected_signal_names()),
+        )
+    if page_key == "entry_signals" and watchlist_state is None:
+        scan_config = load_scan_config(config_path)
+        watchlist_state = WatchlistSidebarState(
+            scan_config=scan_config,
+            selected_scan_names=list(scan_config.startup_selected_scan_names()),
+            selected_annotation_filters=list(scan_config.enabled_annotation_filters),
+            selected_duplicate_subfilters=[],
+            duplicate_threshold=scan_config.duplicate_min_count,
+            duplicate_rule=DuplicateRuleConfig(min_count=scan_config.duplicate_min_count).to_dict(),
+        )
+
+    render_active_page(page_key, artifacts, watchlist_state, signal_state)
 
 
 if __name__ == "__main__":

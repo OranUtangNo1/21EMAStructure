@@ -124,14 +124,15 @@ def test_export_watchlist_preset_csvs_writes_daily_folder_and_overwrites_files(t
     assert summary_path.exists()
     assert details_path.exists()
     summary = pd.read_csv(summary_path)
-    assert set(summary["preset_name"]) == {"Momentum Core", "Legacy Hidden"}
-    assert summary.loc[summary["preset_name"] == "Momentum Core", "top_tickers"].iloc[0] == "AAA"
+    assert list(summary["ticker"]) == ["AAA"]
+    assert summary.loc[summary["ticker"] == "AAA", "hit_presets"].iloc[0] == "Momentum Core, Legacy Hidden"
 
     second_dir = export_watchlist_preset_csvs(str(config_path), build_artifacts(["BBB"]))
 
     assert second_dir == first_dir
     summary = pd.read_csv(summary_path)
-    assert summary.loc[summary["preset_name"] == "Momentum Core", "top_tickers"].iloc[0] == "BBB"
+    assert list(summary["ticker"]) == ["BBB"]
+    assert summary.loc[summary["ticker"] == "BBB", "hit_presets"].iloc[0] == "Momentum Core, Legacy Hidden"
 
 
 def test_build_builtin_watchlist_presets_hides_non_visible_presets() -> None:

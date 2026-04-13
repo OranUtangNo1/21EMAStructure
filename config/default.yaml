@@ -6,6 +6,7 @@ includes:
   - default/indicators.yaml
   - default/scoring.yaml
   - default/scan.yaml
+  - default/entry_signals.yaml
   - default/market.yaml
   - default/radar.yaml
   - default/optional.yaml

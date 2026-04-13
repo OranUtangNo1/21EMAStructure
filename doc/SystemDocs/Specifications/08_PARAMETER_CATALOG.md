@@ -300,10 +300,26 @@ When `rs_normalization_method = percentile`, the current implementation uses the
   - `enabled`: turn automatic batch export on or off
   - `output_dir`: root output directory for day-based export folders
   - `write_details`: whether to also write `preset_details.csv`
-  - `top_ticker_limit`: max number of top tickers included in `preset_summary.csv`
+  - `top_ticker_limit`: legacy setting retained for compatibility; `preset_summary.csv` now writes one row per output ticker and lists matching presets in `hit_presets`
 - `card_sections`: scan-based card definitions, display names, and optional `sort_columns`
 
-## 8. Market Dashboard
+## 8. Entry signals
+
+The `entry_signals` section controls the Entry Signals tab.
+
+- `signal_status_map`: per-entry-signal runtime status map
+  - `enabled`: keep the signal available for UI selection and evaluation
+  - `disabled`: keep the logic in code but remove it from UI selection and evaluation
+- `default_selected_signal_names`: startup-selected entry signals for the Entry Signals tab
+
+Current built-in entry signal names:
+
+- `Pocket Pivot Entry`
+- `Structure Pivot Breakout Entry`
+- `Pullback Low-Risk Zone`
+- `Volume Reclaim Entry`
+
+## 9. Market Dashboard
 
 ### Scoring mode and thresholds
 - `calculation_mode`: current default `etf`; supported values are `etf`, `active_symbols`, `blended`
@@ -337,7 +353,7 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 - `external_etfs`: display-only external ETF universe
 - `factor_etfs`: factor-comparison ETF universe
 
-## 9. RS Radar
+## 10. RS Radar
 
 ### Radar parameters
 - `top_movers_count`: `3`
@@ -348,7 +364,7 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 - `sector_etfs`: configured sector ETF list
 - `industry_etfs`: configured industry ETF list with optional `major_stocks`
 
-## 10. Inactive shipped config block
+## 11. Inactive shipped config block
 
 ### optional.enable_darvas_retest_filter
 - current default: `false`
@@ -360,7 +376,7 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 - present in the manifest include set
 - not consumed by active screening code
 
-## 11. Persisted research outputs
+## 12. Persisted research outputs
 
 When persistence is enabled, the current implementation saves these run-level artifacts:
 

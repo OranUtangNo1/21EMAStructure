@@ -5,10 +5,11 @@
 The active Streamlit app exposes exactly three pages:
 
 1. `Today's Watchlist`
-2. `RS Radar`
-3. `Market Dashboard`
+2. `Entry Signals`
+3. `RS Radar`
+4. `Market Dashboard`
 
-There is no active chart, cockpit, entry, sizing, or exit page in the current app.
+There is no active chart, cockpit, sizing, or exit page in the current app.
 
 ## 2. Shared UI Behavior
 
@@ -25,6 +26,7 @@ The default config path is resolved internally to `config/default.yaml` and is n
 The main content area exposes a top page tab bar:
 
 - `Today's Watchlist`
+- `Entry Signals`
 - `RS Radar`
 - `Market Dashboard`
 
@@ -187,9 +189,37 @@ Current source:
 
 The active page displays ticker symbols only.
 
-## 4. RS Radar
+## 4. Entry Signals
 
-### 4.1 Header
+The Entry Signals page is a timing layer, not a scan layer.
+
+Current behavior:
+
+- universe source:
+  - duplicate tickers from built-in presets whose `preset_status` allows export
+  - duplicate tickers from the current selected watchlist card set
+- sidebar controls:
+  - the same watchlist card and duplicate controls used by Today's Watchlist
+  - an entry-signal multiselect from enabled entry signal definitions
+- result grain:
+  - one row per ticker that matches at least one selected entry signal
+- result columns include:
+  - `Ticker`
+  - `Entry Signals`
+  - `Universe Sources`
+  - `Close`
+  - `RS21`
+  - `VCS`
+  - `Rel Volume`
+  - `Dist 52W High`
+  - `Risk Reference`
+  - `Entry Note`
+
+The page evaluates whether an already-detected duplicate ticker is at a reasonable entry point today. It does not expand the candidate universe beyond duplicate tickers in the initial implementation.
+
+## 5. RS Radar
+
+### 5.1 Header
 
 The page header shows:
 
@@ -245,16 +275,16 @@ Current `Industry Leaders` columns:
 - all sector-leader columns above
 - `MAJOR STOCKS`
 
-## 5. Market Dashboard
+## 6. Market Dashboard
 
-### 5.1 Header
+### 6.1 Header
 
 The page header is centered and shows:
 
 - title: `Market Dashboard`
 - `Updated: HH:MM:SS`
 
-### 5.2 Top layout
+### 6.2 Top layout
 
 The page uses a three-part top layout:
 
@@ -267,7 +297,7 @@ The page uses a three-part top layout:
 
 The page does not render the older top stat-card row or a separate component-score table.
 
-### 5.3 Market Conditions hero
+### 6.3 Market Conditions hero
 
 The hero panel shows:
 
@@ -280,7 +310,7 @@ The four prior-score cards show:
 - the historical score
 - the label derived from that historical score
 
-### 5.4 Summary metric panels
+### 6.4 Summary metric panels
 
 Current `Breadth & Trend Metrics` items:
 
@@ -357,7 +387,7 @@ The page does not render the S5TH chart.
 
 The underlying result object may still carry `result.s5th_series`, but the active Market Dashboard does not display it.
 
-## 6. Current UI Conventions
+## 7. Current UI Conventions
 
 - page navigation is defined from a centralized page-definition list and rendered as a top tab selector
 - the app loads all page data through `PlatformArtifacts`

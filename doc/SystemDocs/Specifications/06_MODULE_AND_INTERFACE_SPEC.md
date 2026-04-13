@@ -101,9 +101,17 @@ This keeps settings, reusable calculations, and display-ready outputs separate.
   - sector and industry leader tables
   - top daily and weekly mover tables
 - `src/dashboard/market.py`
-  - market condition scoring
-  - ETF snapshot panels
-  - factor-relative-strength tables
+    - market condition scoring
+    - ETF snapshot panels
+    - factor-relative-strength tables
+- `src/signals/rules.py`
+    - entry signal registry
+    - entry signal status config
+    - signal-level evaluator functions
+- `src/signals/runner.py`
+    - duplicate-ticker universe assembly
+    - entry-signal evaluation
+    - signal result table shaping
 
 ### 2.7 App Layer
 
@@ -216,7 +224,16 @@ The active app uses raw `watchlist` plus `scan_hits` to rebuild cards and duplic
 - `top_weekly`
 - `update_time`
 
-### 3.7 Market Interface
+### 3.7 Entry Signal Interface
+
+`EntrySignalRunner` currently exposes:
+
+- `build_default_universe(watchlist, hits, selected_scan_names, duplicate_threshold, selected_annotation_filters, selected_duplicate_subfilters, duplicate_rule)`
+- `evaluate(universe, selected_signal_names)`
+
+The entry signal layer is downstream of scan and preset duplicate logic. It does not evaluate all eligible tickers by default.
+
+### 3.8 Market Interface
 
 `MarketConditionScorer.score(stock_histories, market_histories, benchmark_history)` returns `MarketConditionResult`.
 

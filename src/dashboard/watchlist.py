@@ -323,27 +323,67 @@ class WatchlistViewModelBuilder:
         export_target: str = "Today's Watchlist",
         top_ticker_limit: int = 5,
     ) -> pd.DataFrame:
-        rows: list[dict[str, object]] = []
-        limit = max(int(top_ticker_limit), 1)
+        columns = [
+            "Output Target",
+            "trade_date",
+            "output_date",
+            "ticker",
+            "hit_presets",
+            "hit_preset_count",
+            "selected_scan_names",
+            "selected_annotation_filters",
+            "duplicate_thresholds",
+            "duplicate_rule_modes",
+        ]
+        grouped: dict[str, dict[str, object]] = {}
+        _ = top_ticker_limit
         for preset in presets:
             duplicate_frame, _ = self._build_preset_frames(preset, watchlist, hits)
-            top_tickers = duplicate_frame["Ticker"].head(limit).tolist() if "Ticker" in duplicate_frame.columns else []
+            if duplicate_frame.empty or "Ticker" not in duplicate_frame.columns:
+                continue
+
+            for raw_ticker in duplicate_frame["Ticker"].tolist():
+                ticker = str(raw_ticker).strip().upper()
+                if not ticker:
+                    continue
+                row = grouped.setdefault(
+                    ticker,
+                    {
+                        "Output Target": str(export_target).strip(),
+                        "trade_date": str(trade_date).strip(),
+                        "output_date": str(output_date).strip(),
+                        "ticker": ticker,
+                        "hit_presets": [],
+                        "selected_scan_names": [],
+                        "selected_annotation_filters": [],
+                        "duplicate_thresholds": [],
+                        "duplicate_rule_modes": [],
+                    },
+                )
+                self._extend_unique(row["hit_presets"], [preset.preset_name])
+                self._extend_unique(row["selected_scan_names"], preset.selected_scan_names)
+                self._extend_unique(row["selected_annotation_filters"], preset.selected_annotation_filters)
+                self._extend_unique(row["duplicate_thresholds"], [str(int(preset.duplicate_threshold))])
+                self._extend_unique(row["duplicate_rule_modes"], [preset.duplicate_rule.mode])
+
+        rows: list[dict[str, object]] = []
+        for row in grouped.values():
+            hit_presets = row["hit_presets"]
             rows.append(
                 {
-                    "Output Target": str(export_target).strip(),
-                    "trade_date": str(trade_date).strip(),
-                    "output_date": str(output_date).strip(),
-                    "preset_name": preset.preset_name,
-                    "has_candidates": bool(not duplicate_frame.empty),
-                    "candidate_count": int(len(duplicate_frame)),
-                    "top_tickers": ", ".join(str(ticker).strip() for ticker in top_tickers if str(ticker).strip()),
-                    "selected_scan_names": ", ".join(preset.selected_scan_names),
-                    "selected_annotation_filters": ", ".join(preset.selected_annotation_filters),
-                    "duplicate_threshold": int(preset.duplicate_threshold),
-                    "duplicate_rule_mode": preset.duplicate_rule.mode,
+                    "Output Target": row["Output Target"],
+                    "trade_date": row["trade_date"],
+                    "output_date": row["output_date"],
+                    "ticker": row["ticker"],
+                    "hit_presets": ", ".join(hit_presets),
+                    "hit_preset_count": len(hit_presets),
+                    "selected_scan_names": ", ".join(row["selected_scan_names"]),
+                    "selected_annotation_filters": ", ".join(row["selected_annotation_filters"]),
+                    "duplicate_thresholds": ", ".join(row["duplicate_thresholds"]),
+                    "duplicate_rule_modes": ", ".join(row["duplicate_rule_modes"]),
                 }
             )
-        return pd.DataFrame(rows)
+        return pd.DataFrame(rows, columns=columns)
 
     def build_preset_detail_exports(
         self,
@@ -558,6 +598,14 @@ class WatchlistViewModelBuilder:
             if str(value).strip()
         ]
         return ", ".join(values)
+
+    def _extend_unique(self, target: list[str], values: Iterable[object]) -> None:
+        existing = set(target)
+        for value in values:
+            text = str(value).strip()
+            if text and text not in existing:
+                target.append(text)
+                existing.add(text)
 
 
 class WatchlistCardGridBuilder(WatchlistViewModelBuilder):

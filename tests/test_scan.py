@@ -1127,7 +1127,7 @@ def test_watchlist_preset_export_includes_duplicate_and_card_hit_tickers() -> No
     }
 
 
-def test_watchlist_preset_summary_export_reports_candidate_counts_and_top_tickers() -> None:
+def test_watchlist_preset_summary_export_groups_hit_presets_by_ticker() -> None:
     watchlist = pd.DataFrame(
         {
             "hybrid_score": [95.0, 80.0, 70.0],
@@ -1151,24 +1151,28 @@ def test_watchlist_preset_summary_export_reports_candidate_counts_and_top_ticker
             ScanCardConfig(scan_name="VCS", display_name="VCS"),
         )
     )
-    custom_presets = [
-        ScanConfig.from_dict(
-            {
-                "card_sections": [
-                    {"scan_name": "21EMA scan", "display_name": "21EMA"},
-                    {"scan_name": "VCS", "display_name": "VCS"},
-                ],
-                "watchlist_presets": [
-                    {
-                        "preset_name": "Momentum Core",
-                        "selected_scan_names": ["21EMA scan", "VCS"],
-                        "selected_annotation_filters": ["RS 21 >= 63"],
-                        "duplicate_threshold": 2,
-                    }
-                ],
-            }
-        ).watchlist_presets[0]
-    ]
+    custom_presets = ScanConfig.from_dict(
+        {
+            "card_sections": [
+                {"scan_name": "21EMA scan", "display_name": "21EMA"},
+                {"scan_name": "VCS", "display_name": "VCS"},
+            ],
+            "watchlist_presets": [
+                {
+                    "preset_name": "Momentum Core",
+                    "selected_scan_names": ["21EMA scan", "VCS"],
+                    "selected_annotation_filters": ["RS 21 >= 63"],
+                    "duplicate_threshold": 2,
+                },
+                {
+                    "preset_name": "EMA Follow Through",
+                    "selected_scan_names": ["21EMA scan"],
+                    "selected_annotation_filters": [],
+                    "duplicate_threshold": 1,
+                },
+            ],
+        }
+    ).watchlist_presets
 
     summary = WatchlistViewModelBuilder(config).build_preset_summary_exports(
         custom_presets,
@@ -1176,19 +1180,31 @@ def test_watchlist_preset_summary_export_reports_candidate_counts_and_top_ticker
         hits,
         trade_date="2026-04-09",
         output_date="2026-04-09",
-        top_ticker_limit=3,
+        top_ticker_limit=1,
     )
 
+    assert list(summary["ticker"]) == ["AAA", "BBB"]
     assert summary.iloc[0].to_dict() == {
         "Output Target": "Today's Watchlist",
         "trade_date": "2026-04-09",
         "output_date": "2026-04-09",
-        "preset_name": "Momentum Core",
-        "has_candidates": True,
-        "candidate_count": 1,
-        "top_tickers": "AAA",
+        "ticker": "AAA",
+        "hit_presets": "Momentum Core, EMA Follow Through",
+        "hit_preset_count": 2,
         "selected_scan_names": "21EMA scan, VCS",
         "selected_annotation_filters": "RS 21 >= 63",
-        "duplicate_threshold": 2,
-        "duplicate_rule_mode": "min_count",
+        "duplicate_thresholds": "2, 1",
+        "duplicate_rule_modes": "min_count",
+    }
+    assert summary.iloc[1].to_dict() == {
+        "Output Target": "Today's Watchlist",
+        "trade_date": "2026-04-09",
+        "output_date": "2026-04-09",
+        "ticker": "BBB",
+        "hit_presets": "EMA Follow Through",
+        "hit_preset_count": 1,
+        "selected_scan_names": "21EMA scan",
+        "selected_annotation_filters": "",
+        "duplicate_thresholds": "1",
+        "duplicate_rule_modes": "min_count",
     }
