@@ -17,6 +17,7 @@ selected_scan_names: [Reclaim scan, Pocket Pivot, Fundamental Demand]
 selected_annotation_filters: []
 selected_duplicate_subfilters: []
 duplicate_threshold: 2
+preset_status: enabled
 ```
 
 ## Pre-Scan Context
@@ -38,6 +39,8 @@ duplicate_threshold: 2
 - selected annotation filters: none
 - selected duplicate subfilters: none
 - UI duplicate threshold after preset load: `2`
+- preset status: `enabled`
+- duplicate rule: none; uses default `min_count`
 
 ## Scope Notes
 

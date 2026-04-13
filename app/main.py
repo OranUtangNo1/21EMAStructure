@@ -14,9 +14,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.configuration import load_settings
+from src.dashboard.effectiveness import sync_preset_effectiveness_logs
 from src.dashboard.watchlist import WatchlistViewModelBuilder
 from src.pipeline import PlatformArtifacts, ResearchPlatform
-from src.scan.rules import ScanConfig
+from src.scan.rules import DuplicateRuleConfig, ScanConfig
 from src.ui_preferences import UserPreferenceStore
 
 
@@ -183,6 +184,7 @@ class WatchlistSidebarState:
     selected_annotation_filters: list[str]
     selected_duplicate_subfilters: list[str]
     duplicate_threshold: int
+    duplicate_rule: dict[str, object] | None = None
     selected_preset_export_name: str | None = None
     selected_preset_export_values: dict[str, object] | None = None
 
@@ -535,12 +537,14 @@ def _build_watchlist_control_values(
     selected_annotation_filters: list[str],
     selected_duplicate_subfilters: list[str],
     duplicate_threshold: int,
+    duplicate_rule: dict[str, object] | None = None,
 ) -> dict[str, object]:
     return {
         "selected_scan_names": list(selected_scan_names),
         "selected_annotation_filters": list(selected_annotation_filters),
         "selected_duplicate_subfilters": list(selected_duplicate_subfilters),
         "duplicate_threshold": int(duplicate_threshold),
+        "duplicate_rule": dict(duplicate_rule) if isinstance(duplicate_rule, dict) else DuplicateRuleConfig(min_count=int(duplicate_threshold)).to_dict(),
     }
 
 
@@ -552,11 +556,13 @@ def _watchlist_controls_equal(left: dict[str, object] | None, right: dict[str, o
         list(left.get("selected_annotation_filters", [])),
         list(left.get("selected_duplicate_subfilters", [])),
         int(left.get("duplicate_threshold", 1)),
+        left.get("duplicate_rule"),
     ) == _build_watchlist_control_values(
         list(right.get("selected_scan_names", [])),
         list(right.get("selected_annotation_filters", [])),
         list(right.get("selected_duplicate_subfilters", [])),
         int(right.get("duplicate_threshold", 1)),
+        right.get("duplicate_rule"),
     )
 
 
@@ -571,6 +577,8 @@ def _build_watchlist_preset_record(values: dict[str, object]) -> dict[str, objec
 def _build_builtin_watchlist_presets(scan_config: ScanConfig) -> dict[str, dict[str, object]]:
     presets: dict[str, dict[str, object]] = {}
     for preset in scan_config.watchlist_presets:
+        if not preset.visible_in_ui:
+            continue
         preset_name = _normalize_watchlist_preset_name(preset.preset_name)
         if not preset_name:
             continue
@@ -601,11 +609,10 @@ def _read_watchlist_preset_values(
     else:
         values = record
 
-    selected_scan_names = [
-        str(name)
-        for name in values.get("selected_scan_names", [])
-        if str(name) in available_scan_names
-    ]
+    raw_selected_scan_names = [str(name) for name in values.get("selected_scan_names", [])]
+    if any(name not in available_scan_names for name in raw_selected_scan_names):
+        return None
+    selected_scan_names = raw_selected_scan_names
     selected_annotation_filters = [
         str(name)
         for name in values.get("selected_annotation_filters", [])
@@ -623,12 +630,21 @@ def _read_watchlist_preset_values(
         duplicate_threshold = int(default_duplicate_threshold)
     max_threshold = max(1, len(selected_scan_names)) if selected_scan_names else 1
     duplicate_threshold = max(1, min(duplicate_threshold, max_threshold))
+    duplicate_rule = values.get("duplicate_rule")
+    try:
+        parsed_duplicate_rule = DuplicateRuleConfig.from_dict(
+            duplicate_rule if isinstance(duplicate_rule, dict) else None,
+            default_min_count=duplicate_threshold,
+        ).to_dict()
+    except ValueError:
+        return None
 
     return _build_watchlist_control_values(
         selected_scan_names,
         selected_annotation_filters,
         selected_duplicate_subfilters,
         duplicate_threshold,
+        parsed_duplicate_rule,
     )
 
 
@@ -639,11 +655,13 @@ def _apply_watchlist_preset_to_session_state(
     annotation_key: str,
     duplicate_subfilter_key: str,
     threshold_key: str,
+    duplicate_rule_key: str,
 ) -> None:
     st.session_state[selection_key] = list(values.get("selected_scan_names", []))
     st.session_state[annotation_key] = list(values.get("selected_annotation_filters", []))
     st.session_state[duplicate_subfilter_key] = list(values.get("selected_duplicate_subfilters", []))
     st.session_state[threshold_key] = int(values.get("duplicate_threshold", 1))
+    st.session_state[duplicate_rule_key] = values.get("duplicate_rule")
 
 
 def _build_watchlist_preset_export_filename(preset_name: str) -> str:
@@ -685,6 +703,7 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
     duplicate_subfilter_defaults_key = "watchlist_selected_duplicate_subfilters_defaults"
     threshold_key = "watchlist_duplicate_threshold"
     threshold_defaults_key = "watchlist_duplicate_threshold_defaults"
+    duplicate_rule_key = "watchlist_duplicate_rule"
     preset_select_key = "watchlist_selected_preset_name"
     preset_name_key = "watchlist_preset_name"
     preset_name_pending_key = "watchlist_preset_name_pending"
@@ -748,6 +767,10 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
         1,
         min(persisted_duplicate_threshold_int, max(1, len(persisted_selected_scan_names)) if persisted_selected_scan_names else 1),
     )
+    persisted_duplicate_rule = DuplicateRuleConfig.from_dict(
+        watchlist_preferences.get("duplicate_rule"),
+        default_min_count=persisted_duplicate_threshold_int,
+    ).to_dict()
 
     saved_watchlist_presets: dict[str, dict[str, object]] = {}
     for raw_name, raw_record in raw_watchlist_presets.items():
@@ -807,6 +830,7 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
                 annotation_key=annotation_key,
                 duplicate_subfilter_key=duplicate_subfilter_key,
                 threshold_key=threshold_key,
+                duplicate_rule_key=duplicate_rule_key,
             )
             st.session_state[selection_defaults_key] = selection_defaults_signature
             st.session_state[annotation_defaults_key] = annotation_defaults_signature
@@ -908,12 +932,21 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
             help="A ticker is shown in Duplicate Tickers only if it appears in at least this many selected scan cards.",
         )
     )
+    if duplicate_rule_key not in st.session_state:
+        st.session_state[duplicate_rule_key] = persisted_duplicate_rule
+    current_duplicate_rule = DuplicateRuleConfig.from_dict(
+        st.session_state.get(duplicate_rule_key),
+        default_min_count=duplicate_threshold,
+    )
+    if current_duplicate_rule.mode == "min_count":
+        st.session_state[duplicate_rule_key] = DuplicateRuleConfig(min_count=duplicate_threshold).to_dict()
 
     current_watchlist_controls = _build_watchlist_control_values(
         selected_watchlist_scans,
         selected_annotation_filters,
         selected_duplicate_subfilters,
         duplicate_threshold,
+        st.session_state.get(duplicate_rule_key),
     )
     selected_saved_preset_values = (
         saved_watchlist_presets.get(selected_preset_name)
@@ -988,6 +1021,7 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
         selected_annotation_filters=selected_annotation_filters,
         selected_duplicate_subfilters=selected_duplicate_subfilters,
         duplicate_threshold=duplicate_threshold,
+        duplicate_rule=st.session_state.get(duplicate_rule_key),
         selected_preset_export_name=selected_preset_export_name,
         selected_preset_export_values=selected_preset_export_values,
     )
@@ -1026,6 +1060,7 @@ def render_watchlist(
     duplicate_min_count: int | None = None,
     selected_annotation_filters: list[str] | None = None,
     selected_duplicate_subfilters: list[str] | None = None,
+    duplicate_rule: dict[str, object] | None = None,
 ) -> None:
     scan_config = scan_config or ScanConfig()
     watchlist_builder = WatchlistViewModelBuilder(scan_config)
@@ -1041,6 +1076,7 @@ def render_watchlist(
     )
     selected_scan_name_set = set(effective_selected_scan_names)
     duplicate_threshold = int(duplicate_min_count if duplicate_min_count is not None else scan_config.duplicate_min_count)
+    parsed_duplicate_rule = DuplicateRuleConfig.from_dict(duplicate_rule, default_min_count=duplicate_threshold)
 
     filtered_watchlist = watchlist_builder.filter_by_annotation_filters(
         artifacts.watchlist,
@@ -1051,6 +1087,7 @@ def render_watchlist(
         artifacts.scan_hits,
         min_count=duplicate_threshold,
         selected_scan_names=effective_selected_scan_names,
+        duplicate_rule=parsed_duplicate_rule,
     )
     display_cards = watchlist_builder.build_scan_cards(
         display_watchlist,
@@ -1073,12 +1110,20 @@ def render_watchlist(
         min_count=duplicate_threshold,
         selected_scan_names=effective_selected_scan_names,
         selected_duplicate_subfilters=effective_selected_duplicate_subfilters,
+        duplicate_rule=parsed_duplicate_rule,
     )
     if effective_selected_scan_names:
         duplicate_note = f"Counted from {len(effective_selected_scan_names)} selected cards"
         if effective_selected_annotation_filters:
             duplicate_note += f" after {len(effective_selected_annotation_filters)} post-scan filter(s)"
-        duplicate_note += f". A ticker must appear in {duplicate_threshold}+ selected scans."
+        if parsed_duplicate_rule.mode == "required_plus_optional_min":
+            duplicate_note += (
+                f". Required scans: {', '.join(parsed_duplicate_rule.required_scans)}."
+                f" Optional scans: {', '.join(parsed_duplicate_rule.optional_scans)} with "
+                f"{parsed_duplicate_rule.optional_min_hits}+ hits."
+            )
+        else:
+            duplicate_note += f". A ticker must appear in {duplicate_threshold}+ selected scans."
         if effective_selected_duplicate_subfilters:
             duplicate_note += f" Duplicate subfilters: {', '.join(effective_selected_duplicate_subfilters)}."
         duplicate_empty_text = "No duplicate tickers in the current watchlist for the selected cards."
@@ -1386,6 +1431,7 @@ def render_active_page(
             duplicate_min_count=watchlist_state.duplicate_threshold,
             selected_annotation_filters=watchlist_state.selected_annotation_filters,
             selected_duplicate_subfilters=watchlist_state.selected_duplicate_subfilters,
+            duplicate_rule=watchlist_state.duplicate_rule,
         )
         return
     if page_key == "rs_radar":
@@ -1420,6 +1466,10 @@ def main() -> None:
             st.session_state["preset_export_directory"] = (
                 str(export_watchlist_preset_csvs(config_path, st.session_state["artifacts"]) or "")
             )
+            effectiveness_sync = sync_preset_effectiveness_logs(config_path, st.session_state["artifacts"])
+            st.session_state["preset_effectiveness_directory"] = (
+                effectiveness_sync.output_dir if effectiveness_sync is not None else ""
+            )
             st.session_state["artifacts_key"] = cache_key
 
     artifacts: PlatformArtifacts = st.session_state["artifacts"]
@@ -1441,6 +1491,12 @@ def main() -> None:
             min_count=int(watchlist_state.selected_preset_export_values.get("duplicate_threshold", watchlist_state.scan_config.duplicate_min_count)),
             selected_annotation_filters=list(watchlist_state.selected_preset_export_values.get("selected_annotation_filters", [])),
             selected_duplicate_subfilters=list(watchlist_state.selected_preset_export_values.get("selected_duplicate_subfilters", [])),
+            duplicate_rule=DuplicateRuleConfig.from_dict(
+                watchlist_state.selected_preset_export_values.get("duplicate_rule"),
+                default_min_count=int(
+                    watchlist_state.selected_preset_export_values.get("duplicate_threshold", watchlist_state.scan_config.duplicate_min_count)
+                ),
+            ),
         )
         with st.sidebar:
             st.markdown("**Preset Export**")

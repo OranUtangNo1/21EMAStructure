@@ -140,11 +140,17 @@ Current preset behavior:
 
 - record shape: `schema_version`, `kind`, `values`
 - `kind` is currently `watchlist_controls`
-- `values` stores the same four sidebar control fields
+- `values` stores the four sidebar control fields plus an optional hidden `duplicate_rule` payload
 - the active UI supports save, load, update, and delete
+- built-in presets use `preset_status` to control UI visibility and automatic export participation
+- only built-in presets with `preset_status: enabled` appear in the preset picker
+- built-in presets with `preset_status: enabled` or `preset_status: hidden_enabled` are included in automatic preset CSV export
+- built-in presets with `preset_status: disabled` are skipped by both the preset picker and automatic preset CSV export
 - built-in presets can be loaded and exported but not deleted or updated from the UI
 - at most 10 presets are stored per config namespace
-- preset load drops scan or filter names that no longer exist in the current config and clamps duplicate threshold to the selected-card count
+- preset load drops any saved preset that references scan names no longer available in the current config
+- invalid annotation filters are ignored during preset load
+- duplicate threshold is clamped to the selected-card count when the effective duplicate rule uses `min_count`
 
 ### 3.2 Annotation-filter projection
 
@@ -172,7 +178,10 @@ Current projected fields:
 Current implemented behavior:
 
 - selected scans are filtered from raw `scan_hits`
-- `duplicate_ticker` is recalculated against the current UI duplicate threshold
+- `duplicate_ticker` is recalculated from the current duplicate rule
+- supported duplicate-rule modes:
+  - `min_count`
+  - `required_plus_optional_min`
 - `overlap_count` is overwritten with the selected-scan overlap count
 - if no scan cards are selected, the projection forces:
   - `selected_scan_hit_count = 0`
@@ -203,7 +212,52 @@ Current implemented behavior:
 
 and keeps the top three rows.
 
-### 3.5 Scan-card grid
+Preset export behavior uses the preset's own duplicate rule when one is defined in config.
+
+### 3.5 Preset effectiveness logs
+
+The app also maintains a cumulative fact log for built-in watchlist presets that are export-enabled.
+
+Current implemented behavior:
+
+- output directory: `data_runs/preset_effectiveness/`
+- file set:
+  - `events.csv`
+  - `outcomes.csv`
+- `events.csv` grain is one row per `trade_date x preset_name x ticker`
+- rows are written only for duplicate tickers produced by each preset's own duplicate rule
+- the event payload stores detection-time facts only
+- current stored event fields include:
+  - `market_score`
+  - `market_label`
+  - `selected_scan_names`
+  - `hit_scans`
+  - `close_at_signal`
+  - `volume`
+  - `avg_volume_50d`
+  - `rel_volume`
+  - `hybrid_score`
+  - `vcs`
+  - `rs21`
+  - `rs63`
+  - `rs126`
+  - `dist_from_52w_high`
+  - `dist_from_52w_low`
+- `outcomes.csv` stores forward-tracking rows keyed by `event_id` plus horizon
+- current fixed forward horizons are `1d`, `5d`, `10d`, and `20d`
+- each outcome row carries:
+  - `target_date`
+  - `close_at_signal`
+  - `close_at_target`
+  - `return_pct`
+  - `status`
+- current status values are:
+  - `pending`
+  - `ready`
+- outcome rows are updated on later runs once the latest snapshot has reached or passed the target business date
+- this log is cumulative and is not overwritten per daily export folder
+
+### 3.6 Scan-card grid
 
 The watchlist page rebuilds scan cards from raw `scan_hits` plus the projected watchlist. It does not use the prebuilt `artifacts.watchlist_cards`.
 
@@ -223,11 +277,14 @@ Instead:
 
 - one scan is documented in one file under `doc/SystemDocs/Scan/`
 - `doc/SystemDocs/Scan/scan_00_index.md` is the entry point
-- active scan availability is controlled by `enabled_scan_rules`
+- scan availability is controlled by `scan_status_map`
+- only scans marked `enabled` are evaluated and exposed through watchlist card selection
+- legacy `enabled_scan_rules` is still accepted as a backward-compatible active-scan list
 - available annotation-filter definitions are controlled by `annotation_filters`
 - startup-enabled annotation filters come from `enabled_annotation_filters`
 - the legacy config alias `enabled_list_rules` is still accepted for backward compatibility
-- if `enabled_annotation_filters` mistakenly includes scan names, the loader moves those names into `enabled_scan_rules` and keeps only real annotation filters in the enabled annotation set
+- if `enabled_annotation_filters` mistakenly includes scan names, the loader moves those names into the enabled scan rule set and keeps only real annotation filters in the enabled annotation set
+- built-in presets that reference any non-enabled scan are forced to `preset_status: disabled`
 
 ## 5. Active Watchlist Outputs
 

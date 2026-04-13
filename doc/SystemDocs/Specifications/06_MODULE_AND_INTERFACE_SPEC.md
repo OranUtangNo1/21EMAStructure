@@ -198,10 +198,10 @@ The scan layer contract is:
 
 - `build(watchlist)`
 - `filter_by_annotation_filters(watchlist, selected_filter_names)`
-- `apply_selected_scan_metrics(watchlist, hits, min_count, selected_scan_names)`
+- `apply_selected_scan_metrics(watchlist, hits, min_count, selected_scan_names, duplicate_rule=None)`
 - `build_scan_cards(watchlist, hits, selected_scan_names)`
-- `build_duplicate_tickers(watchlist, hits, min_count, selected_scan_names, selected_duplicate_subfilters)`
-- `build_preset_export(preset_name, watchlist, hits, export_target, selected_scan_names, min_count, selected_annotation_filters, selected_duplicate_subfilters)`
+- `build_duplicate_tickers(watchlist, hits, min_count, selected_scan_names, selected_duplicate_subfilters, duplicate_rule=None)`
+- `build_preset_export(preset_name, watchlist, hits, export_target, selected_scan_names, min_count, selected_annotation_filters, selected_duplicate_subfilters, duplicate_rule=None)`
 - `build_earnings_today(snapshot)`
 
 The active app uses raw `watchlist` plus `scan_hits` to rebuild cards and duplicate output from current sidebar selections.

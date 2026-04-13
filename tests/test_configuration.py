@@ -73,7 +73,17 @@ def test_default_settings_include_builtin_watchlist_presets() -> None:
     settings = load_settings()
 
     presets = settings["scan"]["watchlist_presets"]
+    preset_names = [preset["preset_name"] for preset in presets]
 
-    assert len(presets) == 10
-    assert presets[0]["preset_name"] == "Leader Breakout"
-    assert presets[-1]["preset_name"] == "Pattern 5 - Early Reversal Signal"
+    assert len(presets) == 9
+    assert preset_names == [
+        "Leader Breakout",
+        "Orderly Pullback",
+        "Reclaim Trigger",
+        "Momentum Surge",
+        "Early Cycle Recovery",
+        "Base Breakout",
+        "Trend Pullback",
+        "Resilient Leader",
+        "Early Recovery",
+    ]

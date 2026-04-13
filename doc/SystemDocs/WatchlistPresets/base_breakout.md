@@ -1,0 +1,81 @@
+# Watchlist Preset Spec: Base Breakout
+
+## Canonical Metadata
+
+| Item | Value |
+|---|---|
+| Preset name | `Base Breakout` |
+| Preset type | built-in watchlist preset |
+| Runtime source | `config/default/scan.yaml` |
+| UI target | `Today's Watchlist` |
+| Market environment | `Confirmed Uptrend` |
+
+## Current Config Payload
+
+```yaml
+preset_name: Base Breakout
+selected_scan_names: [97 Club, VCS 52 High, Three Weeks Tight, Pocket Pivot]
+selected_annotation_filters: []
+selected_duplicate_subfilters: []
+duplicate_threshold: 2
+preset_status: enabled
+```
+
+## Pre-Scan Context
+
+- preset-specific pre-scan filters: none
+- shared pre-scan universe filter: active global `UniverseBuilder.filter()` rules only
+- shared scan-context enrichment: `weekly_return_rank`, `quarterly_return_rank`, `eps_growth_rank`
+
+## Selected Scans
+
+| Scan name | Card display | Scan reference | Direct threshold summary |
+|---|---|---|---|
+| `97 Club` | `97 Club` | [../Scan/scan_05_97club.md](../Scan/scan_05_97club.md) | `club_97_hybrid_threshold=90.0`, `club_97_rs21_threshold=97.0` |
+| `VCS 52 High` | `VCS 52 High` | [../Scan/scan_13_vcs_52_high.md](../Scan/scan_13_vcs_52_high.md) | `vcs_52_high_vcs_min=55.0`, `vcs_52_high_rs21_min=25.0`, `vcs_52_high_dist_max=-20.0`, `vcs_52_high_require_trend_base=true` |
+| `Three Weeks Tight` | `3WT` | [../Scan/scan_11_three_weeks_tight.md](../Scan/scan_11_three_weeks_tight.md) | `three_weeks_tight_vcs_min=50.0`; upstream `three_weeks_tight_pct_threshold=1.5` |
+| `Pocket Pivot` | `Pocket Pivot` | [../Scan/scan_07_pocket_pivot.md](../Scan/scan_07_pocket_pivot.md) | no scan config keys; requires `close > sma50` and `pocket_pivot=true` |
+
+## Post-Scan And Duplicate Settings
+
+- selected annotation filters: none
+- selected duplicate subfilters: none
+- UI duplicate threshold after preset load: `2`
+- preset status: `enabled`
+- duplicate rule: none; uses default `min_count`
+
+## Scan Role Mapping
+
+| Role | Scan | Rationale |
+|---|---|---|
+| Core | `VCS 52 High` | 52-week high proximity with volatility contraction proves a tight base exists near highs |
+| Trigger | `Pocket Pivot` / `Three Weeks Tight` | PP detects demand via volume; 3WT confirms contraction completion via price |
+| Confirmation | `97 Club` | Hybrid score ≥ 90 + RS21 ≥ 97 enforces top-tier leadership quality |
+
+## Logic Structure
+
+```
+duplicate_threshold: 2
+→ ticker must hit ≥ 2 of [97 Club, VCS 52 High, Three Weeks Tight, Pocket Pivot]
+```
+
+Representative hit patterns:
+
+- `VCS 52 High` + `97 Club` → top leader with tight base near highs
+- `VCS 52 High` + `Pocket Pivot` → volume breakout from tight base
+- `VCS 52 High` + `Three Weeks Tight` → ultra-tight contraction at 52-week high zone
+- `97 Club` + `Pocket Pivot` → demand inflow into top-ranked leader
+
+## Setup Interpretation
+
+- **Target phase**: base completion → breakout initiation
+- **Why effective in Confirmed Uptrend**: market tailwind maximizes follow-through on leader breakouts from tight bases; risk/reward is optimal when volatility has contracted near highs
+
+## Design Rationale
+
+VCS 52 High guarantees the "tight structure near highs" condition. 97 Club filters for the highest quality leaders only. Pocket Pivot and Three Weeks Tight detect the breakout event from two independent angles (volume vs price contraction completion). No overlap with pullback, reclaim, or reversal presets.
+
+## Scope Notes
+
+- This preset changes watchlist page controls only.
+- It does not override global scan thresholds.

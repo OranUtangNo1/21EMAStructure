@@ -2,8 +2,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from app.main import _watchlist_controls_equal, export_watchlist_preset_csvs
+from app.main import _build_builtin_watchlist_presets, _read_watchlist_preset_values, _watchlist_controls_equal, export_watchlist_preset_csvs
 from src.pipeline import PlatformArtifacts
+from src.scan.rules import ScanConfig
 
 
 def test_watchlist_controls_equal_treats_duplicate_threshold_as_material() -> None:
@@ -57,7 +58,19 @@ def test_export_watchlist_preset_csvs_writes_daily_folder_and_overwrites_files(t
                 "    selected_annotation_filters: []",
                 "    selected_duplicate_subfilters: []",
                 "    duplicate_threshold: 2",
-                "    export_enabled: true",
+                "    preset_status: enabled",
+                "  - preset_name: Legacy Hidden",
+                "    selected_scan_names: [21EMA scan]",
+                "    selected_annotation_filters: []",
+                "    selected_duplicate_subfilters: []",
+                "    duplicate_threshold: 1",
+                "    preset_status: hidden_enabled",
+                "  - preset_name: Disabled Legacy",
+                "    selected_scan_names: [VCS]",
+                "    selected_annotation_filters: []",
+                "    selected_duplicate_subfilters: []",
+                "    duplicate_threshold: 1",
+                "    preset_status: disabled",
                 "  preset_csv_export:",
                 f"    output_dir: {str(tmp_path / 'exports').replace(chr(92), '/')}",
                 "    enabled: true",
@@ -110,9 +123,60 @@ def test_export_watchlist_preset_csvs_writes_daily_folder_and_overwrites_files(t
     assert first_dir.name == "20260409"
     assert summary_path.exists()
     assert details_path.exists()
-    assert pd.read_csv(summary_path).iloc[0]["top_tickers"] == "AAA"
+    summary = pd.read_csv(summary_path)
+    assert set(summary["preset_name"]) == {"Momentum Core", "Legacy Hidden"}
+    assert summary.loc[summary["preset_name"] == "Momentum Core", "top_tickers"].iloc[0] == "AAA"
 
     second_dir = export_watchlist_preset_csvs(str(config_path), build_artifacts(["BBB"]))
 
     assert second_dir == first_dir
-    assert pd.read_csv(summary_path).iloc[0]["top_tickers"] == "BBB"
+    summary = pd.read_csv(summary_path)
+    assert summary.loc[summary["preset_name"] == "Momentum Core", "top_tickers"].iloc[0] == "BBB"
+
+
+def test_build_builtin_watchlist_presets_hides_non_visible_presets() -> None:
+    config = ScanConfig.from_dict(
+        {
+            "card_sections": [
+                {"scan_name": "21EMA scan", "display_name": "21EMA"},
+            ],
+            "watchlist_presets": [
+                {
+                    "preset_name": "Visible Preset",
+                    "selected_scan_names": ["21EMA scan"],
+                    "preset_status": "enabled",
+                },
+                {
+                    "preset_name": "Hidden Export Preset",
+                    "selected_scan_names": ["21EMA scan"],
+                    "preset_status": "hidden_enabled",
+                },
+                {
+                    "preset_name": "Disabled Preset",
+                    "selected_scan_names": ["21EMA scan"],
+                    "preset_status": "disabled",
+                },
+            ],
+        }
+    )
+
+    presets = _build_builtin_watchlist_presets(config)
+
+    assert set(presets) == {"Visible Preset"}
+
+
+def test_read_watchlist_preset_values_drops_preset_when_scan_is_unavailable() -> None:
+    values = _read_watchlist_preset_values(
+        {
+            "selected_scan_names": ["21EMA scan", "Disabled Scan"],
+            "selected_annotation_filters": [],
+            "selected_duplicate_subfilters": [],
+            "duplicate_threshold": 2,
+        },
+        available_scan_names=["21EMA scan"],
+        available_annotation_names=[],
+        available_duplicate_subfilters=[],
+        default_duplicate_threshold=1,
+    )
+
+    assert values is None

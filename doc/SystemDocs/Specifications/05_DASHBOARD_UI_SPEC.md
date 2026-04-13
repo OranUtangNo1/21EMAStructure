@@ -71,7 +71,8 @@ Current implemented behavior:
   - `kind`
   - `values`
 - preset `values` currently contain the same four watchlist control fields
-- the preset picker merges built-in config presets with saved presets from the preference store
+- the preset picker merges saved presets from the preference store with built-in config presets whose `preset_status` is `enabled`
+- built-in presets marked `hidden_enabled` or `disabled` remain out of the picker
 - maximum saved presets per namespace: 10
 
 ## 3. Today's Watchlist
@@ -117,8 +118,10 @@ Current defaults:
 
 Preset load behavior:
 
-- invalid scan names and filter names are ignored against the current config
+- saved presets are dropped when they reference scan names that are not available in the current config
+- invalid annotation-filter names are ignored against the current config
 - duplicate threshold is clamped to the current selected-card count
+- hidden preset duplicate rules are loaded and persisted, but are not editable from the current UI
 - built-in presets cannot be deleted or updated from the UI
 - `Update Preset` overwrites the currently selected saved preset
 - `Export Preset CSV` uses the currently selected saved preset record, not unsaved sidebar edits
@@ -132,6 +135,12 @@ Preset export CSV behavior:
 - each scan-card column stores the comma-separated ticker list shown in that preset's projected card
 - file encoding is UTF-8 with BOM for spreadsheet compatibility
 
+Preset effectiveness log behavior:
+
+- each artifact refresh also syncs cumulative preset-effectiveness files under `data_runs/preset_effectiveness/`
+- this sync is automatic and separate from the manual `Export Preset CSV` action
+- the current UI does not render these files directly
+
 ### 3.3 Duplicate Tickers priority band
 
 The page renders a dedicated `Duplicate Tickers` band before the scan cards.
@@ -141,7 +150,8 @@ Current logic:
 - source rows are rebuilt from raw `artifacts.watchlist` plus raw `artifacts.scan_hits`
 - selected annotation filters narrow the displayed watchlist first
 - selected scan cards determine overlap counting
-- the sidebar duplicate threshold applies only to this projected view
+- the sidebar duplicate threshold applies only when the current duplicate rule uses `min_count`
+- when a loaded preset provides a hidden duplicate rule, that rule drives duplicate membership in the projected view
 - duplicate-only subfilters are applied after duplicate rows are formed
 
 The band currently renders:

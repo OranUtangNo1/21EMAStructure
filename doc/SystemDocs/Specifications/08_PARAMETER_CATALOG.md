@@ -277,14 +277,25 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 
 ### Watchlist and cards
 - `watchlist_sort_mode`: `hybrid_score`
-- `enabled_scan_rules`: active scan family names
+- `scan_status_map`: per-scan runtime status map
+  - `enabled`: evaluate the scan and keep it available to watchlist card selection and preset composition
+  - `disabled`: skip scan evaluation and remove it from watchlist card selection and preset composition
+- `enabled_scan_rules`: legacy enabled scan family list still accepted for backward compatibility
 - `default_selected_scan_names`: startup-selected watchlist cards for the sidebar multiselect
 - `enabled_annotation_filters`: startup-enabled post-scan filters; current default is empty
 - `enabled_list_rules`: legacy alias still accepted for annotation rules
-- misplaced scan names inside `enabled_annotation_filters` are coerced into `enabled_scan_rules` during config loading
+- misplaced scan names inside `enabled_annotation_filters` are coerced into the enabled scan rule set during config loading
 - `annotation_filters`: available annotation-filter definitions and display names
 - `watchlist_presets`: built-in watchlist preset definitions loaded into the sidebar preset picker
-  - each preset supports `preset_name`, `selected_scan_names`, `selected_annotation_filters`, `selected_duplicate_subfilters`, `duplicate_threshold`, and `export_enabled`
+  - each preset supports `preset_name`, `selected_scan_names`, `selected_annotation_filters`, `selected_duplicate_subfilters`, `duplicate_threshold`, optional `duplicate_rule`, and `preset_status`
+  - `duplicate_rule.mode: min_count` uses `min_count` scan hits
+  - `duplicate_rule.mode: required_plus_optional_min` requires every scan in `required_scans` plus at least `optional_min_hits` hits from `optional_scans`
+  - duplicate-rule scan references must stay within the preset's `selected_scan_names`
+  - `preset_status: enabled` shows the preset in the UI and includes it in automatic preset exports
+  - `preset_status: hidden_enabled` hides the preset from the UI and still includes it in automatic preset exports
+  - `preset_status: disabled` hides the preset from the UI and excludes it from automatic preset exports
+  - a built-in preset that references any non-enabled scan is forced to `preset_status: disabled`
+  - legacy `export_enabled: false` is still accepted and maps to `preset_status: disabled`
 - `preset_csv_export`: automatic preset CSV export settings
   - `enabled`: turn automatic batch export on or off
   - `output_dir`: root output directory for day-based export folders

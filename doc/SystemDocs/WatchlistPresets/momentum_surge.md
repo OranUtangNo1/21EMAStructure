@@ -17,6 +17,7 @@ selected_scan_names: [4% bullish, Momentum 97, PP Count, Sustained Leadership]
 selected_annotation_filters: []
 selected_duplicate_subfilters: []
 duplicate_threshold: 2
+preset_status: enabled
 ```
 
 ## Pre-Scan Context
@@ -39,6 +40,12 @@ duplicate_threshold: 2
 - selected annotation filters: none
 - selected duplicate subfilters: none
 - UI duplicate threshold after preset load: `2`
+- preset status: `enabled`
+- duplicate rule: none; uses default `min_count`
+
+## Consolidation Notes
+
+This preset absorbs the former `Pattern 4 - Momentum Confirmation`, which was an exact subset (4% bullish, Momentum 97, PP Count).
 
 ## Scope Notes
 

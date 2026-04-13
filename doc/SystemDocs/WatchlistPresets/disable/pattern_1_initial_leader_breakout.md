@@ -17,6 +17,7 @@ selected_scan_names: [97 Club, VCS 52 High, RS Acceleration]
 selected_annotation_filters: []
 selected_duplicate_subfilters: []
 duplicate_threshold: 2
+preset_status: enabled
 ```
 
 ## Pre-Scan Context
