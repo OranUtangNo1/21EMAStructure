@@ -101,55 +101,100 @@
     selected_scan_names: [97 Club, VCS 52 High, RS Acceleration, Three Weeks Tight]
     selected_annotation_filters: []
     selected_duplicate_subfilters: []
-    duplicate_threshold: 2
+    duplicate_threshold: 1
+    duplicate_rule:
+      mode: required_plus_optional_min
+      required_scans: [97 Club, VCS 52 High]
+      optional_scans: [RS Acceleration, Three Weeks Tight]
+      optional_min_hits: 1
     preset_status: enabled
   - preset_name: Orderly Pullback
-    selected_scan_names: [Pullback Quality scan, 21EMA scan, Volume Accumulation, RS Acceleration]
+    selected_scan_names: [Pullback Quality scan, 21EMA scan, RS Acceleration, Volume Accumulation]
     selected_annotation_filters: []
     selected_duplicate_subfilters: []
-    duplicate_threshold: 2
+    duplicate_threshold: 1
+    duplicate_rule:
+      mode: required_plus_optional_min
+      required_scans: [Pullback Quality scan, 21EMA scan]
+      optional_scans: [RS Acceleration, Volume Accumulation]
+      optional_min_hits: 1
     preset_status: enabled
   - preset_name: Reclaim Trigger
     selected_scan_names: [Reclaim scan, Pocket Pivot, Fundamental Demand]
     selected_annotation_filters: []
     selected_duplicate_subfilters: []
-    duplicate_threshold: 2
+    duplicate_threshold: 1
+    duplicate_rule:
+      mode: required_plus_optional_min
+      required_scans: [Reclaim scan]
+      optional_scans: [Pocket Pivot, Fundamental Demand]
+      optional_min_hits: 1
     preset_status: enabled
   - preset_name: Momentum Surge
     selected_scan_names: [4% bullish, Momentum 97, PP Count, Sustained Leadership]
     selected_annotation_filters: []
     selected_duplicate_subfilters: []
-    duplicate_threshold: 2
+    duplicate_threshold: 1
+    duplicate_rule:
+      mode: required_plus_optional_min
+      required_scans: [4% bullish, Momentum 97]
+      optional_scans: [PP Count, Sustained Leadership]
+      optional_min_hits: 1
     preset_status: enabled
   - preset_name: Early Cycle Recovery
-    selected_scan_names: [VCS 52 Low, Volume Accumulation, Trend Reversal Setup, Pocket Pivot]
+    selected_scan_names: [Trend Reversal Setup, Pocket Pivot, VCS 52 Low, Volume Accumulation]
     selected_annotation_filters: []
     selected_duplicate_subfilters: []
-    duplicate_threshold: 2
+    duplicate_threshold: 1
+    duplicate_rule:
+      mode: required_plus_optional_min
+      required_scans: [Trend Reversal Setup, Pocket Pivot]
+      optional_scans: [VCS 52 Low, Volume Accumulation]
+      optional_min_hits: 1
     preset_status: enabled
   - preset_name: Base Breakout
-    selected_scan_names: [97 Club, VCS 52 High, Three Weeks Tight, Pocket Pivot]
+    selected_scan_names: [VCS 52 High, Pocket Pivot, 97 Club, Three Weeks Tight]
     selected_annotation_filters: []
     selected_duplicate_subfilters: []
-    duplicate_threshold: 2
+    duplicate_threshold: 1
+    duplicate_rule:
+      mode: required_plus_optional_min
+      required_scans: [VCS 52 High, Pocket Pivot]
+      optional_scans: [97 Club, Three Weeks Tight]
+      optional_min_hits: 1
     preset_status: enabled
   - preset_name: Trend Pullback
-    selected_scan_names: [Pullback Quality scan, Reclaim scan, RS Acceleration, Volume Accumulation]
+    selected_scan_names: [Reclaim scan, Pullback Quality scan, RS Acceleration, Volume Accumulation]
     selected_annotation_filters: []
     selected_duplicate_subfilters: []
-    duplicate_threshold: 2
+    duplicate_threshold: 1
+    duplicate_rule:
+      mode: required_plus_optional_min
+      required_scans: [Reclaim scan]
+      optional_scans: [Pullback Quality scan, RS Acceleration, Volume Accumulation]
+      optional_min_hits: 1
     preset_status: enabled
   - preset_name: Resilient Leader
     selected_scan_names: [Sustained Leadership, Near 52W High, VCS, Fundamental Demand]
     selected_annotation_filters: []
     selected_duplicate_subfilters: []
-    duplicate_threshold: 2
+    duplicate_threshold: 1
+    duplicate_rule:
+      mode: required_plus_optional_min
+      required_scans: [Sustained Leadership, Near 52W High]
+      optional_scans: [VCS, Fundamental Demand]
+      optional_min_hits: 1
     preset_status: enabled
   - preset_name: Early Recovery
     selected_scan_names: [Trend Reversal Setup, Structure Pivot, VCS 52 Low, Volume Accumulation]
     selected_annotation_filters: []
     selected_duplicate_subfilters: []
-    duplicate_threshold: 2
+    duplicate_threshold: 1
+    duplicate_rule:
+      mode: required_plus_optional_min
+      required_scans: [Trend Reversal Setup, Structure Pivot]
+      optional_scans: [VCS 52 Low, Volume Accumulation]
+      optional_min_hits: 1
     preset_status: enabled
   card_sections:
   - scan_name: 21EMA scan

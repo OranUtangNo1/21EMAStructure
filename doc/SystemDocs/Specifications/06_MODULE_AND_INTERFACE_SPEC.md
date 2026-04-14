@@ -131,11 +131,11 @@ This keeps settings, reusable calculations, and display-ready outputs separate.
 
 ### 2.8 Archived And Out-Of-Scope Modules
 
-Entry, structure, sizing, and trade-management behavior remains archived and is not part of the active module graph.
+Final entry execution, chart-structure review for execution, sizing, and trade-management behavior remains archived and is not part of the active module graph.
 
 Examples:
 
-- entry evaluators
+- final entry evaluators
 - risk and exit evaluators
 - position sizing calculators
 - cockpit-style execution views

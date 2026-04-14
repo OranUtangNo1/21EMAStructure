@@ -6,7 +6,7 @@ The active implementation keeps thresholds, weights, universes, and modes rooted
 That entry file is a manifest which includes section-level files under `config/default/`.
 This catalog lists the parameters that are active in the current codebase and calls out shipped keys that are currently inactive.
 
-Archived entry, structure, sizing, and trade-management parameters are out of scope for this file.
+Archived final-entry, chart-structure, sizing, and trade-management parameters are out of scope for this file. The implemented `entry_signals` timing layer is documented because it is present in the active config and UI.
 
 ## 2. App and persistence
 

@@ -17,7 +17,12 @@ preset_name: Resilient Leader
 selected_scan_names: [Sustained Leadership, Near 52W High, VCS, Fundamental Demand]
 selected_annotation_filters: []
 selected_duplicate_subfilters: []
-duplicate_threshold: 2
+duplicate_threshold: 1
+duplicate_rule:
+  mode: required_plus_optional_min
+  required_scans: [Sustained Leadership, Near 52W High]
+  optional_scans: [VCS, Fundamental Demand]
+  optional_min_hits: 1
 preset_status: enabled
 ```
 
@@ -40,9 +45,9 @@ preset_status: enabled
 
 - selected annotation filters: none
 - selected duplicate subfilters: none
-- UI duplicate threshold after preset load: `2`
+- UI duplicate threshold after preset load: `1`
 - preset status: `enabled`
-- duplicate rule: none; uses default `min_count`
+- duplicate rule: `required_plus_optional_min`; requires every scan in `Sustained Leadership, Near 52W High` plus at least `1` hit from optional scans `VCS, Fundamental Demand`
 
 ## Scan Role Mapping
 
@@ -56,16 +61,17 @@ preset_status: enabled
 ## Logic Structure
 
 ```
-duplicate_threshold: 2
-→ ticker must hit ≥ 2 of [Sustained Leadership, Near 52W High, VCS, Fundamental Demand]
+duplicate_rule.mode: required_plus_optional_min
+required_scans: [Sustained Leadership, Near 52W High]
+optional_scans: [VCS, Fundamental Demand]
+optional_min_hits: 1
+→ ticker must hit every required scan and 1+ optional scan
 ```
 
 Representative hit patterns:
 
-- `Sustained Leadership` + `Near 52W High` → all-horizon RS leader holding near highs (strongest)
-- `Sustained Leadership` + `VCS` → RS leader with volatility contracting (quietly held)
-- `Near 52W High` + `Fundamental Demand` → near highs with fundamental backing + current demand
-- `VCS` + `Fundamental Demand` → contracting with fundamental demand (first to respond on recovery)
+- `Sustained Leadership` + `Near 52W High` + `VCS` → all-horizon RS leader near highs with contraction
+- `Sustained Leadership` + `Near 52W High` + `Fundamental Demand` → near-high leader with fundamental backing and demand
 
 ## Setup Interpretation
 

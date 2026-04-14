@@ -14,10 +14,15 @@
 
 ```yaml
 preset_name: Trend Pullback
-selected_scan_names: [Pullback Quality scan, Reclaim scan, RS Acceleration, Volume Accumulation]
+selected_scan_names: [Reclaim scan, Pullback Quality scan, RS Acceleration, Volume Accumulation]
 selected_annotation_filters: []
 selected_duplicate_subfilters: []
-duplicate_threshold: 2
+duplicate_threshold: 1
+duplicate_rule:
+  mode: required_plus_optional_min
+  required_scans: [Reclaim scan]
+  optional_scans: [Pullback Quality scan, RS Acceleration, Volume Accumulation]
+  optional_min_hits: 1
 preset_status: enabled
 ```
 
@@ -40,9 +45,9 @@ preset_status: enabled
 
 - selected annotation filters: none
 - selected duplicate subfilters: none
-- UI duplicate threshold after preset load: `2`
+- UI duplicate threshold after preset load: `1`
 - preset status: `enabled`
-- duplicate rule: none; uses default `min_count`
+- duplicate rule: `required_plus_optional_min`; requires every scan in `Reclaim scan` plus at least `1` hit from optional scans `Pullback Quality scan, RS Acceleration, Volume Accumulation`
 
 ## Scan Role Mapping
 
@@ -56,16 +61,18 @@ preset_status: enabled
 ## Logic Structure
 
 ```
-duplicate_threshold: 2
-→ ticker must hit ≥ 2 of [Pullback Quality scan, Reclaim scan, RS Acceleration, Volume Accumulation]
+duplicate_rule.mode: required_plus_optional_min
+required_scans: [Reclaim scan]
+optional_scans: [Pullback Quality scan, RS Acceleration, Volume Accumulation]
+optional_min_hits: 1
+→ ticker must hit every required scan and 1+ optional scan
 ```
 
 Representative hit patterns:
 
-- `Pullback Quality` + `RS Acceleration` → orderly pullback with accelerating RS (pre-reclaim watchlist entry)
-- `Reclaim` + `Volume Accumulation` → 21EMA reclaim confirmed by demand (trigger fired)
-- `Pullback Quality` + `Volume Accumulation` → pullback in progress but demand is entering
-- `Reclaim` + `RS Acceleration` → reclaim event with RS acceleration (strongest signal)
+- `Reclaim scan` + `Pullback Quality scan` → reclaim following orderly pullback
+- `Reclaim scan` + `RS Acceleration` → reclaim event with RS acceleration
+- `Reclaim scan` + `Volume Accumulation` → reclaim confirmed by demand
 
 ## Setup Interpretation
 
@@ -74,7 +81,7 @@ Representative hit patterns:
 
 ## Design Rationale
 
-Pullback Quality and Reclaim are temporally sequential (in-pullback → reclaim event). Co-locating them captures both "still pulling back but high quality + RS accelerating" and "already reclaimed with volume confirmation". This targets a completely different phase than Base Breakout (MA-area pullback reentry vs high-zone contraction breakout).
+Pullback Quality and Reclaim are temporally sequential (in-pullback → reclaim event), so Reclaim is required while Pullback Quality remains an optional confirmation with RS Acceleration and Volume Accumulation. This avoids requiring same-day overlap between the pullback and reclaim phases while still targeting MA-area pullback reentry rather than high-zone contraction breakout.
 
 ## Scope Notes
 

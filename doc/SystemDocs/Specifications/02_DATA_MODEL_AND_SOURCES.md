@@ -169,7 +169,7 @@ The current default config sets this to `false`, so sample fallback is inactive 
 - fundamental cache under `data_cache/`
 - user preferences under `data_cache/user_preferences.yaml`
 - weekly universe snapshots under `data_runs/universe_snapshots/`
-- run snapshots under `data_runs/<timestamp>/`
+- run artifacts under file-type folders keyed by trade-date date key, such as `data_runs/run_metadata/YYYYMMDD.json`, `data_runs/watchlist/YYYYMMDD.csv`, `data_runs/scan_hits/YYYYMMDD.csv`, `data_runs/market_summary/YYYYMMDD.json`, and `data_runs/radar_summary/YYYYMMDD.json`
 
 ### 4.2 Current TTLs
 

@@ -3,13 +3,14 @@
 ## Scope Definition
 
 This system is a screening and candidate extraction platform.
-Its active responsibility ends at three outputs:
+Its active responsibility ends at four app outputs:
 
 1. Market Dashboard
 2. RS Radar
 3. Today's Watchlist
+4. Entry Signals
 
-Entry evaluation, chart-based structure review, position sizing, and trade management are out of scope for the active system and remain archived.
+Entry Signals is an implemented downstream timing layer over duplicate tickers. Full chart-based structure review, position sizing, trade execution, and trade management remain out of scope and archived.
 
 ---
 
@@ -68,6 +69,7 @@ Related folders:
    - Market Dashboard
    - RS Radar
    - Today's Watchlist
+   - Entry Signals
    - active UI behavior
 
 6. `06_MODULE_AND_INTERFACE_SPEC.md`

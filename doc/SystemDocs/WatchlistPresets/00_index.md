@@ -30,6 +30,7 @@ Each built-in preset currently contains:
 - `selected_annotation_filters`
 - `selected_duplicate_subfilters`
 - `duplicate_threshold`
+- optional `duplicate_rule`
 - `preset_status`
 
 ## Shared Pre-Scan Context
@@ -54,7 +55,9 @@ All 9 built-in presets currently share these non-scan values:
 
 - `selected_annotation_filters: []`
 - `selected_duplicate_subfilters: []`
-- `duplicate_threshold: 2`
+- `duplicate_threshold: 1`
+- `duplicate_rule.mode: required_plus_optional_min`
+- `duplicate_rule.optional_min_hits: 1`
 - `preset_status: enabled`
 
 ## Current Preset Families
@@ -78,12 +81,12 @@ The active built-in catalog contains these 9 presets:
 | Preset | Selected scans |
 |---|---|
 | `Leader Breakout` | `97 Club`, `VCS 52 High`, `RS Acceleration`, `Three Weeks Tight` |
-| `Orderly Pullback` | `Pullback Quality scan`, `21EMA scan`, `Volume Accumulation`, `RS Acceleration` |
+| `Orderly Pullback` | `Pullback Quality scan`, `21EMA scan`, `RS Acceleration`, `Volume Accumulation` |
 | `Reclaim Trigger` | `Reclaim scan`, `Pocket Pivot`, `Fundamental Demand` |
 | `Momentum Surge` | `4% bullish`, `Momentum 97`, `PP Count`, `Sustained Leadership` |
-| `Early Cycle Recovery` | `VCS 52 Low`, `Volume Accumulation`, `Trend Reversal Setup`, `Pocket Pivot` |
-| `Base Breakout` | `97 Club`, `VCS 52 High`, `Three Weeks Tight`, `Pocket Pivot` |
-| `Trend Pullback` | `Pullback Quality scan`, `Reclaim scan`, `RS Acceleration`, `Volume Accumulation` |
+| `Early Cycle Recovery` | `Trend Reversal Setup`, `Pocket Pivot`, `VCS 52 Low`, `Volume Accumulation` |
+| `Base Breakout` | `VCS 52 High`, `Pocket Pivot`, `97 Club`, `Three Weeks Tight` |
+| `Trend Pullback` | `Reclaim scan`, `Pullback Quality scan`, `RS Acceleration`, `Volume Accumulation` |
 | `Resilient Leader` | `Sustained Leadership`, `Near 52W High`, `VCS`, `Fundamental Demand` |
 | `Early Recovery` | `Trend Reversal Setup`, `Structure Pivot`, `VCS 52 Low`, `Volume Accumulation` |
 
@@ -97,11 +100,15 @@ Scans currently unused by any built-in preset:
 | File | Preset name | Category | Selected scans |
 |---|---|---|---|
 | [leader_breakout.md](leader_breakout.md) | `Leader Breakout` | Legacy consolidated | `97 Club`, `VCS 52 High`, `RS Acceleration`, `Three Weeks Tight` |
-| [orderly_pullback.md](orderly_pullback.md) | `Orderly Pullback` | Legacy consolidated | `Pullback Quality scan`, `21EMA scan`, `Volume Accumulation`, `RS Acceleration` |
+| [orderly_pullback.md](orderly_pullback.md) | `Orderly Pullback` | Legacy consolidated | `Pullback Quality scan`, `21EMA scan`, `RS Acceleration`, `Volume Accumulation` |
 | [reclaim_trigger.md](reclaim_trigger.md) | `Reclaim Trigger` | Legacy consolidated | `Reclaim scan`, `Pocket Pivot`, `Fundamental Demand` |
 | [momentum_surge.md](momentum_surge.md) | `Momentum Surge` | Legacy consolidated | `4% bullish`, `Momentum 97`, `PP Count`, `Sustained Leadership` |
-| [early_cycle_recovery.md](early_cycle_recovery.md) | `Early Cycle Recovery` | Legacy consolidated | `VCS 52 Low`, `Volume Accumulation`, `Trend Reversal Setup`, `Pocket Pivot` |
-| [base_breakout.md](base_breakout.md) | `Base Breakout` | Environment-based | `97 Club`, `VCS 52 High`, `Three Weeks Tight`, `Pocket Pivot` |
-| [trend_pullback.md](trend_pullback.md) | `Trend Pullback` | Environment-based | `Pullback Quality scan`, `Reclaim scan`, `RS Acceleration`, `Volume Accumulation` |
+| [early_cycle_recovery.md](early_cycle_recovery.md) | `Early Cycle Recovery` | Legacy consolidated | `Trend Reversal Setup`, `Pocket Pivot`, `VCS 52 Low`, `Volume Accumulation` |
+| [base_breakout.md](base_breakout.md) | `Base Breakout` | Environment-based | `VCS 52 High`, `Pocket Pivot`, `97 Club`, `Three Weeks Tight` |
+| [trend_pullback.md](trend_pullback.md) | `Trend Pullback` | Environment-based | `Reclaim scan`, `Pullback Quality scan`, `RS Acceleration`, `Volume Accumulation` |
 | [resilient_leader.md](resilient_leader.md) | `Resilient Leader` | Environment-based | `Sustained Leadership`, `Near 52W High`, `VCS`, `Fundamental Demand` |
 | [early_recovery.md](early_recovery.md) | `Early Recovery` | Environment-based | `Trend Reversal Setup`, `Structure Pivot`, `VCS 52 Low`, `Volume Accumulation` |
+
+## Disabled Legacy Preset References
+
+Files under `disable/` are retained as legacy reference material only. They are not loaded from the current `config/default/scan.yaml` built-in preset catalog.

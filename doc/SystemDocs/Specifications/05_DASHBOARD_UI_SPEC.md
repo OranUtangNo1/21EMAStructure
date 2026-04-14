@@ -2,7 +2,7 @@
 
 ## 1. Active UI Scope
 
-The active Streamlit app exposes exactly three pages:
+The active Streamlit app exposes exactly four pages:
 
 1. `Today's Watchlist`
 2. `Entry Signals`
@@ -49,10 +49,9 @@ Current load behavior:
 All pages can show:
 
 - a context strip with `Data source: <artifacts.data_source_label>`
-- a context strip item with `Load mode: Same-day saved run` or `Load mode: Pipeline recomputed`
 - a warning banner when sample fallback is present
 - an info banner when stale cache or missing datasets exist
-- a `Data Health` expander with `Load mode`, `artifacts.fetch_status`, `artifacts.universe_snapshot_path` when present, and `artifacts.run_directory` when present
+- a `Data Health` expander with `artifacts.fetch_status`, `artifacts.universe_snapshot_path` when present, and `artifacts.run_directory` when present
 
 ### 2.3 Watchlist preference persistence
 
@@ -68,11 +67,12 @@ Current implemented behavior:
   - `selected_annotation_filters`
   - `selected_duplicate_subfilters`
   - `duplicate_threshold`
+  - hidden `duplicate_rule`
 - preset records store:
   - `schema_version`
   - `kind`
   - `values`
-- preset `values` currently contain the same four watchlist control fields
+- preset `values` currently contain those watchlist control fields plus hidden `duplicate_rule` when present
 - the preset picker merges saved presets from the preference store with built-in config presets whose `preset_status` is `enabled`
 - built-in presets marked `hidden_enabled` or `disabled` remain out of the picker
 - maximum saved presets per namespace: 10

@@ -13,10 +13,15 @@
 
 ```yaml
 preset_name: Orderly Pullback
-selected_scan_names: [Pullback Quality scan, 21EMA scan, Volume Accumulation, RS Acceleration]
+selected_scan_names: [Pullback Quality scan, 21EMA scan, RS Acceleration, Volume Accumulation]
 selected_annotation_filters: []
 selected_duplicate_subfilters: []
-duplicate_threshold: 2
+duplicate_threshold: 1
+duplicate_rule:
+  mode: required_plus_optional_min
+  required_scans: [Pullback Quality scan, 21EMA scan]
+  optional_scans: [RS Acceleration, Volume Accumulation]
+  optional_min_hits: 1
 preset_status: enabled
 ```
 
@@ -39,9 +44,9 @@ preset_status: enabled
 
 - selected annotation filters: none
 - selected duplicate subfilters: none
-- UI duplicate threshold after preset load: `2`
+- UI duplicate threshold after preset load: `1`
 - preset status: `enabled`
-- duplicate rule: none; uses default `min_count`
+- duplicate rule: `required_plus_optional_min`; requires every scan in `Pullback Quality scan, 21EMA scan` plus at least `1` hit from optional scans `RS Acceleration, Volume Accumulation`
 
 ## Consolidation Notes
 

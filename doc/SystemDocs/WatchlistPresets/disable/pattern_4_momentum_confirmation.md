@@ -5,19 +5,20 @@
 | Item | Value |
 |---|---|
 | Preset name | `Pattern 4 - Momentum Confirmation` |
-| Preset type | built-in watchlist preset |
-| Runtime source | `config/default/scan.yaml` |
+| Preset type | disabled legacy watchlist preset reference |
+| Runtime source | not loaded from the current `config/default/scan.yaml` |
 | UI target | `Today's Watchlist` |
 
-## Current Config Payload
+## Legacy Config Payload
 
 ```yaml
+# Not present in the current config/default/scan.yaml built-in preset catalog.
 preset_name: Pattern 4 - Momentum Confirmation
 selected_scan_names: [4% bullish, Momentum 97, PP Count]
 selected_annotation_filters: []
 selected_duplicate_subfilters: []
 duplicate_threshold: 2
-preset_status: enabled
+preset_status: disabled_legacy_reference
 ```
 
 ## Pre-Scan Context
@@ -38,9 +39,10 @@ preset_status: enabled
 
 - selected annotation filters: none
 - selected duplicate subfilters: none
-- UI duplicate threshold after preset load: `2`
+- historical duplicate threshold after preset load: `2`
 
 ## Scope Notes
 
-- This preset changes watchlist page controls only.
+- This legacy preset is not loaded by the active app.
+- When it was active, it changed watchlist page controls only.
 - It does not override global scan thresholds.

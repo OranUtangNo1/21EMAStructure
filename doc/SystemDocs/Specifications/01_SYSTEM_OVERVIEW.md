@@ -2,13 +2,14 @@
 
 ## 1. Product Definition
 
-OraTek is an active screening and candidate extraction platform for growth-stock research. The implemented product produces three active outputs:
+OraTek is an active screening and candidate extraction platform for growth-stock research. The implemented product produces four active app outputs:
 
 1. Market Dashboard
 2. RS Radar
 3. Today's Watchlist
+4. Entry Signals
 
-The application helps the user review market context, inspect sector and industry leadership, and surface candidate tickers that satisfy one or more scan conditions.
+The application helps the user review market context, inspect sector and industry leadership, surface candidate tickers that satisfy one or more scan conditions, and evaluate implemented entry-timing signals on duplicate-ticker candidates.
 
 ## 2. Active Scope
 
@@ -20,13 +21,13 @@ The active product scope is limited to:
 - scan-based candidate extraction
 - post-scan watchlist projection in the UI
 - duplicate-ticker prioritization from scan overlap
-- Market Dashboard, RS Radar, and Today's Watchlist rendering
+- Market Dashboard, RS Radar, Today's Watchlist, and Entry Signals rendering
 
 ## 3. Out-Of-Scope Areas
 
 The active product does not implement:
 
-- entry confirmation
+- final entry confirmation
 - chart-structure review for execution
 - position sizing
 - stop placement
@@ -75,7 +76,7 @@ The pipeline:
 
 ### 4.4 Candidate Extraction
 
-The application evaluates the configured enabled scan rules on the eligible universe. The default config currently enables 15 scan families.
+The application evaluates the configured enabled scan rules on the eligible universe. The default config currently enables 21 scan families.
 
 Tickers enter the raw watchlist only when they pass at least one scan. Annotation filters are also evaluated, but they add flags and counts only; they do not create watchlist candidates on their own.
 
@@ -94,11 +95,12 @@ This UI projection recalculates overlap and duplicate state for the current sess
 
 ### 4.6 Dashboard Rendering
 
-The three active views consume the same run artifacts:
+The four active views consume the same run artifacts:
 
 - Market Dashboard summarizes breadth, performance, factor leadership, and ETF snapshots
 - RS Radar summarizes sector and industry ETF leadership plus top RS movers
 - Today's Watchlist rebuilds scan cards and duplicate bands from raw watchlist rows plus current sidebar controls
+- Entry Signals evaluates enabled entry-timing signals on duplicate tickers sourced from export-enabled presets and the current watchlist selection
 
 ## 5. Core Design Principles
 
@@ -162,6 +164,7 @@ Responsibilities:
 - Market Dashboard result shaping
 - RS Radar result shaping
 - watchlist projection and ticker-card rendering
+- entry-signal result shaping
 - page-local control persistence for the watchlist sidebar
 
 ## 7. Current Implementation Stance

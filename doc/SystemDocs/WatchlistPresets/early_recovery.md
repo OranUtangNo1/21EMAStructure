@@ -17,7 +17,12 @@ preset_name: Early Recovery
 selected_scan_names: [Trend Reversal Setup, Structure Pivot, VCS 52 Low, Volume Accumulation]
 selected_annotation_filters: []
 selected_duplicate_subfilters: []
-duplicate_threshold: 2
+duplicate_threshold: 1
+duplicate_rule:
+  mode: required_plus_optional_min
+  required_scans: [Trend Reversal Setup, Structure Pivot]
+  optional_scans: [VCS 52 Low, Volume Accumulation]
+  optional_min_hits: 1
 preset_status: enabled
 ```
 
@@ -40,9 +45,9 @@ preset_status: enabled
 
 - selected annotation filters: none
 - selected duplicate subfilters: none
-- UI duplicate threshold after preset load: `2`
+- UI duplicate threshold after preset load: `1`
 - preset status: `enabled`
-- duplicate rule: none; uses default `min_count`
+- duplicate rule: `required_plus_optional_min`; requires every scan in `Trend Reversal Setup, Structure Pivot` plus at least `1` hit from optional scans `VCS 52 Low, Volume Accumulation`
 
 ## Scan Role Mapping
 
@@ -56,16 +61,17 @@ preset_status: enabled
 ## Logic Structure
 
 ```
-duplicate_threshold: 2
-→ ticker must hit ≥ 2 of [Trend Reversal Setup, Structure Pivot, VCS 52 Low, Volume Accumulation]
+duplicate_rule.mode: required_plus_optional_min
+required_scans: [Trend Reversal Setup, Structure Pivot]
+optional_scans: [VCS 52 Low, Volume Accumulation]
+optional_min_hits: 1
+→ ticker must hit every required scan and 1+ optional scan
 ```
 
 Representative hit patterns:
 
-- `Trend Reversal Setup` + `Structure Pivot` → SMA structure reversal + HL confirmation (strongest bottoming signal)
-- `Trend Reversal Setup` + `Volume Accumulation` → structural reversal with institutional accumulation
-- `VCS 52 Low` + `Structure Pivot` → low-zone contraction + structural pivot (next-cycle leader candidate)
-- `VCS 52 Low` + `Volume Accumulation` → low-zone contraction + institutional demand entering
+- `Trend Reversal Setup` + `Structure Pivot` + `VCS 52 Low` → bottoming structure with low-zone contraction
+- `Trend Reversal Setup` + `Structure Pivot` + `Volume Accumulation` → bottoming structure with institutional accumulation
 
 ## Setup Interpretation
 

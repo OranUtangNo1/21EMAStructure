@@ -9,8 +9,9 @@ The active product is a screening and candidate extraction platform. It supports
 1. market environment review
 2. sector and industry RS review
 3. watchlist candidate extraction
+4. entry-timing signal review over duplicate-ticker candidates
 
-The product does not perform final chart-based trade execution decisions.
+The product does not perform final chart-based trade execution decisions, position sizing, or trade management.
 
 ## 2. End-To-End Workflow
 
@@ -29,6 +30,7 @@ Current flow:
 7. run the enabled scan rules
 8. create the raw watchlist as the union of scan hits
 9. mark duplicate tickers when a ticker appears in `duplicate_min_count` or more scan hits
+10. optionally evaluate configured entry-timing signals on duplicate tickers
 
 ### 2.2 Market Review
 
@@ -65,6 +67,16 @@ This is intended to answer:
 - which names appear repeatedly across the currently selected scan cards?
 - which names have same-day earnings inside the current eligible universe?
 
+### 2.5 Entry Signal Review
+
+The user can review the Entry Signals tab after duplicate tickers exist.
+
+This is intended to answer:
+
+- which duplicate tickers also satisfy enabled entry-timing signal definitions?
+- which built-in preset or current watchlist selection contributed the ticker to the signal universe?
+- what risk-reference field is available for the signal row?
+
 ## 3. Active Scan Workflow
 
 ### 3.1 Stable scan workflow and current scan family
@@ -77,7 +89,7 @@ Stable rule:
 - annotation filters do not create watchlist candidates by themselves
 
 The exact active scan family is documented under `doc/SystemDocs/Scan/scan_00_index.md`.
-The default config currently enables 15 scan families.
+The default config currently enables 21 scan families.
 
 ### 3.2 Duplicate Tickers
 
@@ -102,6 +114,7 @@ Available default definitions:
 
 - `RS 21 >= 63`
 - `High Est. EPS Growth`
+- `PP Count (20d)`
 
 These rules do not determine raw watchlist eligibility. They narrow the displayed watchlist only when the user selects them in the sidebar.
 
@@ -207,7 +220,7 @@ The following remain outside the active product workflow:
 
 - discretionary chart review
 - external charting tools
-- final entry confirmation
+- final entry confirmation beyond the implemented signal table
 - position sizing
 - stop management
 - trade exits
