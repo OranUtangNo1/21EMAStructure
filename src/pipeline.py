@@ -141,13 +141,23 @@ class ResearchPlatform:
         else:
             raise ValueError(f"Unsupported universe discovery provider: {self.discovery_provider_name}")
 
-    def run(self, symbols: list[str] | None = None, force_universe_refresh: bool = False) -> PlatformArtifacts:
+    def run(
+        self,
+        symbols: list[str] | None = None,
+        force_universe_refresh: bool = False,
+        force_price_refresh: bool = False,
+    ) -> PlatformArtifacts:
         manual_symbols = self._normalize_symbols(symbols or [])
         active_symbols, universe_mode, universe_snapshot_path, universe_snapshot = self._resolve_active_symbols(symbols, force_universe_refresh)
         if not active_symbols:
             raise ValueError("At least one symbol is required.")
 
-        price_batch, benchmark_history, vix_history, profile_batch, fundamental_batch = self._load_data(active_symbols, universe_snapshot, universe_mode)
+        price_batch, benchmark_history, vix_history, profile_batch, fundamental_batch = self._load_data(
+            active_symbols,
+            universe_snapshot,
+            universe_mode,
+            force_price_refresh=force_price_refresh,
+        )
         live_symbol_histories = self._build_indicator_histories(price_batch.histories, active_symbols)
         if not live_symbol_histories:
             raise RuntimeError("No price histories were available for the requested symbols.")
@@ -479,6 +489,8 @@ class ResearchPlatform:
         symbols: list[str],
         universe_snapshot: pd.DataFrame | None,
         universe_mode: str,
+        *,
+        force_price_refresh: bool = False,
     ) -> tuple[PriceHistoryBatch, pd.DataFrame, pd.DataFrame, ProfileBatchResult, FundamentalBatchResult]:
         app_settings = self.settings.get("app", {})
         benchmark_symbol = str(app_settings.get("benchmark_symbol", "SPY"))
@@ -487,7 +499,11 @@ class ResearchPlatform:
 
         auxiliary_symbols = list(dict.fromkeys(self.radar_builder.required_symbols() + self.market_scorer.required_symbols()))
         requested_price_symbols = list(dict.fromkeys(symbols + [benchmark_symbol, vix_symbol] + auxiliary_symbols))
-        price_batch = self.price_provider.get_price_history(requested_price_symbols, period=period)
+        price_batch = self.price_provider.get_price_history(
+            requested_price_symbols,
+            period=period,
+            force_refresh=force_price_refresh,
+        )
         self._apply_sample_price_fallback(price_batch, requested_price_symbols, benchmark_symbol, vix_symbol)
 
         benchmark_history = price_batch.histories.get(benchmark_symbol, pd.DataFrame())

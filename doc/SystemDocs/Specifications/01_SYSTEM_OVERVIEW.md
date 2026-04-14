@@ -61,6 +61,8 @@ For the resolved universe, the application loads:
 - Market Dashboard ETF histories
 - factor ETF histories
 
+The app can request `Force Price Data Refresh`, which bypasses the price-cache TTL for this run while still using existing cached price rows as a merge base and fallback when live refresh fails.
+
 Profile and fundamental fields are sourced from the current weekly universe snapshot first, then filled from Yahoo Finance fallback providers when missing.
 
 ### 4.3 Snapshot, Indicators, Scores, And Data Quality

@@ -1,6 +1,8 @@
 ﻿from __future__ import annotations
 
 import html
+import importlib
+import inspect
 import sys
 from dataclasses import dataclass
 from datetime import datetime
@@ -425,9 +427,31 @@ def parse_symbols(raw_value: str) -> list[str]:
     return [part.strip().upper() for part in normalized.split(",") if part.strip()]
 
 
-def load_artifacts(config_path: str, symbols: list[str], force_universe_refresh: bool) -> PlatformArtifacts:
-    platform = ResearchPlatform(config_path)
-    return platform.run(symbols or None, force_universe_refresh=force_universe_refresh)
+def get_research_platform_class() -> type[ResearchPlatform]:
+    global PlatformArtifacts, ResearchPlatform
+
+    if "force_price_refresh" in inspect.signature(ResearchPlatform.run).parameters:
+        return ResearchPlatform
+
+    pipeline_module = importlib.import_module("src.pipeline")
+    pipeline_module = importlib.reload(pipeline_module)
+    PlatformArtifacts = pipeline_module.PlatformArtifacts
+    ResearchPlatform = pipeline_module.ResearchPlatform
+    return ResearchPlatform
+
+
+def load_artifacts(
+    config_path: str,
+    symbols: list[str],
+    force_universe_refresh: bool,
+    force_price_refresh: bool,
+) -> PlatformArtifacts:
+    platform = get_research_platform_class()(config_path)
+    return platform.run(
+        symbols or None,
+        force_universe_refresh=force_universe_refresh,
+        force_price_refresh=force_price_refresh,
+    )
 
 
 def load_scan_config(config_path: str) -> ScanConfig:
@@ -1544,6 +1568,11 @@ def main() -> None:
         config_path = str(default_config)
         symbols_raw = st.text_area("Manual Symbols (optional)", value="", height=120, placeholder="Leave blank to use weekly universe snapshot")
         force_universe_refresh = st.checkbox("Force Weekly Universe Refresh", value=False)
+        force_price_refresh = st.checkbox(
+            "Force Price Data Refresh",
+            value=False,
+            help="Bypass the price-cache TTL and fetch the latest OHLCV data while keeping cached rows as fallback.",
+        )
 
         if page_key in {"watchlist", "entry_signals"}:
             watchlist_state = render_watchlist_sidebar_controls(config_path)
@@ -1553,10 +1582,15 @@ def main() -> None:
         refresh = st.button("Refresh", type="primary")
 
     symbols = parse_symbols(symbols_raw)
-    cache_key = (config_path, tuple(symbols), force_universe_refresh)
+    cache_key = (config_path, tuple(symbols), force_universe_refresh, force_price_refresh)
     if refresh or st.session_state.get("artifacts_key") != cache_key:
         with st.spinner("Loading screening artifacts..."):
-            st.session_state["artifacts"] = load_artifacts(config_path, symbols, force_universe_refresh)
+            st.session_state["artifacts"] = load_artifacts(
+                config_path,
+                symbols,
+                force_universe_refresh,
+                force_price_refresh,
+            )
             st.session_state["preset_export_directory"] = (
                 str(export_watchlist_preset_csvs(config_path, st.session_state["artifacts"]) or "")
             )

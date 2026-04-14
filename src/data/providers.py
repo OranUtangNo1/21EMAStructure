@@ -61,7 +61,14 @@ class PriceDataProvider(ABC):
     """Abstract interface for daily price retrieval."""
 
     @abstractmethod
-    def get_price_history(self, symbols: list[str], period: str = "18mo", interval: str = "1d") -> PriceHistoryBatch:
+    def get_price_history(
+        self,
+        symbols: list[str],
+        period: str = "18mo",
+        interval: str = "1d",
+        *,
+        force_refresh: bool = False,
+    ) -> PriceHistoryBatch:
         """Fetch OHLCV history for a list of symbols."""
 
 
@@ -234,7 +241,14 @@ class YFinancePriceDataProvider(PriceDataProvider):
         normalized_incremental_period = str(incremental_period).strip() if incremental_period is not None else ""
         self.incremental_period = normalized_incremental_period or None
 
-    def get_price_history(self, symbols: list[str], period: str = "18mo", interval: str = "1d") -> PriceHistoryBatch:
+    def get_price_history(
+        self,
+        symbols: list[str],
+        period: str = "18mo",
+        interval: str = "1d",
+        *,
+        force_refresh: bool = False,
+    ) -> PriceHistoryBatch:
         if yf is None:
             raise RuntimeError("yfinance is not installed.")
 
@@ -247,11 +261,12 @@ class YFinancePriceDataProvider(PriceDataProvider):
         normalized_symbols = list(dict.fromkeys(str(symbol).strip().upper() for symbol in symbols if str(symbol).strip()))
         for symbol in normalized_symbols:
             cache_key = self._cache_key(symbol, period, interval)
-            cached = self.cache.load_csv(cache_key, ttl_hours=self.technical_ttl_hours)
-            if cached is not None and not cached.empty:
-                histories[symbol] = cached
-                statuses[symbol] = self._status(symbol, "cache_fresh", True, self.cache.get_modified_at(cache_key, "csv"))
-                continue
+            if not force_refresh:
+                cached = self.cache.load_csv(cache_key, ttl_hours=self.technical_ttl_hours)
+                if cached is not None and not cached.empty:
+                    histories[symbol] = cached
+                    statuses[symbol] = self._status(symbol, "cache_fresh", True, self.cache.get_modified_at(cache_key, "csv"))
+                    continue
 
             stale = self.cache.load_csv(cache_key, ttl_hours=self.technical_ttl_hours, allow_stale=True)
             if stale is not None and not stale.empty:

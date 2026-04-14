@@ -125,7 +125,7 @@ This keeps settings, reusable calculations, and display-ready outputs separate.
 - `app/main.py`
   - Streamlit entrypoint
   - page rendering
-  - same-day saved-run reuse before pipeline recomputation
+  - artifact reload by sidebar cache key and `Refresh`
   - watchlist sidebar control state
   - watchlist preset save/load/update/delete UI with a 10-preset cap
 
@@ -155,7 +155,7 @@ The loader deep-merges dictionaries from included files and direct overrides.
 
 Abstract interfaces in `src/data/providers.py`:
 
-- `PriceDataProvider.get_price_history(symbols, period, interval)`
+- `PriceDataProvider.get_price_history(symbols, period, interval, *, force_refresh=False)`
 - `ProfileDataProvider.get_profiles(symbols)`
 - `FundamentalDataProvider.get_fundamentals(symbols)`
 - `UniverseDiscoveryProvider.discover()`
@@ -170,7 +170,7 @@ Current concrete implementations:
 
 ### 3.3 Pipeline Interface
 
-`ResearchPlatform.run(symbols=None, force_universe_refresh=False)` returns `PlatformArtifacts`.
+`ResearchPlatform.run(symbols=None, force_universe_refresh=False, force_price_refresh=False)` returns `PlatformArtifacts`.
 
 `ResearchPlatform.load_latest_run_artifacts(symbols=None, force_universe_refresh=False)` can also return `PlatformArtifacts` by reusing the latest same-day saved run when the current request matches the saved config path, manual-symbol input, and expected trade date.
 
@@ -185,6 +185,8 @@ The pipeline contract is:
 7. run scans and annotations
 8. build watchlist, duplicate, radar, and market outputs
 9. optionally persist run artifacts
+
+When `force_price_refresh` is true, the price provider bypasses fresh price-cache reuse for the run, uses any cached price rows as merge/fallback data, and fetches live yfinance rows for the requested price symbols.
 
 ### 3.4 Scan Interface
 

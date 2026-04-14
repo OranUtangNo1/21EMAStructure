@@ -19,6 +19,7 @@ The sidebar always exposes:
 
 - `Manual Symbols (optional)`
 - `Force Weekly Universe Refresh`
+- `Force Price Data Refresh`
 - `Refresh` button
 
 The default config path is resolved internally to `config/default.yaml` and is not currently exposed in the sidebar UI.
@@ -36,13 +37,15 @@ Current navigation behavior:
 - the app resolves the active page from a page-definition registry so additional tabs can be added without reshaping the main flow
 - page-specific sidebar controls are rendered from the active page definition only
 
-The app reloads artifacts when the user presses `Refresh` or when the tuple `(config_path, manual_symbols, force_universe_refresh)` changes.
+The app reloads artifacts when the user presses `Refresh` or when the tuple `(config_path, manual_symbols, force_universe_refresh, force_price_refresh)` changes.
 
 Current load behavior:
 
 - explicit `Refresh` always recomputes the pipeline
-- otherwise the app first tries to reuse the latest same-day saved run
-- saved-run reuse is allowed only when config path, manual-symbol input, and expected trade date match, and `Force Weekly Universe Refresh` is off
+- otherwise the app reuses the current in-session artifacts until the artifact key changes
+- `Force Weekly Universe Refresh` bypasses weekly universe snapshot reuse for symbol resolution
+- `Force Price Data Refresh` bypasses the price-cache TTL for the active run while keeping existing cached price rows as merge/fallback data
+- the current app load path calls `ResearchPlatform.run()` directly; the pipeline's same-day saved-run restore helper is not currently used by the Streamlit startup flow
 
 ### 2.2 Shared context and health
 

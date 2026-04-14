@@ -44,6 +44,7 @@ Archived final-entry, chart-structure, sizing, and trade-management parameters a
 
 ### data.technical_cache_ttl_hours
 - current default: `12`
+- bypassed for price histories when the app's `Force Price Data Refresh` control passes `force_price_refresh=True`; this does not clear cache files
 
 ### data.profile_cache_ttl_hours
 - current default: `168`
@@ -71,7 +72,7 @@ Archived final-entry, chart-structure, sizing, and trade-management parameters a
 
 ### data.price_incremental_period
 - current default: `5d`
-- used when refreshing symbols that only have stale cached price history
+- used when refreshing symbols that have cached price history, including force-refresh runs that keep cached rows as the merge/fallback base
 
 ## 4. Universe discovery and local universe filter
 
