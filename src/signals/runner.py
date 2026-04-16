@@ -10,6 +10,20 @@ from src.scan.rules import DuplicateRuleConfig, ScanConfig
 from src.signals.rules import ENTRY_SIGNAL_REGISTRY, EntrySignalConfig
 
 
+ENTRY_SIGNAL_UNIVERSE_MODE_BOTH = "preset_and_current_duplicates"
+ENTRY_SIGNAL_UNIVERSE_MODE_PRESETS = "preset_duplicates"
+ENTRY_SIGNAL_UNIVERSE_MODE_CURRENT = "current_duplicates"
+ENTRY_SIGNAL_UNIVERSE_MODE_WATCHLIST = "watchlist"
+ENTRY_SIGNAL_UNIVERSE_MODE_ELIGIBLE = "eligible_universe"
+ENTRY_SIGNAL_UNIVERSE_MODES = (
+    ENTRY_SIGNAL_UNIVERSE_MODE_BOTH,
+    ENTRY_SIGNAL_UNIVERSE_MODE_PRESETS,
+    ENTRY_SIGNAL_UNIVERSE_MODE_CURRENT,
+    ENTRY_SIGNAL_UNIVERSE_MODE_WATCHLIST,
+    ENTRY_SIGNAL_UNIVERSE_MODE_ELIGIBLE,
+)
+
+
 class EntrySignalRunner:
     """Evaluate entry-timing signals on duplicate-ticker universes."""
 
@@ -29,16 +43,7 @@ class EntrySignalRunner:
         selected_duplicate_subfilters: Iterable[str] | None = None,
         duplicate_rule: DuplicateRuleConfig | None = None,
     ) -> pd.DataFrame:
-        source_by_ticker: dict[str, set[str]] = defaultdict(set)
-
-        for preset in self.scan_config.watchlist_presets:
-            if not preset.export_enabled:
-                continue
-            preset_frame = self._project_preset_duplicates(watchlist, hits, preset)
-            for ticker in preset_frame.index.astype(str):
-                source_by_ticker[ticker.upper()].add(preset.preset_name)
-
-        current_frame = self._project_current_duplicates(
+        return self.build_universe(
             watchlist,
             hits,
             selected_scan_names=selected_scan_names,
@@ -46,9 +51,50 @@ class EntrySignalRunner:
             selected_annotation_filters=selected_annotation_filters,
             selected_duplicate_subfilters=selected_duplicate_subfilters,
             duplicate_rule=duplicate_rule,
+            universe_mode=ENTRY_SIGNAL_UNIVERSE_MODE_BOTH,
         )
-        for ticker in current_frame.index.astype(str):
-            source_by_ticker[ticker.upper()].add("Current Selection")
+
+    def build_universe(
+        self,
+        watchlist: pd.DataFrame,
+        hits: pd.DataFrame,
+        *,
+        selected_scan_names: Iterable[str],
+        duplicate_threshold: int,
+        selected_annotation_filters: Iterable[str] | None = None,
+        selected_duplicate_subfilters: Iterable[str] | None = None,
+        duplicate_rule: DuplicateRuleConfig | None = None,
+        universe_mode: str = ENTRY_SIGNAL_UNIVERSE_MODE_BOTH,
+        eligible_snapshot: pd.DataFrame | None = None,
+    ) -> pd.DataFrame:
+        mode = universe_mode if universe_mode in ENTRY_SIGNAL_UNIVERSE_MODES else ENTRY_SIGNAL_UNIVERSE_MODE_BOTH
+        if mode == ENTRY_SIGNAL_UNIVERSE_MODE_WATCHLIST:
+            return self._build_frame_universe(watchlist, "Today's Watchlist")
+        if mode == ENTRY_SIGNAL_UNIVERSE_MODE_ELIGIBLE:
+            return self._build_frame_universe(eligible_snapshot, "Eligible Universe")
+
+        source_by_ticker: dict[str, set[str]] = defaultdict(set)
+
+        if mode in {ENTRY_SIGNAL_UNIVERSE_MODE_BOTH, ENTRY_SIGNAL_UNIVERSE_MODE_PRESETS}:
+            for preset in self.scan_config.watchlist_presets:
+                if not preset.export_enabled:
+                    continue
+                preset_frame = self._project_preset_duplicates(watchlist, hits, preset)
+                for ticker in preset_frame.index.astype(str):
+                    source_by_ticker[ticker.upper()].add(preset.preset_name)
+
+        if mode in {ENTRY_SIGNAL_UNIVERSE_MODE_BOTH, ENTRY_SIGNAL_UNIVERSE_MODE_CURRENT}:
+            current_frame = self._project_current_duplicates(
+                watchlist,
+                hits,
+                selected_scan_names=selected_scan_names,
+                duplicate_threshold=duplicate_threshold,
+                selected_annotation_filters=selected_annotation_filters,
+                selected_duplicate_subfilters=selected_duplicate_subfilters,
+                duplicate_rule=duplicate_rule,
+            )
+            for ticker in current_frame.index.astype(str):
+                source_by_ticker[ticker.upper()].add("Current Selection")
 
         if not source_by_ticker or watchlist.empty:
             return pd.DataFrame()
@@ -61,6 +107,15 @@ class EntrySignalRunner:
         universe = lookup.loc[tickers].copy()
         universe["universe_sources"] = [", ".join(sorted(source_by_ticker[ticker])) for ticker in universe.index]
         return universe
+
+    def _build_frame_universe(self, frame: pd.DataFrame | None, source_label: str) -> pd.DataFrame:
+        if frame is None or frame.empty:
+            return pd.DataFrame()
+        universe = frame.copy()
+        universe.index = universe.index.astype(str).str.upper()
+        universe = universe.loc[~universe.index.duplicated(keep="first")].copy()
+        universe["universe_sources"] = source_label
+        return universe.sort_index()
 
     def evaluate(
         self,

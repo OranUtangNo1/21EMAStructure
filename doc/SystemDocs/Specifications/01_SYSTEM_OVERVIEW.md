@@ -102,7 +102,7 @@ The four active views consume the same run artifacts:
 - Market Dashboard summarizes breadth, performance, factor leadership, and ETF snapshots
 - RS Radar summarizes sector and industry ETF leadership plus top RS movers
 - Today's Watchlist rebuilds scan cards and duplicate bands from raw watchlist rows plus current sidebar controls
-- Entry Signals evaluates enabled entry-timing signals on duplicate tickers sourced from export-enabled presets and the current watchlist selection
+- Entry Signals evaluates enabled entry-timing signals on the page-selected signal universe: preset duplicates, current-selection duplicates, both duplicate sources, Today's Watchlist, or the eligible universe
 
 ## 5. Core Design Principles
 

@@ -21,7 +21,14 @@ from src.dashboard.watchlist import WatchlistViewModelBuilder
 from src.pipeline import PlatformArtifacts, ResearchPlatform
 from src.scan.rules import DuplicateRuleConfig, ScanConfig
 from src.signals.rules import ENTRY_SIGNAL_REGISTRY, EntrySignalConfig
-from src.signals.runner import EntrySignalRunner
+from src.signals.runner import (
+    ENTRY_SIGNAL_UNIVERSE_MODE_BOTH,
+    ENTRY_SIGNAL_UNIVERSE_MODE_CURRENT,
+    ENTRY_SIGNAL_UNIVERSE_MODE_ELIGIBLE,
+    ENTRY_SIGNAL_UNIVERSE_MODE_PRESETS,
+    ENTRY_SIGNAL_UNIVERSE_MODE_WATCHLIST,
+    EntrySignalRunner,
+)
 from src.ui_preferences import UserPreferenceStore
 
 
@@ -194,9 +201,18 @@ class WatchlistSidebarState:
 
 
 @dataclass(frozen=True)
-class EntrySignalSidebarState:
+class EntrySignalPageState:
     signal_config: EntrySignalConfig
     selected_signal_names: list[str]
+
+
+ENTRY_SIGNAL_UNIVERSE_LABELS: dict[str, str] = {
+    ENTRY_SIGNAL_UNIVERSE_MODE_BOTH: "Preset + Current Duplicates",
+    ENTRY_SIGNAL_UNIVERSE_MODE_PRESETS: "Preset Duplicates",
+    ENTRY_SIGNAL_UNIVERSE_MODE_CURRENT: "Current Selection Duplicates",
+    ENTRY_SIGNAL_UNIVERSE_MODE_WATCHLIST: "Today's Watchlist",
+    ENTRY_SIGNAL_UNIVERSE_MODE_ELIGIBLE: "Eligible Universe",
+}
 
 
 APP_PAGES: tuple[AppPageDefinition, ...] = (
@@ -1061,31 +1077,6 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
     )
 
 
-def render_entry_signal_sidebar_controls(config_path: str) -> EntrySignalSidebarState:
-    signal_config = load_entry_signal_config(config_path)
-    enabled_signal_names = list(signal_config.enabled_signal_names())
-    default_selected = list(signal_config.startup_selected_signal_names())
-    display_names = {
-        name: ENTRY_SIGNAL_REGISTRY[name].display_name
-        for name in enabled_signal_names
-        if name in ENTRY_SIGNAL_REGISTRY
-    }
-    st.markdown("**Entry Signals**")
-    selected_signal_names = st.multiselect(
-        "Entry signal logic",
-        options=enabled_signal_names,
-        default=default_selected,
-        format_func=lambda name: display_names.get(name, str(name)),
-        help="Entry timing logic is evaluated only on duplicate tickers from built-in presets and the current card selection.",
-    )
-    if not selected_signal_names:
-        st.caption("Select at least one entry signal to evaluate candidate timing.")
-    return EntrySignalSidebarState(
-        signal_config=signal_config,
-        selected_signal_names=list(selected_signal_names),
-    )
-
-
 def render_data_health_banner(artifacts: PlatformArtifacts) -> None:
     summary = artifacts.data_health_summary
     if summary.get("sample_count", 0) > 0:
@@ -1225,15 +1216,54 @@ def render_watchlist(
 def render_entry_signals(
     artifacts: PlatformArtifacts,
     watchlist_state: WatchlistSidebarState,
-    signal_state: EntrySignalSidebarState,
+    signal_state: EntrySignalPageState,
 ) -> None:
+    render_page_header(
+        "Entry Signals",
+        subtitle="Entry-timing checks for the selected signal universe.",
+        meta=_format_trade_date(artifacts),
+    )
+    st.caption(
+        "Signals are not scans. They evaluate whether a selected candidate universe is at a reasonable entry point today."
+    )
+
+    universe_modes = list(ENTRY_SIGNAL_UNIVERSE_LABELS)
+    control_col, signal_col = st.columns([1, 2])
+    with control_col:
+        selected_universe_mode = st.selectbox(
+            "Signal universe",
+            options=universe_modes,
+            index=0,
+            format_func=lambda mode: ENTRY_SIGNAL_UNIVERSE_LABELS.get(mode, str(mode)),
+            help="Choose which ticker set Entry Signals should evaluate.",
+        )
+    enabled_signal_names = list(signal_state.signal_config.enabled_signal_names())
+    default_selected_signals = [
+        name
+        for name in signal_state.selected_signal_names
+        if name in enabled_signal_names and name in ENTRY_SIGNAL_REGISTRY
+    ]
+    display_names = {
+        name: ENTRY_SIGNAL_REGISTRY[name].display_name
+        for name in enabled_signal_names
+        if name in ENTRY_SIGNAL_REGISTRY
+    }
+    with signal_col:
+        selected_signal_names = st.multiselect(
+            "Entry signal logic",
+            options=enabled_signal_names,
+            default=default_selected_signals,
+            format_func=lambda name: display_names.get(name, str(name)),
+            help="Entry timing logic to evaluate against the selected universe.",
+        )
+
     duplicate_threshold = int(watchlist_state.duplicate_threshold)
     parsed_duplicate_rule = DuplicateRuleConfig.from_dict(
         watchlist_state.duplicate_rule,
         default_min_count=duplicate_threshold,
     )
     runner = EntrySignalRunner(signal_state.signal_config, watchlist_state.scan_config)
-    universe = runner.build_default_universe(
+    universe = runner.build_universe(
         artifacts.watchlist,
         artifacts.scan_hits,
         selected_scan_names=watchlist_state.selected_scan_names,
@@ -1241,30 +1271,24 @@ def render_entry_signals(
         selected_annotation_filters=watchlist_state.selected_annotation_filters,
         selected_duplicate_subfilters=watchlist_state.selected_duplicate_subfilters,
         duplicate_rule=parsed_duplicate_rule,
+        universe_mode=selected_universe_mode,
+        eligible_snapshot=artifacts.eligible_snapshot,
     )
-    result = runner.evaluate(universe, signal_state.selected_signal_names)
-
-    render_page_header(
-        "Entry Signals",
-        subtitle="Entry-timing checks for duplicate tickers from built-in presets and the current card selection.",
-        meta=_format_trade_date(artifacts),
-    )
-    st.caption(
-        "Signals are not scans. They evaluate whether an already-detected duplicate ticker is at a reasonable entry point today."
-    )
+    result = runner.evaluate(universe, selected_signal_names)
     summary_col, signal_col = st.columns([1, 2])
     with summary_col:
         st.metric("Signal Universe", int(len(universe)))
     with signal_col:
+        st.caption("Universe source: " + ENTRY_SIGNAL_UNIVERSE_LABELS.get(selected_universe_mode, str(selected_universe_mode)))
         st.caption(
             "Selected signals: "
-            + (", ".join(signal_state.selected_signal_names) if signal_state.selected_signal_names else "None")
+            + (", ".join(selected_signal_names) if selected_signal_names else "None")
         )
 
-    if not signal_state.selected_signal_names:
-        st.info("Select at least one entry signal in the sidebar.")
+    if not selected_signal_names:
+        st.info("Select at least one entry signal.")
     elif result.empty:
-        st.caption("No duplicate ticker matched the selected entry signals.")
+        st.caption("No ticker in the selected universe matched the selected entry signals.")
     else:
         st.dataframe(result, width="stretch", hide_index=True, height=min(760, 110 + len(result) * 35))
 
@@ -1527,7 +1551,7 @@ def render_active_page(
     page_key: str,
     artifacts: PlatformArtifacts,
     watchlist_state: WatchlistSidebarState | None,
-    signal_state: EntrySignalSidebarState | None,
+    signal_state: EntrySignalPageState | None,
 ) -> None:
     if page_key == "watchlist":
         if watchlist_state is None:
@@ -1560,7 +1584,7 @@ def main() -> None:
     default_config = ROOT / "config" / "default.yaml"
     page_key = current_page_key()
     watchlist_state: WatchlistSidebarState | None = None
-    signal_state: EntrySignalSidebarState | None = None
+    signal_state: EntrySignalPageState | None = None
 
     with st.sidebar:
         st.markdown("<div class='oratek-sidebar-title'>Growth Trading Screener</div>", unsafe_allow_html=True)
@@ -1576,8 +1600,6 @@ def main() -> None:
 
         if page_key in {"watchlist", "entry_signals"}:
             watchlist_state = render_watchlist_sidebar_controls(config_path)
-        if page_key == "entry_signals":
-            signal_state = render_entry_signal_sidebar_controls(config_path)
 
         refresh = st.button("Refresh", type="primary")
 
@@ -1638,7 +1660,7 @@ def main() -> None:
             st.caption("Exports the selected preset's duplicate tickers and each selected scan card's hit tickers.")
 
     if page_key == "entry_signals" and signal_state is None:
-        signal_state = EntrySignalSidebarState(
+        signal_state = EntrySignalPageState(
             signal_config=load_entry_signal_config(config_path),
             selected_signal_names=list(load_entry_signal_config(config_path).startup_selected_signal_names()),
         )

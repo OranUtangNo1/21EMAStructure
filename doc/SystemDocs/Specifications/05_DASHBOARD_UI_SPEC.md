@@ -199,11 +199,13 @@ The Entry Signals page is a timing layer, not a scan layer.
 Current behavior:
 
 - universe source:
-  - duplicate tickers from built-in presets whose `preset_status` allows export
-  - duplicate tickers from the current selected watchlist card set
+  - default: duplicate tickers from built-in presets whose `preset_status` allows export plus duplicate tickers from the current selected watchlist card set
+  - selectable alternatives: preset duplicates only, current-selection duplicates only, Today's Watchlist, or the eligible universe
 - sidebar controls:
   - the same watchlist card and duplicate controls used by Today's Watchlist
-  - an entry-signal multiselect from enabled entry signal definitions
+- page-body controls:
+  - `Signal universe` selectbox
+  - `Entry signal logic` multiselect from enabled entry signal definitions
 - result grain:
   - one row per ticker that matches at least one selected entry signal
 - result columns include:
@@ -218,7 +220,7 @@ Current behavior:
   - `Risk Reference`
   - `Entry Note`
 
-The page evaluates whether an already-detected duplicate ticker is at a reasonable entry point today. It does not expand the candidate universe beyond duplicate tickers in the initial implementation.
+The page evaluates whether a ticker in the selected signal universe is at a reasonable entry point today. The default universe remains duplicate-focused, but the page can broaden evaluation to Today's Watchlist or the eligible universe.
 
 ## 5. RS Radar
 

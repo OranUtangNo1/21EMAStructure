@@ -30,7 +30,7 @@ Current flow:
 7. run the enabled scan rules
 8. create the raw watchlist as the union of scan hits
 9. mark duplicate tickers when a ticker appears in `duplicate_min_count` or more scan hits
-10. optionally evaluate configured entry-timing signals on duplicate tickers
+10. optionally evaluate configured entry-timing signals on the selected Entry Signals universe
 
 ### 2.2 Market Review
 
@@ -69,12 +69,12 @@ This is intended to answer:
 
 ### 2.5 Entry Signal Review
 
-The user can review the Entry Signals tab after duplicate tickers exist.
+The user can review the Entry Signals tab after scan candidates exist. The default signal universe is duplicate-focused, while page controls can switch the universe to preset duplicates, current-selection duplicates, both duplicate sources, Today's Watchlist, or the eligible universe.
 
 This is intended to answer:
 
-- which duplicate tickers also satisfy enabled entry-timing signal definitions?
-- which built-in preset or current watchlist selection contributed the ticker to the signal universe?
+- which tickers in the selected signal universe satisfy enabled entry-timing signal definitions?
+- which source contributed the ticker to the signal universe?
 - what risk-reference field is available for the signal row?
 
 ## 3. Active Scan Workflow

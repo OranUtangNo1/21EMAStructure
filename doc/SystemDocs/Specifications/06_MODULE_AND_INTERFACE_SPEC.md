@@ -230,10 +230,11 @@ The active app uses raw `watchlist` plus `scan_hits` to rebuild cards and duplic
 
 `EntrySignalRunner` currently exposes:
 
+- `build_universe(watchlist, hits, selected_scan_names, duplicate_threshold, selected_annotation_filters, selected_duplicate_subfilters, duplicate_rule, universe_mode, eligible_snapshot)`
 - `build_default_universe(watchlist, hits, selected_scan_names, duplicate_threshold, selected_annotation_filters, selected_duplicate_subfilters, duplicate_rule)`
 - `evaluate(universe, selected_signal_names)`
 
-The entry signal layer is downstream of scan and preset duplicate logic. It does not evaluate all eligible tickers by default.
+The entry signal layer can evaluate preset duplicates, current-selection duplicates, their union, Today's Watchlist, or the eligible universe. `build_default_universe()` remains the duplicate-focused compatibility path for the preset-plus-current union.
 
 ### 3.8 Market Interface
 
