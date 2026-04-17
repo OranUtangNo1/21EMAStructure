@@ -7,6 +7,8 @@ from typing import Any
 
 import pandas as pd
 
+from src.data.tracking_repository import read_scan_hits_for_watchlist
+from src.data.tracking_db import connect_tracking_db
 from src.data.results import RunArtifactsLoadResult, UniverseSnapshotLoadResult
 
 
@@ -17,14 +19,12 @@ class DataSnapshotStore:
         self.root_dir = Path(root_dir)
         self.root_dir.mkdir(parents=True, exist_ok=True)
         self.watchlist_dir = self.root_dir / "watchlist"
-        self.scan_hits_dir = self.root_dir / "scan_hits"
         self.market_summary_dir = self.root_dir / "market_summary"
         self.radar_summary_dir = self.root_dir / "radar_summary"
         self.metadata_dir = self.root_dir / "run_metadata"
         self.universe_dir = self.root_dir / "universe_snapshots"
         for directory in [
             self.watchlist_dir,
-            self.scan_hits_dir,
             self.market_summary_dir,
             self.radar_summary_dir,
             self.metadata_dir,
@@ -49,7 +49,7 @@ class DataSnapshotStore:
 
         watchlist.to_csv(self.watchlist_dir / f"{date_key}.csv", index_label="ticker")
         if scan_hits is not None:
-            scan_hits.to_csv(self.scan_hits_dir / f"{date_key}.csv", index=False)
+            self._save_scan_hits(date_key, trade_date_iso, scan_hits)
         if market_result is not None:
             self._save_market_result(date_key, market_result)
         if radar_result is not None:
@@ -90,7 +90,7 @@ class DataSnapshotStore:
             eligible_snapshot=None,
             watchlist=self._load_indexed_frame(self.watchlist_dir / f"{date_key}.csv", index_name="ticker"),
             fetch_status=None,
-            scan_hits=self._load_frame(self.scan_hits_dir / f"{date_key}.csv"),
+            scan_hits=self._load_scan_hits(date_key),
             market_metadata=self._load_json(self.market_summary_dir / f"{date_key}.json"),
             radar_metadata=self._load_json(self.radar_summary_dir / f"{date_key}.json"),
             market_frames={},
@@ -182,6 +182,41 @@ class DataSnapshotStore:
         frame.index = frame.index.astype(str)
         frame.index.name = index_name
         return frame
+
+    def _save_scan_hits(self, date_key: str, trade_date_iso: str | None, scan_hits: pd.DataFrame) -> None:
+        if scan_hits.empty:
+            return
+        hit_date = self._hit_date_from_key(date_key, trade_date_iso)
+        records = []
+        for _, row in scan_hits.iterrows():
+            ticker = str(row.get("ticker", "")).strip().upper()
+            scan_name = str(row.get("name", row.get("scan_name", ""))).strip()
+            if not ticker or not scan_name:
+                continue
+            records.append((hit_date, ticker, scan_name, str(row.get("kind", "")).strip() or None))
+        if not records:
+            return
+        conn = connect_tracking_db(self.root_dir / "tracking.db")
+        try:
+            conn.executemany(
+                "INSERT OR IGNORE INTO scan_hits (hit_date, ticker, scan_name, kind) VALUES (?, ?, ?, ?)",
+                records,
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _load_scan_hits(self, date_key: str) -> pd.DataFrame | None:
+        hit_date = self._hit_date_from_key(date_key, None)
+        frame = read_scan_hits_for_watchlist(hit_date, db_path=self.root_dir / "tracking.db")
+        return frame if not frame.empty else None
+
+    def _hit_date_from_key(self, date_key: str, trade_date_iso: str | None) -> str:
+        if trade_date_iso:
+            parsed = pd.to_datetime(trade_date_iso, errors="coerce")
+            if pd.notna(parsed):
+                return pd.Timestamp(parsed).strftime("%Y-%m-%d")
+        return datetime.strptime(date_key, "%Y%m%d").strftime("%Y-%m-%d")
 
     def _load_json(self, path: Path) -> dict[str, object] | None:
         if not path.exists():

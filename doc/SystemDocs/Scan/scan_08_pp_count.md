@@ -17,7 +17,6 @@
 
 ```python
 row.get("pp_count_window", 0) >= config.pp_count_scan_min
-and row.get("trend_base", False)
 ```
 
 ## Required Inputs
@@ -25,9 +24,6 @@ and row.get("trend_base", False)
 - `pp_count_window`
   - expected type: integer-like count
   - fallback used by implementation: `0`
-- `trend_base`
-  - expected type: boolean
-  - fallback used by implementation: `False`
 
 ## Direct Config Dependencies
 
@@ -38,6 +34,3 @@ and row.get("trend_base", False)
 - `pp_count_window`
   - producer: `src/indicators/core.py`
   - definition: rolling sum of `pocket_pivot` over `indicators.pp_count_window_days`
-- `trend_base`
-  - producer: `src/indicators/core.py`
-  - definition: `(close > sma50) and (wma10_weekly > wma30_weekly)`

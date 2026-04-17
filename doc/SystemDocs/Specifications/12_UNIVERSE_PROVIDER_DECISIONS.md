@@ -9,6 +9,7 @@ The active implementation uses a practical low-cost stack for screening:
 - Yahoo Finance for daily price history
 - Yahoo fallback providers for profile and fundamental fields when the weekly snapshot does not supply them
 - local cache and local run snapshots for persistence
+- local SQLite for scan-hit history and preset-hit performance tracking
 
 This is the current implemented provider stack.
 

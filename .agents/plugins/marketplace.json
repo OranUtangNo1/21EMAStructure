@@ -1,0 +1,20 @@
+{
+  "name": "oratek-local",
+  "interface": {
+    "displayName": "OraTek Local"
+  },
+  "plugins": [
+    {
+      "name": "oratek",
+      "source": {
+        "source": "local",
+        "path": "./plugins/oratek"
+      },
+      "policy": {
+        "installation": "INSTALLED_BY_DEFAULT",
+        "authentication": "ON_USE"
+      },
+      "category": "Coding"
+    }
+  ]
+}

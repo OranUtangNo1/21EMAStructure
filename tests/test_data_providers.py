@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import logging
+import sys
 import time
 from datetime import date
 
@@ -185,6 +187,44 @@ def test_yfinance_price_provider_batches_downloads_and_merges_stale_cache(tmp_pa
     assert result.histories["META"].loc[pd.Timestamp("2026-03-30"), "close"] == 410.0
 
 
+def test_yfinance_price_provider_force_refresh_bypasses_fresh_cache(tmp_path, monkeypatch) -> None:
+    cache = CacheLayer(tmp_path)
+    cached_index = pd.to_datetime(["2026-03-27"])
+    cache.save_csv("prices_NVDA_18mo_1d", _normalized_history(300.0, cached_index))
+
+    calls: list[tuple[tuple[str, ...], str]] = []
+
+    class FakeYF:
+        def download(self, tickers, period, interval, auto_adjust, progress, threads, group_by):
+            symbols = tuple(tickers)
+            calls.append((symbols, period))
+            return _multi_symbol_download(
+                {
+                    "NVDA": _raw_history(310.0, pd.to_datetime(["2026-03-30"])),
+                }
+            )
+
+    monkeypatch.setattr("src.data.providers.yf", FakeYF())
+
+    provider = YFinancePriceDataProvider(
+        cache,
+        technical_ttl_hours=12,
+        allow_stale_cache_on_failure=True,
+        batch_size=2,
+        max_retries=1,
+        request_sleep_seconds=0.0,
+        retry_backoff_multiplier=1.0,
+        incremental_period="5d",
+    )
+    result = provider.get_price_history(["NVDA"], period="18mo", force_refresh=True)
+
+    assert calls == [(("NVDA",), "5d")]
+    assert result.statuses["NVDA"].source == "live"
+    assert len(result.histories["NVDA"]) == 2
+    assert result.histories["NVDA"].index.max() == pd.Timestamp("2026-03-30")
+    assert result.histories["NVDA"].loc[pd.Timestamp("2026-03-30"), "close"] == 310.0
+
+
 def test_yfinance_price_provider_uses_stale_cache_when_batch_fails(tmp_path, monkeypatch) -> None:
     cache = CacheLayer(tmp_path)
     stale_index = pd.to_datetime(["2026-03-27"])
@@ -214,6 +254,42 @@ def test_yfinance_price_provider_uses_stale_cache_when_batch_fails(tmp_path, mon
     assert result.statuses["NVDA"].source == "cache_stale"
     assert "RuntimeError" in (result.statuses["NVDA"].note or "")
     pd.testing.assert_frame_equal(result.histories["NVDA"], stale_frame)
+
+
+def test_yfinance_price_provider_suppresses_download_console_noise(tmp_path, monkeypatch, capsys) -> None:
+    class FakeYF:
+        def download(self, *args, **kwargs):
+            print("1 Failed download:")
+            print("$AL: possibly delisted; no price data found", file=sys.stderr)
+            logging.getLogger("yfinance").error("possibly delisted")
+            return pd.DataFrame()
+
+    monkeypatch.setattr("src.data.providers.yf", FakeYF())
+    yfinance_logger = logging.getLogger("yfinance")
+    handler = logging.StreamHandler()
+    original_level = yfinance_logger.level
+    original_propagate = yfinance_logger.propagate
+    yfinance_logger.addHandler(handler)
+    yfinance_logger.setLevel(logging.ERROR)
+    yfinance_logger.propagate = False
+    try:
+        provider = YFinancePriceDataProvider(
+            CacheLayer(tmp_path),
+            batch_size=2,
+            max_retries=1,
+            request_sleep_seconds=0.0,
+            retry_backoff_multiplier=1.0,
+        )
+        result = provider.get_price_history(["AL"], period="18mo")
+    finally:
+        yfinance_logger.removeHandler(handler)
+        yfinance_logger.setLevel(original_level)
+        yfinance_logger.propagate = original_propagate
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+    assert result.statuses["AL"].source == "missing"
 
 
 def _raw_history(base_close: float, index: pd.DatetimeIndex) -> pd.DataFrame:

@@ -36,20 +36,18 @@ Each file in this folder must allow a developer to reproduce the scan boolean lo
 - RS producer: `src/scoring/rs.py`
 - VCS producer: `src/scoring/vcs.py`
 - Hybrid producer: `src/scoring/hybrid.py`
-- Defaults: `config/default.yaml`
+- Defaults: `config/default/scan.yaml`
 
 ## Active Scan Specs
 
-The default config currently enables `21` scan families.
+The default config currently enables `18` scan families.
 
 | File | Canonical scan name | Implementation owner |
 |---|---|---|
 | [scan_01_21ema.md](scan_01_21ema.md) | `21EMA scan` | `src/scan/rules.py::_scan_21ema` |
 | [scan_02_4pct_bullish.md](scan_02_4pct_bullish.md) | `4% bullish` | `src/scan/rules.py::_scan_bullish_4pct` |
-| [scan_03_vol_up.md](scan_03_vol_up.md) | `Vol Up` | `src/scan/rules.py::_scan_vol_up` |
 | [scan_04_momentum97.md](scan_04_momentum97.md) | `Momentum 97` | `src/scan/rules.py::_scan_momentum_97` |
 | [scan_05_97club.md](scan_05_97club.md) | `97 Club` | `src/scan/rules.py::_scan_97_club` |
-| [scan_06_vcs.md](scan_06_vcs.md) | `VCS` | `src/scan/rules.py::_scan_vcs` |
 | [scan_07_pocket_pivot.md](scan_07_pocket_pivot.md) | `Pocket Pivot` | `src/scan/rules.py::_scan_pocket_pivot` |
 | [scan_08_pp_count.md](scan_08_pp_count.md) | `PP Count` | `src/scan/rules.py::_scan_pp_count` |
 | [scan_09_weekly20pct.md](scan_09_weekly20pct.md) | `Weekly 20% plus gainers` | `src/scan/rules.py::_scan_weekly_gainer` |
@@ -59,15 +57,31 @@ The default config currently enables `21` scan families.
 | [scan_13_vcs_52_high.md](scan_13_vcs_52_high.md) | `VCS 52 High` | `src/scan/rules.py::_scan_vcs_52_high` |
 | [scan_14_vcs_52_low.md](scan_14_vcs_52_low.md) | `VCS 52 Low` | `src/scan/rules.py::_scan_vcs_52_low` |
 | [scan_15_volume_accumulation.md](scan_15_volume_accumulation.md) | `Volume Accumulation` | `src/scan/rules.py::_scan_volume_accumulation` |
-| [scan_16_pullback_quality.txt](scan_16_pullback_quality.txt) | `Pullback Quality scan` | `src/scan/rules.py::_scan_pullback_quality` |
-| [scan_17_reclaim.txt](scan_17_reclaim.txt) | `Reclaim scan` | `src/scan/rules.py::_scan_reclaim` |
-| [scan_18_fundamental_demand.md](scan_18_fundamental_demand.md) | `Fundamental Demand` | `src/scan/rules.py::_scan_fundamental_demand` |
+| [scan_16_pullback_quality.md](scan_16_pullback_quality.md) | `Pullback Quality scan` | `src/scan/rules.py::_scan_pullback_quality` |
+| [scan_17_reclaim.md](scan_17_reclaim.md) | `Reclaim scan` | `src/scan/rules.py::_scan_reclaim` |
 | [scan_19_sustained_leadership.md](scan_19_sustained_leadership.md) | `Sustained Leadership` | `src/scan/rules.py::_scan_sustained_leadership` |
 | [scan_20_trend_reversal_setup.md](scan_20_trend_reversal_setup.md) | `Trend Reversal Setup` | `src/scan/rules.py::_scan_trend_reversal_setup` |
 | [scan_21_structure_pivot.md](scan_21_structure_pivot.md) | `Structure Pivot` | `src/scan/rules.py::_scan_structure_pivot` |
+
+## Disabled Default Scan Specs
+
+These scan definitions remain documented and implemented, but `config/default/scan.yaml` disables them by default because their screening role overlaps with other active scans.
+
+| File | Canonical scan name | Implementation owner |
+|---|---|---|
+| [scan_03_vol_up.md](scan_03_vol_up.md) | `Vol Up` | `src/scan/rules.py::_scan_vol_up` |
+| [scan_06_vcs.md](scan_06_vcs.md) | `VCS` | `src/scan/rules.py::_scan_vcs` |
 
 ## Out Of Scope
 
 Post-scan annotation filters are not scans. Their current implementation source is `src/scan/rules.py::ANNOTATION_FILTER_REGISTRY`.
 
-The active annotation set includes `RS 21 >= 63`, `High Est. EPS Growth`, and `PP Count (20d)`.
+The active annotation set includes:
+
+| Annotation filter | Canonical condition |
+|---|---|
+| `RS 21 >= 63` | `_raw_rs(row, 21) >= 63.0` |
+| `High Est. EPS Growth` | `eps_growth_rank >= high_eps_growth_rank_threshold` |
+| `PP Count (20d)` | `pp_count_window >= pp_count_annotation_min` |
+| `Trend Base` | `trend_base == True` |
+| `Fund Score > 70` | `fundamental_score >= 70.0` |

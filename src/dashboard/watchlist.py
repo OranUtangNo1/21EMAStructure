@@ -7,6 +7,7 @@ import pandas as pd
 
 from src.scan.rules import (
     AnnotationFilterConfig,
+    DuplicateRuleConfig,
     ScanCardConfig,
     ScanConfig,
     WatchlistPresetConfig,
@@ -70,6 +71,8 @@ class WatchlistViewModelBuilder:
             "ud_volume_ratio",
             "structure_pivot_long_active",
             "structure_pivot_long_breakout",
+            "structure_pivot_long_breakout_first_day",
+            "structure_pivot_long_breakout_gap_up",
             "structure_pivot_long_pivot_price",
             "structure_pivot_long_length",
             "earnings",
@@ -125,6 +128,7 @@ class WatchlistViewModelBuilder:
         hits: pd.DataFrame,
         min_count: int,
         selected_scan_names: Iterable[str] | None = None,
+        duplicate_rule: DuplicateRuleConfig | None = None,
     ) -> pd.DataFrame:
         if watchlist.empty:
             return watchlist.copy()
@@ -151,7 +155,8 @@ class WatchlistViewModelBuilder:
         scan_counts = scan_hits.groupby("ticker")["name"].nunique()
         frame["selected_scan_hit_count"] = scan_counts.reindex(frame.index).fillna(0).astype(int)
         frame["selected_overlap_count"] = frame["selected_scan_hit_count"]
-        frame["duplicate_ticker"] = frame["selected_scan_hit_count"] >= int(min_count)
+        effective_rule = duplicate_rule or DuplicateRuleConfig(min_count=int(min_count))
+        frame["duplicate_ticker"] = self._evaluate_duplicate_rule(frame.index, scan_hits, effective_rule)
         frame["overlap_count"] = frame["selected_overlap_count"]
         return frame
 
@@ -203,11 +208,18 @@ class WatchlistViewModelBuilder:
         min_count: int,
         selected_scan_names: Iterable[str] | None = None,
         selected_duplicate_subfilters: Iterable[str] | None = None,
+        duplicate_rule: DuplicateRuleConfig | None = None,
     ) -> pd.DataFrame:
         if watchlist.empty or hits.empty:
             return pd.DataFrame(columns=["Ticker", "Scan Hits", "Hybrid-RS", "Overlap", "VCS"])
 
-        frame = self.apply_selected_scan_metrics(watchlist, hits, min_count=min_count, selected_scan_names=selected_scan_names)
+        frame = self.apply_selected_scan_metrics(
+            watchlist,
+            hits,
+            min_count=min_count,
+            selected_scan_names=selected_scan_names,
+            duplicate_rule=duplicate_rule,
+        )
         frame = frame.loc[frame["duplicate_ticker"].fillna(False)].copy()
         if frame.empty:
             return pd.DataFrame(columns=["Ticker", "Scan Hits", "Hybrid-RS", "Overlap", "VCS"])
@@ -259,6 +271,7 @@ class WatchlistViewModelBuilder:
         min_count: int = 1,
         selected_annotation_filters: Iterable[str] | None = None,
         selected_duplicate_subfilters: Iterable[str] | None = None,
+        duplicate_rule: DuplicateRuleConfig | None = None,
     ) -> pd.DataFrame:
         effective_selected_scan_names = (
             list(selected_scan_names)
@@ -274,6 +287,7 @@ class WatchlistViewModelBuilder:
             hits,
             min_count=min_count,
             selected_scan_names=effective_selected_scan_names,
+            duplicate_rule=duplicate_rule,
         )
         duplicate_frame = self.build_duplicate_tickers(
             projected_watchlist,
@@ -281,6 +295,7 @@ class WatchlistViewModelBuilder:
             min_count=min_count,
             selected_scan_names=effective_selected_scan_names,
             selected_duplicate_subfilters=selected_duplicate_subfilters,
+            duplicate_rule=duplicate_rule,
         )
         cards = self.build_scan_cards(
             projected_watchlist,
@@ -308,26 +323,67 @@ class WatchlistViewModelBuilder:
         export_target: str = "Today's Watchlist",
         top_ticker_limit: int = 5,
     ) -> pd.DataFrame:
-        rows: list[dict[str, object]] = []
-        limit = max(int(top_ticker_limit), 1)
+        columns = [
+            "Output Target",
+            "trade_date",
+            "output_date",
+            "ticker",
+            "hit_presets",
+            "hit_preset_count",
+            "selected_scan_names",
+            "selected_annotation_filters",
+            "duplicate_thresholds",
+            "duplicate_rule_modes",
+        ]
+        grouped: dict[str, dict[str, object]] = {}
+        _ = top_ticker_limit
         for preset in presets:
             duplicate_frame, _ = self._build_preset_frames(preset, watchlist, hits)
-            top_tickers = duplicate_frame["Ticker"].head(limit).tolist() if "Ticker" in duplicate_frame.columns else []
+            if duplicate_frame.empty or "Ticker" not in duplicate_frame.columns:
+                continue
+
+            for raw_ticker in duplicate_frame["Ticker"].tolist():
+                ticker = str(raw_ticker).strip().upper()
+                if not ticker:
+                    continue
+                row = grouped.setdefault(
+                    ticker,
+                    {
+                        "Output Target": str(export_target).strip(),
+                        "trade_date": str(trade_date).strip(),
+                        "output_date": str(output_date).strip(),
+                        "ticker": ticker,
+                        "hit_presets": [],
+                        "selected_scan_names": [],
+                        "selected_annotation_filters": [],
+                        "duplicate_thresholds": [],
+                        "duplicate_rule_modes": [],
+                    },
+                )
+                self._extend_unique(row["hit_presets"], [preset.preset_name])
+                self._extend_unique(row["selected_scan_names"], preset.selected_scan_names)
+                self._extend_unique(row["selected_annotation_filters"], preset.selected_annotation_filters)
+                self._extend_unique(row["duplicate_thresholds"], [str(int(preset.duplicate_threshold))])
+                self._extend_unique(row["duplicate_rule_modes"], [preset.duplicate_rule.mode])
+
+        rows: list[dict[str, object]] = []
+        for row in grouped.values():
+            hit_presets = row["hit_presets"]
             rows.append(
                 {
-                    "Output Target": str(export_target).strip(),
-                    "trade_date": str(trade_date).strip(),
-                    "output_date": str(output_date).strip(),
-                    "preset_name": preset.preset_name,
-                    "has_candidates": bool(not duplicate_frame.empty),
-                    "candidate_count": int(len(duplicate_frame)),
-                    "top_tickers": ", ".join(str(ticker).strip() for ticker in top_tickers if str(ticker).strip()),
-                    "selected_scan_names": ", ".join(preset.selected_scan_names),
-                    "selected_annotation_filters": ", ".join(preset.selected_annotation_filters),
-                    "duplicate_threshold": int(preset.duplicate_threshold),
+                    "Output Target": row["Output Target"],
+                    "trade_date": row["trade_date"],
+                    "output_date": row["output_date"],
+                    "ticker": row["ticker"],
+                    "hit_presets": ", ".join(hit_presets),
+                    "hit_preset_count": len(hit_presets),
+                    "selected_scan_names": ", ".join(row["selected_scan_names"]),
+                    "selected_annotation_filters": ", ".join(row["selected_annotation_filters"]),
+                    "duplicate_thresholds": ", ".join(row["duplicate_thresholds"]),
+                    "duplicate_rule_modes": ", ".join(row["duplicate_rule_modes"]),
                 }
             )
-        return pd.DataFrame(rows)
+        return pd.DataFrame(rows, columns=columns)
 
     def build_preset_detail_exports(
         self,
@@ -349,6 +405,7 @@ class WatchlistViewModelBuilder:
                     min_count=preset.duplicate_threshold,
                     selected_annotation_filters=preset.selected_annotation_filters,
                     selected_duplicate_subfilters=preset.selected_duplicate_subfilters,
+                    duplicate_rule=preset.duplicate_rule,
                 )
             )
         if not frames:
@@ -370,6 +427,7 @@ class WatchlistViewModelBuilder:
             hits,
             min_count=preset.duplicate_threshold,
             selected_scan_names=preset.selected_scan_names,
+            duplicate_rule=preset.duplicate_rule,
         )
         duplicate_frame = self.build_duplicate_tickers(
             projected_watchlist,
@@ -377,6 +435,7 @@ class WatchlistViewModelBuilder:
             min_count=preset.duplicate_threshold,
             selected_scan_names=preset.selected_scan_names,
             selected_duplicate_subfilters=preset.selected_duplicate_subfilters,
+            duplicate_rule=preset.duplicate_rule,
         )
         cards = self.build_scan_cards(
             projected_watchlist,
@@ -477,6 +536,23 @@ class WatchlistViewModelBuilder:
             )
         )
 
+    def _evaluate_duplicate_rule(
+        self,
+        tickers: pd.Index,
+        scan_hits: pd.DataFrame,
+        rule: DuplicateRuleConfig,
+    ) -> pd.Series:
+        if scan_hits.empty:
+            return pd.Series(False, index=tickers, dtype=bool)
+        if rule.mode == "required_plus_optional_min":
+            required_hits = scan_hits.loc[scan_hits["name"].isin(rule.required_scans)].groupby("ticker")["name"].nunique()
+            optional_hits = scan_hits.loc[scan_hits["name"].isin(rule.optional_scans)].groupby("ticker")["name"].nunique()
+            required_ok = required_hits.reindex(tickers).fillna(0).astype(int) >= len(rule.required_scans)
+            optional_ok = optional_hits.reindex(tickers).fillna(0).astype(int) >= int(rule.optional_min_hits)
+            return required_ok & optional_ok
+        counts = scan_hits.groupby("ticker")["name"].nunique().reindex(tickers).fillna(0).astype(int)
+        return counts >= int(rule.min_count)
+
     def _apply_selected_duplicate_subfilters(
         self,
         frame: pd.DataFrame,
@@ -522,6 +598,14 @@ class WatchlistViewModelBuilder:
             if str(value).strip()
         ]
         return ", ".join(values)
+
+    def _extend_unique(self, target: list[str], values: Iterable[object]) -> None:
+        existing = set(target)
+        for value in values:
+            text = str(value).strip()
+            if text and text not in existing:
+                target.append(text)
+                existing.add(text)
 
 
 class WatchlistCardGridBuilder(WatchlistViewModelBuilder):

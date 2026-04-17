@@ -13,6 +13,7 @@
 | yfinance fundamental provider | Fallback fundamental source when a symbol is missing from the weekly snapshot | Active fallback |
 | local cache | TTL handling, stale fallback, and fetch-status lineage | Active |
 | local snapshot store | Weekly universe snapshots plus per-run artifacts | Active |
+| SQLite tracking DB | Preset-hit detections, scan-hit history, forward closes, returns, and analysis views | Active |
 
 ### 1.2 Current design principles
 
@@ -21,7 +22,8 @@
 - use yfinance bulk downloads for price histories
 - source profile and fundamental data from the weekly snapshot first, then fall back per symbol only when needed
 - preserve fetch status, data quality, and saved run metadata as first-class outputs
-- allow same-day app restarts to reuse a saved run bundle when the config path, manual-symbol input, and expected trade date still match
+- keep saved run bundles available through the pipeline restore helper for same-day reuse when the config path, manual-symbol input, and expected trade date still match
+- store preset-hit performance tracking in SQLite rather than cumulative analysis CSVs
 
 ### 1.3 Benchmark and market symbols
 
@@ -135,6 +137,8 @@ Key active behavior:
 - retry backoff multiplier: `2.0`
 - stale-cache fallback allowed
 - stale cached price series are refreshed with an incremental download period of `5d`
+- `force_refresh=True` bypasses fresh-cache reuse, loads any existing cached price series as the merge/fallback base, and requests live yfinance data for the affected symbols
+- yfinance console diagnostics are suppressed during price downloads; missing or incomplete symbols are surfaced through fetch status and Data Health instead
 
 ### 3.2 Profiles and fundamentals
 
@@ -169,7 +173,8 @@ The current default config sets this to `false`, so sample fallback is inactive 
 - fundamental cache under `data_cache/`
 - user preferences under `data_cache/user_preferences.yaml`
 - weekly universe snapshots under `data_runs/universe_snapshots/`
-- run snapshots under `data_runs/<timestamp>/`
+- run artifacts under file-type folders keyed by trade-date date key, such as `data_runs/run_metadata/YYYYMMDD.json`, `data_runs/watchlist/YYYYMMDD.csv`, `data_runs/market_summary/YYYYMMDD.json`, and `data_runs/radar_summary/YYYYMMDD.json`
+- scan-hit history and preset-hit tracking under `data_runs/tracking.db`
 
 ### 4.2 Current TTLs
 
@@ -178,16 +183,18 @@ The current default config sets this to `false`, so sample fallback is inactive 
 - fundamental cache: `24h`
 - universe snapshot TTL: `7d`
 
-### 4.3 Same-day saved-run reuse
+The app-level `Force Price Data Refresh` control bypasses the technical price-cache TTL for the active run. It does not clear cache files; existing cached rows are still used to merge incremental live data and to provide stale fallback if the live refresh fails.
 
-When persistence is enabled, the app can reuse the latest saved run instead of rerunning the pipeline when all of these hold:
+### 4.3 Same-day saved-run restore helper
+
+When persistence is enabled, `ResearchPlatform.load_latest_run_artifacts()` can reuse the latest saved run instead of rerunning the pipeline when all of these hold:
 
 - `Force Weekly Universe Refresh` is off
 - the saved run metadata `config_path` matches the current resolved config path
 - the saved run metadata `manual_symbols_input` matches the current manual-symbol input
 - the saved run `trade_date` matches the current expected trade date
 
-The current expected trade date is derived from US/Eastern calendar date with a daily close cutoff and a weekday-only fallback. This intentionally treats the product as daily-data driven and ignores intraday or after-hours drift for restart reuse.
+The current expected trade date is derived from US/Eastern calendar date with a daily close cutoff and a weekday-only fallback. The Streamlit app uses this helper on startup and artifact-key changes when neither refresh control is forced. Explicit `Refresh`, `Force Weekly Universe Refresh`, or `Force Price Data Refresh` bypass saved-run restore and recompute through `ResearchPlatform.run()`.
 
 ### 4.4 Fetch-status states
 
@@ -242,18 +249,41 @@ The active scan pipeline produces:
 - display-oriented duplicate-ticker frames for the UI
 - same-day earnings frames for the UI
 
-### 5.4 Saved run artifacts
+### 5.4 Tracking database rows
+
+The active tracking database is `data_runs/tracking.db`.
+
+Core tables:
+
+- `detection`: one row per tracked preset hit, keyed by `hit_date x preset_name x ticker`
+- `detection_scans`: bridge rows from tracked detections to scan names hit at detection time
+- `detection_filters`: bridge rows from tracked detections to selected annotation filters
+- `scan_hits`: date-level scan-hit history used by saved-run restore and watchlist reconstruction
+
+Forward tracking fields are stored directly on `detection`:
+
+- `close_at_hit`
+- `close_at_1d`, `close_at_5d`, `close_at_10d`, `close_at_20d`
+- `return_1d`, `return_5d`, `return_10d`, `return_20d`
+
+Analysis views:
+
+- `v_detection_detail`
+- `v_preset_horizon_performance`
+- `v_preset_scan_performance`
+- `v_preset_summary`
+- `v_scan_combo_performance`
+- `v_preset_overlap`
+
+### 5.5 Saved run artifacts
 
 When `data.persist_research_snapshots` is true, the pipeline saves:
 
-- `snapshot.csv`
-- `eligible_snapshot.csv`
 - `watchlist.csv`
-- `fetch_status.csv`
-- `scan_hits.csv`
-- `market_result.json` plus market dashboard tables
-- `radar_result.json` plus radar tables
-- `metadata.json`
+- `run_metadata/YYYYMMDD.json`
+- `market_summary/YYYYMMDD.json`
+- `radar_summary/YYYYMMDD.json`
+- date-level scan hits into `tracking.db`
 
 Run metadata currently includes:
 
@@ -271,6 +301,8 @@ Run metadata currently includes:
 - `universe_mode`
 - `universe_snapshot_path`
 
+The current same-day saved-run restore path is intentionally compact. It restores the saved watchlist, scan hits from SQLite, market summary, radar summary, and metadata, then builds a minimal snapshot carrying the saved trade date. Full `snapshot`, `eligible_snapshot`, and `fetch_status` CSV restoration is not active in the current store implementation.
+
 ## 6. Active Provider Modules
 
 - `src/data/finviz_provider.py`
@@ -285,6 +317,12 @@ Run metadata currently includes:
   - cache load, save, and stale fallback
 - `src/data/store.py`
   - weekly universe snapshot and per-run artifact persistence
+- `src/data/tracking_db.py`
+  - SQLite path resolution, connection setup, schema initialization, and additive migrations
+- `src/data/tracking_repository.py`
+  - read APIs for tracking tables and analysis views
+- `src/data/tracking_migration.py`
+  - one-time backfill from legacy CSV tracking files into SQLite
 
 ## 7. Notes On Current Limitations
 

@@ -6,7 +6,7 @@ The active implementation keeps thresholds, weights, universes, and modes rooted
 That entry file is a manifest which includes section-level files under `config/default/`.
 This catalog lists the parameters that are active in the current codebase and calls out shipped keys that are currently inactive.
 
-Archived entry, structure, sizing, and trade-management parameters are out of scope for this file.
+Archived final chart-structure execution, sizing, and trade-management parameters are out of scope for this file. The implemented `entry_signals` timing layer and Tracking Analytics database behavior are documented because they are present in the active config and UI.
 
 ## 2. App and persistence
 
@@ -44,6 +44,7 @@ Archived entry, structure, sizing, and trade-management parameters are out of sc
 
 ### data.technical_cache_ttl_hours
 - current default: `12`
+- bypassed for price histories when the app's `Force Price Data Refresh` control passes `force_price_refresh=True`; this does not clear cache files
 
 ### data.profile_cache_ttl_hours
 - current default: `168`
@@ -71,7 +72,7 @@ Archived entry, structure, sizing, and trade-management parameters are out of sc
 
 ### data.price_incremental_period
 - current default: `5d`
-- used when refreshing symbols that only have stale cached price history
+- used when refreshing symbols that have cached price history, including force-refresh runs that keep cached rows as the merge/fallback base
 
 ## 4. Universe discovery and local universe filter
 
@@ -158,7 +159,7 @@ Archived entry, structure, sizing, and trade-management parameters are out of sc
 - current default: `10`
 
 ### indicators.weekly_long_wma_period
-- current default: `20`
+- current default: `30`
 
 ### indicators.three_weeks_tight_pct_threshold
 - current default: `1.5`
@@ -193,6 +194,15 @@ Archived entry, structure, sizing, and trade-management parameters are out of sc
 
 ### indicators.pocket_pivot_lookback
 - current default: `10`
+
+### indicators.structure_pivot_min_length
+- current default: `2`
+
+### indicators.structure_pivot_max_length
+- current default: `10`
+
+### indicators.structure_pivot_priority_mode
+- current default: `tightest`
 
 ## 6. Scoring
 
@@ -248,7 +258,6 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 - `vcs_52_high_vcs_min`: `55.0`
 - `vcs_52_high_rs21_min`: `25.0`
 - `vcs_52_high_dist_max`: `-20.0`
-- `vcs_52_high_require_trend_base`: `true`
 - `vcs_52_low_vcs_min`: `60.0`
 - `vcs_52_low_rs21_min`: `80.0`
 - `vcs_52_low_dist_max`: `25.0`
@@ -260,15 +269,14 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 - `near_52w_high_hybrid_min`: `70.0`
 - `three_weeks_tight_vcs_min`: `50.0`
 - `rs_acceleration_rs21_min`: `70.0`
-- `fund_demand_fundamental_min`: `70.0`
-- `fund_demand_rs21_min`: `60.0`
-- `fund_demand_rel_vol_min`: `1.0`
 - `sustained_rs21_min`: `80.0`
 - `sustained_rs63_min`: `70.0`
 - `sustained_rs126_min`: `60.0`
 - `reversal_dist_52w_low_max`: `40.0`
 - `reversal_dist_52w_high_min`: `-40.0`
 - `reversal_rs21_min`: `50.0`
+- `structure_pivot_breakout_rel_volume_min`: `1.4`
+- `structure_pivot_include_gap_up_breakouts`: `true`
 - `pp_count_scan_min`: `3`
 - `pp_count_annotation_min`: `2`
 - `duplicate_min_count`: `3`
@@ -277,22 +285,49 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 
 ### Watchlist and cards
 - `watchlist_sort_mode`: `hybrid_score`
-- `enabled_scan_rules`: active scan family names
+- `scan_status_map`: per-scan runtime status map
+  - `enabled`: evaluate the scan and keep it available to watchlist card selection and preset composition
+  - `disabled`: skip scan evaluation and remove it from watchlist card selection and preset composition
+- `enabled_scan_rules`: legacy enabled scan family list still accepted for backward compatibility
 - `default_selected_scan_names`: startup-selected watchlist cards for the sidebar multiselect
 - `enabled_annotation_filters`: startup-enabled post-scan filters; current default is empty
 - `enabled_list_rules`: legacy alias still accepted for annotation rules
-- misplaced scan names inside `enabled_annotation_filters` are coerced into `enabled_scan_rules` during config loading
+- misplaced scan names inside `enabled_annotation_filters` are coerced into the enabled scan rule set during config loading
 - `annotation_filters`: available annotation-filter definitions and display names
 - `watchlist_presets`: built-in watchlist preset definitions loaded into the sidebar preset picker
-  - each preset supports `preset_name`, `selected_scan_names`, `selected_annotation_filters`, `selected_duplicate_subfilters`, `duplicate_threshold`, and `export_enabled`
+  - each preset supports `preset_name`, `selected_scan_names`, `selected_annotation_filters`, `selected_duplicate_subfilters`, `duplicate_threshold`, optional `duplicate_rule`, and `preset_status`
+  - `duplicate_rule.mode: min_count` uses `min_count` scan hits
+  - `duplicate_rule.mode: required_plus_optional_min` requires every scan in `required_scans` plus at least `optional_min_hits` hits from `optional_scans`
+  - duplicate-rule scan references must stay within the preset's `selected_scan_names`
+  - `preset_status: enabled` shows the preset in the UI and includes it in automatic preset exports
+  - `preset_status: hidden_enabled` hides the preset from the UI and still includes it in automatic preset exports
+  - `preset_status: disabled` hides the preset from the UI and excludes it from automatic preset exports
+  - a built-in preset that references any non-enabled scan is forced to `preset_status: disabled`
+  - legacy `export_enabled: false` is still accepted and maps to `preset_status: disabled`
 - `preset_csv_export`: automatic preset CSV export settings
   - `enabled`: turn automatic batch export on or off
   - `output_dir`: root output directory for day-based export folders
   - `write_details`: whether to also write `preset_details.csv`
-  - `top_ticker_limit`: max number of top tickers included in `preset_summary.csv`
+  - `top_ticker_limit`: legacy setting retained for compatibility; `preset_summary.csv` now writes one row per output ticker and lists matching presets in `hit_presets`
 - `card_sections`: scan-based card definitions, display names, and optional `sort_columns`
 
-## 8. Market Dashboard
+## 8. Entry signals
+
+The `entry_signals` section controls the Entry Signals tab.
+
+- `signal_status_map`: per-entry-signal runtime status map
+  - `enabled`: keep the signal available for UI selection and evaluation
+  - `disabled`: keep the logic in code but remove it from UI selection and evaluation
+- `default_selected_signal_names`: startup-selected entry signals for the Entry Signals tab
+
+Current built-in entry signal names:
+
+- `Pocket Pivot Entry`
+- `Structure Pivot Breakout Entry`
+- `Pullback Low-Risk Zone`
+- `Volume Reclaim Entry`
+
+## 9. Market Dashboard
 
 ### Scoring mode and thresholds
 - `calculation_mode`: current default `etf`; supported values are `etf`, `active_symbols`, `blended`
@@ -326,7 +361,7 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 - `external_etfs`: display-only external ETF universe
 - `factor_etfs`: factor-comparison ETF universe
 
-## 9. RS Radar
+## 10. RS Radar
 
 ### Radar parameters
 - `top_movers_count`: `3`
@@ -337,7 +372,7 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 - `sector_etfs`: configured sector ETF list
 - `industry_etfs`: configured industry ETF list with optional `major_stocks`
 
-## 10. Inactive shipped config block
+## 11. Inactive shipped config block
 
 ### optional.enable_darvas_retest_filter
 - current default: `false`
@@ -349,13 +384,27 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 - present in the manifest include set
 - not consumed by active screening code
 
-## 11. Persisted research outputs
+## 12. Persisted research outputs
 
 When persistence is enabled, the current implementation saves these run-level artifacts:
 
-- latest snapshot
-- eligible snapshot
 - watchlist table
-- fetch-status table
 - run metadata
 - weekly universe snapshots
+- market summary JSON
+- radar summary JSON
+- date-level scan-hit history in `data_runs/tracking.db`
+
+The current implementation also maintains preset-hit tracking data in `data_runs/tracking.db`:
+
+- detection rows for export-enabled built-in preset duplicate hits
+- detection-to-scan bridge rows
+- detection-to-filter bridge rows
+- horizon closes and returns for 1D, 5D, 10D, and 20D
+- SQLite views used by Tracking Analytics and repository read APIs
+
+Tracking Analytics UI constants currently live in `app/main.py`, not in YAML:
+
+- horizons: `1`, `5`, `10`, `20`
+- market environments: `bull`, `neutral`, `weak`, `bear`
+- benchmark choices: `SPY`, `QQQ`, `IWM`

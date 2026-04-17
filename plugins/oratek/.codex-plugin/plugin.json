@@ -1,0 +1,36 @@
+{
+  "name": "oratek",
+  "version": "0.1.0",
+  "description": "OraTek project commands for local development workflows.",
+  "author": {
+    "name": "OraTek",
+    "email": "support@example.com",
+    "url": "https://example.com/"
+  },
+  "homepage": "https://example.com/",
+  "repository": "https://example.com/oratek",
+  "license": "UNLICENSED",
+  "keywords": [
+    "oratek",
+    "streamlit",
+    "local-dev"
+  ],
+  "interface": {
+    "displayName": "OraTek",
+    "shortDescription": "Project commands for OraTek local development",
+    "longDescription": "Local commands for starting and operating the OraTek screening application from the repository workspace.",
+    "developerName": "OraTek",
+    "category": "Coding",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://example.com/",
+    "privacyPolicyURL": "https://example.com/",
+    "termsOfServiceURL": "https://example.com/",
+    "defaultPrompt": "Start the OraTek Streamlit app with the project virtual environment.",
+    "screenshots": [],
+    "brandColor": "#1F6FEB"
+  }
+}

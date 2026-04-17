@@ -1,7 +1,11 @@
 approval_policy = "on-request"
 sandbox_mode = "workspace-write"
+model_reasoning_effort = "high"
 [windows]
 sandbox = "unelevated"
+[tools]
+web_search = true
+
 
 [agents.default]
 description = "Default agent for Python development in this project"

@@ -22,7 +22,6 @@ raw_rs21 = _raw_rs(row, 21)
 matched = bool(
     row.get("hybrid_score", 0.0) >= config.club_97_hybrid_threshold
     and raw_rs21 >= config.club_97_rs21_threshold
-    and row.get("trend_base", False)
 )
 ```
 
@@ -33,7 +32,6 @@ matched = bool(
 | `hybrid_score` | `src/scoring/hybrid.py::HybridScoreCalculator.score` | `0.0` | `>= config.club_97_hybrid_threshold` |
 | `raw_rs21` | `src/scoring/rs.py::RSScorer.score` | fallback to `rs21`, then `nan` | `>= config.club_97_rs21_threshold` |
 | `rs21` | `src/scoring/rs.py::RSScorer.score` | `nan` | fallback only |
-| `trend_base` | `src/indicators/core.py::IndicatorCalculator.calculate` | `False` | must be `True` |
 
 ## Direct Config Dependencies
 
@@ -49,4 +47,3 @@ matched = bool(
 - default missing policy: `fill_neutral_50`
 - hybrid owner: `src/scoring/hybrid.py::HybridScoreCalculator.score`
 - `raw_rs21` owner: `src/scoring/rs.py::RSScorer.score`
-- `trend_base = (close > sma50) & (wma10_weekly > wma30_weekly)`

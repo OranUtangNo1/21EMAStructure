@@ -21,7 +21,7 @@ This keeps settings, reusable calculations, and display-ready outputs separate.
 - `config/default.yaml`
   - manifest entry point for active defaults
 - `config/default/*.yaml`
-  - section-level defaults for app, data, universe, indicators, scoring, scan, market, and radar
+  - section-level defaults for app, data, universe, indicators, scoring, scan, entry signals, market, radar, and optional flags
 
 ### 2.2 Data
 
@@ -37,6 +37,13 @@ This keeps settings, reusable calculations, and display-ready outputs separate.
   - universe snapshot persistence
   - per-run artifact persistence
   - latest saved-run loading for same-day restart reuse
+- `src/data/tracking_db.py`
+  - SQLite tracking database path resolution
+  - schema initialization and additive migrations
+- `src/data/tracking_repository.py`
+  - read APIs for tracking tables and analysis views
+- `src/data/tracking_migration.py`
+  - legacy CSV-to-SQLite tracking backfill
 - `src/data/universe.py`
   - post-price local eligible-universe filter
 - `src/data/quality.py`
@@ -101,9 +108,21 @@ This keeps settings, reusable calculations, and display-ready outputs separate.
   - sector and industry leader tables
   - top daily and weekly mover tables
 - `src/dashboard/market.py`
-  - market condition scoring
-  - ETF snapshot panels
-  - factor-relative-strength tables
+    - market condition scoring
+    - ETF snapshot panels
+    - factor-relative-strength tables
+- `src/dashboard/effectiveness.py`
+    - export-enabled preset detection sync
+    - scan-hit history persistence
+    - forward price and return refresh for tracking detections
+- `src/signals/rules.py`
+    - entry signal registry
+    - entry signal status config
+    - signal-level evaluator functions
+- `src/signals/runner.py`
+    - duplicate-ticker universe assembly
+    - entry-signal evaluation
+    - signal result table shaping
 
 ### 2.7 App Layer
 
@@ -114,20 +133,24 @@ This keeps settings, reusable calculations, and display-ready outputs separate.
   - config-namespaced preference persistence
   - group persistence for current sidebar state
   - named collection persistence for watchlist preset records
+- `src/utils/run_tracking_refresh.py`
+  - command-line refresh of tracking target closes and returns
 - `app/main.py`
   - Streamlit entrypoint
   - page rendering
-  - same-day saved-run reuse before pipeline recomputation
+  - artifact reload by sidebar cache key and `Refresh`
+  - same-day saved-run reuse before full recompute when refresh controls are not forced
   - watchlist sidebar control state
   - watchlist preset save/load/update/delete UI with a 10-preset cap
+  - Tracking Analytics filtering, benchmark comparison, and CSV export
 
 ### 2.8 Archived And Out-Of-Scope Modules
 
-Entry, structure, sizing, and trade-management behavior remains archived and is not part of the active module graph.
+Final entry execution, chart-structure review for execution, sizing, and trade-management behavior remains archived and is not part of the active module graph.
 
 Examples:
 
-- entry evaluators
+- final entry evaluators
 - risk and exit evaluators
 - position sizing calculators
 - cockpit-style execution views
@@ -147,7 +170,7 @@ The loader deep-merges dictionaries from included files and direct overrides.
 
 Abstract interfaces in `src/data/providers.py`:
 
-- `PriceDataProvider.get_price_history(symbols, period, interval)`
+- `PriceDataProvider.get_price_history(symbols, period, interval, *, force_refresh=False)`
 - `ProfileDataProvider.get_profiles(symbols)`
 - `FundamentalDataProvider.get_fundamentals(symbols)`
 - `UniverseDiscoveryProvider.discover()`
@@ -162,7 +185,7 @@ Current concrete implementations:
 
 ### 3.3 Pipeline Interface
 
-`ResearchPlatform.run(symbols=None, force_universe_refresh=False)` returns `PlatformArtifacts`.
+`ResearchPlatform.run(symbols=None, force_universe_refresh=False, force_price_refresh=False)` returns `PlatformArtifacts`.
 
 `ResearchPlatform.load_latest_run_artifacts(symbols=None, force_universe_refresh=False)` can also return `PlatformArtifacts` by reusing the latest same-day saved run when the current request matches the saved config path, manual-symbol input, and expected trade date.
 
@@ -177,6 +200,9 @@ The pipeline contract is:
 7. run scans and annotations
 8. build watchlist, duplicate, radar, and market outputs
 9. optionally persist run artifacts
+10. in the app layer, sync preset detections and refresh tracking outcomes after artifact load
+
+When `force_price_refresh` is true, the price provider bypasses fresh price-cache reuse for the run, uses any cached price rows as merge/fallback data, and fetches live yfinance rows for the requested price symbols.
 
 ### 3.4 Scan Interface
 
@@ -198,10 +224,10 @@ The scan layer contract is:
 
 - `build(watchlist)`
 - `filter_by_annotation_filters(watchlist, selected_filter_names)`
-- `apply_selected_scan_metrics(watchlist, hits, min_count, selected_scan_names)`
+- `apply_selected_scan_metrics(watchlist, hits, min_count, selected_scan_names, duplicate_rule=None)`
 - `build_scan_cards(watchlist, hits, selected_scan_names)`
-- `build_duplicate_tickers(watchlist, hits, min_count, selected_scan_names, selected_duplicate_subfilters)`
-- `build_preset_export(preset_name, watchlist, hits, export_target, selected_scan_names, min_count, selected_annotation_filters, selected_duplicate_subfilters)`
+- `build_duplicate_tickers(watchlist, hits, min_count, selected_scan_names, selected_duplicate_subfilters, duplicate_rule=None)`
+- `build_preset_export(preset_name, watchlist, hits, export_target, selected_scan_names, min_count, selected_annotation_filters, selected_duplicate_subfilters, duplicate_rule=None)`
 - `build_earnings_today(snapshot)`
 
 The active app uses raw `watchlist` plus `scan_hits` to rebuild cards and duplicate output from current sidebar selections.
@@ -216,7 +242,46 @@ The active app uses raw `watchlist` plus `scan_hits` to rebuild cards and duplic
 - `top_weekly`
 - `update_time`
 
-### 3.7 Market Interface
+### 3.7 Entry Signal Interface
+
+`EntrySignalRunner` currently exposes:
+
+- `build_universe(watchlist, hits, selected_scan_names, duplicate_threshold, selected_annotation_filters, selected_duplicate_subfilters, duplicate_rule, universe_mode, eligible_snapshot)`
+- `build_default_universe(watchlist, hits, selected_scan_names, duplicate_threshold, selected_annotation_filters, selected_duplicate_subfilters, duplicate_rule)`
+- `evaluate(universe, selected_signal_names)`
+
+The entry signal layer can evaluate preset duplicates, current-selection duplicates, their union, Today's Watchlist, or the eligible universe. `build_default_universe()` remains the duplicate-focused compatibility path for the preset-plus-current union.
+
+### 3.8 Tracking Interface
+
+Tracking write and refresh behavior is owned by `src/dashboard/effectiveness.py`.
+
+Current public functions:
+
+- `sync_preset_effectiveness_logs(config_path, artifacts, root_dir=None, register_detections=True)`
+- `refresh_tracking_detection_prices(config_path, root_dir=None, trade_date=None)`
+
+Current read functions in `src/data/tracking_repository.py`:
+
+- `read_detections(...)`
+- `read_scan_hits(...)`
+- `read_scan_hits_for_watchlist(hit_date, ...)`
+- `read_detection_detail(...)`
+- `read_preset_horizon_performance(...)`
+- `read_preset_scan_performance(...)`
+- `read_preset_summary(...)`
+- `read_scan_combo_performance(...)`
+- `read_preset_overlap(...)`
+
+Current database helper functions in `src/data/tracking_db.py`:
+
+- `resolve_tracking_db_path(...)`
+- `connect_tracking_db(...)`
+- `initialize_tracking_db(conn)`
+
+The app uses `read_detection_detail()` for Tracking Analytics and uses benchmark price history from the active price provider for benchmark and excess-return calculations.
+
+### 3.9 Market Interface
 
 `MarketConditionScorer.score(stock_histories, market_histories, benchmark_history)` returns `MarketConditionResult`.
 
@@ -307,6 +372,20 @@ The active pipeline bundle includes:
 - `fetched_at`
 - `note`
 
+### 4.6 Tracking Results
+
+`PresetEffectivenessSyncResult` records:
+
+- `tracking_db_path`
+- `detection_count`
+- `new_detection_count`
+- `updated_detection_count`
+- `closed_detection_count`
+- `scan_hit_count`
+- tracking-health counts for active detections and missing/filled 1D and 5D prices
+
+`TrackingPriceRefreshResult` records the same refresh-oriented fields without `new_detection_count` or `scan_hit_count`.
+
 ## 5. Implementation Rules
 
 - keep config, calculation, and result concerns separate
@@ -314,3 +393,4 @@ The active pipeline bundle includes:
 - keep fetch status and data-quality fields as product behavior
 - keep watchlist generation scan-driven
 - keep page-local UI projection in the dashboard layer, not the scan engine
+- keep preset-performance tracking as recorded detection history, not as a live reinterpretation of current preset definitions

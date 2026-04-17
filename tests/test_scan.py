@@ -3,7 +3,7 @@
 import pandas as pd
 
 from src.dashboard.watchlist import WatchlistViewModelBuilder
-from src.scan.rules import ScanCardConfig, ScanConfig, evaluate_annotation_filters, evaluate_scan_rules
+from src.scan.rules import DuplicateRuleConfig, ScanCardConfig, ScanConfig, evaluate_annotation_filters, evaluate_scan_rules
 from src.scan.runner import ScanRunner
 
 
@@ -23,6 +23,24 @@ def test_relative_strength_annotation_uses_app_rs_threshold() -> None:
     assert result["RS 21 >= 63"] is True
 
 
+def test_trend_base_annotation_uses_existing_indicator_flag() -> None:
+    row = pd.Series({"trend_base": True})
+    config = ScanConfig()
+
+    result = evaluate_annotation_filters(row, config)
+
+    assert result["Trend Base"] is True
+
+
+def test_fund_score_annotation_uses_fixed_threshold() -> None:
+    row = pd.Series({"fundamental_score": 70.0})
+    config = ScanConfig()
+
+    result = evaluate_annotation_filters(row, config)
+
+    assert result["Fund Score > 70"] is True
+
+
 def test_enabled_scan_rules_can_be_swapped_from_config() -> None:
     row = pd.Series({"rel_volume": 2.0, "daily_change_pct": 1.0})
     config = ScanConfig(enabled_scan_rules=("Vol Up",))
@@ -31,8 +49,8 @@ def test_enabled_scan_rules_can_be_swapped_from_config() -> None:
     assert result["Vol Up"] is True
 
 
-def test_near_52w_high_scan_uses_distance_hybrid_and_trend_filters() -> None:
-    row = pd.Series({"high_52w": 100.0, "close": 95.0, "hybrid_score": 70.0, "trend_base": True})
+def test_near_52w_high_scan_uses_distance_and_hybrid_filters() -> None:
+    row = pd.Series({"high_52w": 100.0, "close": 95.0, "hybrid_score": 70.0, "trend_base": False})
     config = ScanConfig(enabled_scan_rules=("Near 52W High",))
 
     result = evaluate_scan_rules(row, config)
@@ -40,8 +58,8 @@ def test_near_52w_high_scan_uses_distance_hybrid_and_trend_filters() -> None:
     assert result["Near 52W High"] is True
 
 
-def test_vcs_52_high_scan_uses_relaxed_thresholds_with_trend_base() -> None:
-    row = pd.Series({"vcs": 55.0, "raw_rs21": 30.0, "dist_from_52w_high": -20.0, "trend_base": True})
+def test_vcs_52_high_scan_uses_relaxed_thresholds() -> None:
+    row = pd.Series({"vcs": 55.0, "raw_rs21": 30.0, "dist_from_52w_high": -20.0, "trend_base": False})
     config = ScanConfig(enabled_scan_rules=("VCS 52 High",))
 
     result = evaluate_scan_rules(row, config)
@@ -49,13 +67,13 @@ def test_vcs_52_high_scan_uses_relaxed_thresholds_with_trend_base() -> None:
     assert result["VCS 52 High"] is True
 
 
-def test_vcs_52_high_scan_requires_trend_base() -> None:
+def test_vcs_52_high_scan_no_longer_requires_trend_base() -> None:
     row = pd.Series({"vcs": 80.0, "raw_rs21": 90.0, "dist_from_52w_high": -5.0, "trend_base": False})
     config = ScanConfig(enabled_scan_rules=("VCS 52 High",))
 
     result = evaluate_scan_rules(row, config)
 
-    assert result["VCS 52 High"] is False
+    assert result["VCS 52 High"] is True
 
 
 def test_vcs_52_low_scan_requires_stronger_rs_and_deep_distance_from_high() -> None:
@@ -153,8 +171,8 @@ def test_pp_count_annotation_triggers_at_two_pocket_pivots() -> None:
     assert result["PP Count (20d)"] is True
 
 
-def test_pp_count_scan_requires_trend_base_and_scan_threshold() -> None:
-    row = pd.Series({"pp_count_window": 3, "trend_base": True})
+def test_pp_count_scan_uses_scan_threshold() -> None:
+    row = pd.Series({"pp_count_window": 3, "trend_base": False})
     config = ScanConfig(enabled_scan_rules=("PP Count",))
 
     result = evaluate_scan_rules(row, config)
@@ -213,24 +231,7 @@ def test_rs_acceleration_scan_uses_rs_fields_not_rsi_fields() -> None:
     assert result["RS Acceleration"] is True
 
 
-def test_fundamental_demand_scan_requires_fundamental_rs_volume_and_trend() -> None:
-    row = pd.Series(
-        {
-            "fundamental_score": 70.0,
-            "raw_rs21": 60.0,
-            "rel_volume": 1.0,
-            "daily_change_pct": 0.5,
-            "trend_base": True,
-        }
-    )
-    config = ScanConfig(enabled_scan_rules=("Fundamental Demand",))
-
-    result = evaluate_scan_rules(row, config)
-
-    assert result["Fundamental Demand"] is True
-
-
-def test_sustained_leadership_scan_requires_all_rs_windows_and_trend() -> None:
+def test_sustained_leadership_scan_requires_all_rs_windows() -> None:
     row = pd.Series(
         {
             "raw_rs21": 80.0,
@@ -286,13 +287,71 @@ def test_trend_reversal_setup_scan_rejects_rows_without_pocket_pivot_support() -
     assert result["Trend Reversal Setup"] is False
 
 
-def test_structure_pivot_scan_uses_bullish_structure_indicator_flag() -> None:
-    row = pd.Series({"structure_pivot_long_active": True, "structure_pivot_long_breakout": False})
+def test_structure_pivot_scan_requires_first_day_breakout_and_volume_confirmation() -> None:
+    row = pd.Series(
+        {
+            "structure_pivot_long_active": True,
+            "structure_pivot_long_breakout_first_day": True,
+            "structure_pivot_long_breakout_gap_up": False,
+            "rel_volume": 1.4,
+        }
+    )
     config = ScanConfig(enabled_scan_rules=("Structure Pivot",))
 
     result = evaluate_scan_rules(row, config)
 
     assert result["Structure Pivot"] is True
+
+
+def test_structure_pivot_scan_rejects_non_first_day_breakout() -> None:
+    row = pd.Series(
+        {
+            "structure_pivot_long_active": True,
+            "structure_pivot_long_breakout_first_day": False,
+            "structure_pivot_long_breakout_gap_up": False,
+            "rel_volume": 2.0,
+        }
+    )
+    config = ScanConfig(enabled_scan_rules=("Structure Pivot",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["Structure Pivot"] is False
+
+
+def test_structure_pivot_scan_rejects_breakout_without_required_volume() -> None:
+    row = pd.Series(
+        {
+            "structure_pivot_long_active": True,
+            "structure_pivot_long_breakout_first_day": True,
+            "structure_pivot_long_breakout_gap_up": False,
+            "rel_volume": 1.39,
+        }
+    )
+    config = ScanConfig(enabled_scan_rules=("Structure Pivot",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["Structure Pivot"] is False
+
+
+def test_structure_pivot_scan_can_exclude_gap_up_breakouts() -> None:
+    row = pd.Series(
+        {
+            "structure_pivot_long_active": True,
+            "structure_pivot_long_breakout_first_day": True,
+            "structure_pivot_long_breakout_gap_up": True,
+            "rel_volume": 2.0,
+        }
+    )
+    config = ScanConfig(
+        enabled_scan_rules=("Structure Pivot",),
+        structure_pivot_include_gap_up_breakouts=False,
+    )
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["Structure Pivot"] is False
 
 
 def test_watchlist_default_sort_prefers_hybrid_score() -> None:
@@ -460,7 +519,7 @@ def test_watchlist_is_empty_when_no_scans_hit_even_if_annotations_exist() -> Non
         },
         index=["AAA"],
     )
-    runner = ScanRunner(ScanConfig())
+    runner = ScanRunner(ScanConfig(enabled_scan_rules=("4% bullish",)))
 
     result = runner.run(snapshot)
 
@@ -499,7 +558,7 @@ def test_runner_attaches_annotation_flags_to_scan_hits() -> None:
             "atr_50sma_zone": [2.0],
             "dcr_percent": [10.0],
             "rel_volume": [2.0],
-            "daily_change_pct": [1.0],
+            "daily_change_pct": [4.0],
             "from_open_pct": [1.0],
             "hybrid_score": [80.0],
             "vcs": [10.0],
@@ -516,7 +575,7 @@ def test_runner_attaches_annotation_flags_to_scan_hits() -> None:
         },
         index=["AAA"],
     )
-    runner = ScanRunner(ScanConfig(duplicate_min_count=3))
+    runner = ScanRunner(ScanConfig(enabled_scan_rules=("4% bullish",), duplicate_min_count=3))
 
     result = runner.run(snapshot)
 
@@ -622,6 +681,51 @@ def test_duplicate_ticker_builder_respects_selected_scans_and_threshold() -> Non
     assert float(duplicate.iloc[0]["Hybrid-RS"]) == 95.0
 
 
+def test_duplicate_ticker_builder_can_use_required_plus_optional_rule() -> None:
+    watchlist = pd.DataFrame(
+        {
+            "hybrid_score": [95.0, 80.0, 70.0],
+            "overlap_count": [3, 2, 2],
+            "vcs": [70.0, 60.0, 50.0],
+        },
+        index=["AAA", "BBB", "CCC"],
+    )
+    hits = pd.DataFrame(
+        [
+            {"ticker": "AAA", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "AAA", "name": "VCS", "kind": "scan"},
+            {"ticker": "AAA", "name": "Vol Up", "kind": "scan"},
+            {"ticker": "BBB", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "BBB", "name": "VCS", "kind": "scan"},
+            {"ticker": "CCC", "name": "VCS", "kind": "scan"},
+            {"ticker": "CCC", "name": "Vol Up", "kind": "scan"},
+        ]
+    )
+    config = ScanConfig(
+        card_sections=(
+            ScanCardConfig(scan_name="21EMA scan", display_name="21EMA"),
+            ScanCardConfig(scan_name="VCS", display_name="VCS"),
+            ScanCardConfig(scan_name="Vol Up", display_name="Vol Up"),
+            ScanCardConfig(scan_name="97 Club", display_name="97 Club"),
+        )
+    )
+    duplicate = WatchlistViewModelBuilder(config).build_duplicate_tickers(
+        watchlist,
+        hits,
+        min_count=2,
+        selected_scan_names=["21EMA scan", "VCS", "Vol Up", "97 Club"],
+        duplicate_rule=DuplicateRuleConfig(
+            mode="required_plus_optional_min",
+            required_scans=("21EMA scan",),
+            optional_scans=("VCS", "Vol Up", "97 Club"),
+            optional_min_hits=2,
+        ),
+    )
+
+    assert list(duplicate["Ticker"]) == ["AAA"]
+    assert int(duplicate.iloc[0]["Scan Hits"]) == 3
+
+
 def test_duplicate_ticker_builder_can_apply_top3_hybridrs_subfilter() -> None:
     watchlist = pd.DataFrame(
         {
@@ -682,7 +786,6 @@ def test_default_scan_config_includes_new_scan_names_and_cards() -> None:
         "Volume Accumulation",
         "VCS 52 High",
         "VCS 52 Low",
-        "Fundamental Demand",
         "Sustained Leadership",
         "Trend Reversal Setup",
         "Structure Pivot",
@@ -695,7 +798,6 @@ def test_default_scan_config_includes_new_scan_names_and_cards() -> None:
         "Volume Accumulation",
         "VCS 52 High",
         "VCS 52 Low",
-        "Fundamental Demand",
         "Sustained Leadership",
         "Trend Reversal Setup",
         "Structure Pivot",
@@ -704,7 +806,11 @@ def test_default_scan_config_includes_new_scan_names_and_cards() -> None:
     )
     assert {section.scan_name for section in config.card_sections}.isdisjoint({"21EMA scan V2"})
     assert "PP Count" in {section.scan_name for section in config.card_sections}
-    assert {section.filter_name for section in config.annotation_filters} >= {"PP Count (20d)"}
+    assert {section.filter_name for section in config.annotation_filters} >= {
+        "PP Count (20d)",
+        "Trend Base",
+        "Fund Score > 70",
+    }
 
 
 def test_scan_config_startup_selection_defaults_to_all_card_sections() -> None:
@@ -732,32 +838,48 @@ def test_scan_config_can_define_startup_selected_scan_names_from_config() -> Non
     assert config.startup_selected_scan_names() == ("VCS",)
 
 
+def test_scan_config_filters_disabled_scans_from_runtime_and_cards() -> None:
+    config = ScanConfig.from_dict(
+        {
+            "enabled_scan_rules": ["Vol Up", "VCS"],
+            "scan_status_map": {
+                "Vol Up": "disabled",
+                "VCS": "enabled",
+            },
+            "card_sections": [
+                {"scan_name": "Vol Up", "display_name": "Vol Up"},
+                {"scan_name": "VCS", "display_name": "VCS"},
+            ],
+        }
+    )
+
+    assert config.enabled_scan_rules == ("VCS",)
+    assert tuple(section.scan_name for section in config.card_sections) == ("VCS",)
+
+
 def test_scan_config_coerces_misplaced_scan_names_out_of_enabled_annotation_filters() -> None:
     config = ScanConfig.from_dict(
         {
             "enabled_scan_rules": ["Vol Up"],
-            "enabled_annotation_filters": ["RS 21 >= 63", "Fundamental Demand", "Trend Reversal Setup"],
+            "enabled_annotation_filters": ["RS 21 >= 63", "Trend Reversal Setup"],
         }
     )
 
-    assert config.enabled_scan_rules == ("Vol Up", "Fundamental Demand", "Trend Reversal Setup")
+    assert config.enabled_scan_rules == ("Vol Up", "Trend Reversal Setup")
     assert config.enabled_annotation_filters == ("RS 21 >= 63",)
 
 
-def test_scan_config_rejects_unknown_startup_selected_scan_names() -> None:
-    try:
-        ScanConfig.from_dict(
-            {
-                "card_sections": [
-                    {"scan_name": "Vol Up", "display_name": "Vol Up"},
-                ],
-                "default_selected_scan_names": ["VCS"],
-            }
-        )
-    except ValueError as exc:
-        assert "default_selected_scan_names" in str(exc)
-    else:
-        raise AssertionError("Expected unknown startup-selected scan names to be rejected")
+def test_scan_config_drops_unavailable_startup_selected_scan_names() -> None:
+    config = ScanConfig.from_dict(
+        {
+            "card_sections": [
+                {"scan_name": "Vol Up", "display_name": "Vol Up"},
+            ],
+            "default_selected_scan_names": ["VCS"],
+        }
+    )
+
+    assert config.startup_selected_scan_names() == ()
 
 
 def test_apply_selected_scan_metrics_zeroes_duplicate_state_when_no_scans_selected() -> None:
@@ -821,6 +943,8 @@ def test_scan_config_can_parse_builtin_watchlist_presets() -> None:
                     "preset_name": "Leader Breakout",
                     "selected_scan_names": ["97 Club", "VCS 52 High", "RS Acceleration"],
                     "duplicate_threshold": 2,
+                    "duplicate_rule": {"mode": "min_count", "min_count": 2},
+                    "preset_status": "hidden_enabled",
                 }
             ],
         }
@@ -830,6 +954,10 @@ def test_scan_config_can_parse_builtin_watchlist_presets() -> None:
     assert config.watchlist_presets[0].preset_name == "Leader Breakout"
     assert config.watchlist_presets[0].selected_scan_names == ("97 Club", "VCS 52 High", "RS Acceleration")
     assert config.watchlist_presets[0].to_control_values()["duplicate_threshold"] == 2
+    assert config.watchlist_presets[0].duplicate_rule.mode == "min_count"
+    assert config.watchlist_presets[0].preset_status == "hidden_enabled"
+    assert config.watchlist_presets[0].visible_in_ui is False
+    assert config.watchlist_presets[0].export_enabled is True
 
 
 def test_scan_config_can_parse_preset_csv_export_settings() -> None:
@@ -860,6 +988,95 @@ def test_scan_config_can_parse_preset_csv_export_settings() -> None:
     assert config.preset_csv_export.write_details is False
     assert config.preset_csv_export.top_ticker_limit == 3
     assert config.watchlist_presets[0].export_enabled is False
+    assert config.watchlist_presets[0].preset_status == "disabled"
+
+
+def test_scan_config_disables_builtin_preset_when_it_uses_disabled_scan() -> None:
+    config = ScanConfig.from_dict(
+        {
+            "scan_status_map": {
+                "97 Club": "disabled",
+                "VCS 52 High": "enabled",
+                "RS Acceleration": "enabled",
+            },
+            "card_sections": [
+                {"scan_name": "97 Club", "display_name": "97 Club"},
+                {"scan_name": "VCS 52 High", "display_name": "VCS 52 High"},
+                {"scan_name": "RS Acceleration", "display_name": "RS Accel"},
+            ],
+            "watchlist_presets": [
+                {
+                    "preset_name": "Leader Breakout",
+                    "selected_scan_names": ["97 Club", "VCS 52 High", "RS Acceleration"],
+                    "duplicate_threshold": 2,
+                    "preset_status": "enabled",
+                }
+            ],
+        }
+    )
+
+    assert config.watchlist_presets[0].preset_status == "disabled"
+    assert config.watchlist_presets[0].visible_in_ui is False
+    assert config.watchlist_presets[0].export_enabled is False
+
+
+def test_scan_config_rejects_preset_duplicate_rule_scans_outside_selected_scans() -> None:
+    try:
+        ScanConfig.from_dict(
+            {
+                "card_sections": [
+                    {"scan_name": "21EMA scan", "display_name": "21EMA"},
+                    {"scan_name": "VCS", "display_name": "VCS"},
+                ],
+                "watchlist_presets": [
+                    {
+                        "preset_name": "Rule Preset",
+                        "selected_scan_names": ["21EMA scan"],
+                        "duplicate_rule": {
+                            "mode": "required_plus_optional_min",
+                            "required_scans": ["21EMA scan"],
+                            "optional_scans": ["VCS"],
+                            "optional_min_hits": 1,
+                        },
+                    }
+                ],
+            }
+        )
+    except ValueError as exc:
+        assert "duplicate_rule" in str(exc)
+    else:
+        raise AssertionError("Expected invalid preset duplicate_rule to raise ValueError")
+
+
+def test_scan_config_rejects_unknown_watchlist_preset_status() -> None:
+    try:
+        ScanConfig.from_dict(
+            {
+                "card_sections": [
+                    {"scan_name": "97 Club", "display_name": "97 Club"},
+                ],
+                "watchlist_presets": [
+                    {
+                        "preset_name": "Leader Breakout",
+                        "selected_scan_names": ["97 Club"],
+                        "preset_status": "archive_only",
+                    }
+                ],
+            }
+        )
+    except ValueError as exc:
+        assert "preset_status" in str(exc)
+    else:
+        raise AssertionError("Expected invalid preset_status to raise ValueError")
+
+
+def test_scan_config_rejects_unknown_scan_status_name() -> None:
+    try:
+        ScanConfig.from_dict({"scan_status_map": {"Made Up Scan": "disabled"}})
+    except ValueError as exc:
+        assert "scan_status_map" in str(exc)
+    else:
+        raise AssertionError("Expected invalid scan_status_map name to raise ValueError")
 
 
 
@@ -913,7 +1130,7 @@ def test_watchlist_preset_export_includes_duplicate_and_card_hit_tickers() -> No
     }
 
 
-def test_watchlist_preset_summary_export_reports_candidate_counts_and_top_tickers() -> None:
+def test_watchlist_preset_summary_export_groups_hit_presets_by_ticker() -> None:
     watchlist = pd.DataFrame(
         {
             "hybrid_score": [95.0, 80.0, 70.0],
@@ -937,24 +1154,28 @@ def test_watchlist_preset_summary_export_reports_candidate_counts_and_top_ticker
             ScanCardConfig(scan_name="VCS", display_name="VCS"),
         )
     )
-    custom_presets = [
-        ScanConfig.from_dict(
-            {
-                "card_sections": [
-                    {"scan_name": "21EMA scan", "display_name": "21EMA"},
-                    {"scan_name": "VCS", "display_name": "VCS"},
-                ],
-                "watchlist_presets": [
-                    {
-                        "preset_name": "Momentum Core",
-                        "selected_scan_names": ["21EMA scan", "VCS"],
-                        "selected_annotation_filters": ["RS 21 >= 63"],
-                        "duplicate_threshold": 2,
-                    }
-                ],
-            }
-        ).watchlist_presets[0]
-    ]
+    custom_presets = ScanConfig.from_dict(
+        {
+            "card_sections": [
+                {"scan_name": "21EMA scan", "display_name": "21EMA"},
+                {"scan_name": "VCS", "display_name": "VCS"},
+            ],
+            "watchlist_presets": [
+                {
+                    "preset_name": "Momentum Core",
+                    "selected_scan_names": ["21EMA scan", "VCS"],
+                    "selected_annotation_filters": ["RS 21 >= 63"],
+                    "duplicate_threshold": 2,
+                },
+                {
+                    "preset_name": "EMA Follow Through",
+                    "selected_scan_names": ["21EMA scan"],
+                    "selected_annotation_filters": [],
+                    "duplicate_threshold": 1,
+                },
+            ],
+        }
+    ).watchlist_presets
 
     summary = WatchlistViewModelBuilder(config).build_preset_summary_exports(
         custom_presets,
@@ -962,18 +1183,31 @@ def test_watchlist_preset_summary_export_reports_candidate_counts_and_top_ticker
         hits,
         trade_date="2026-04-09",
         output_date="2026-04-09",
-        top_ticker_limit=3,
+        top_ticker_limit=1,
     )
 
+    assert list(summary["ticker"]) == ["AAA", "BBB"]
     assert summary.iloc[0].to_dict() == {
         "Output Target": "Today's Watchlist",
         "trade_date": "2026-04-09",
         "output_date": "2026-04-09",
-        "preset_name": "Momentum Core",
-        "has_candidates": True,
-        "candidate_count": 1,
-        "top_tickers": "AAA",
+        "ticker": "AAA",
+        "hit_presets": "Momentum Core, EMA Follow Through",
+        "hit_preset_count": 2,
         "selected_scan_names": "21EMA scan, VCS",
         "selected_annotation_filters": "RS 21 >= 63",
-        "duplicate_threshold": 2,
+        "duplicate_thresholds": "2, 1",
+        "duplicate_rule_modes": "min_count",
+    }
+    assert summary.iloc[1].to_dict() == {
+        "Output Target": "Today's Watchlist",
+        "trade_date": "2026-04-09",
+        "output_date": "2026-04-09",
+        "ticker": "BBB",
+        "hit_presets": "EMA Follow Through",
+        "hit_preset_count": 1,
+        "selected_scan_names": "21EMA scan",
+        "selected_annotation_filters": "",
+        "duplicate_thresholds": "1",
+        "duplicate_rule_modes": "min_count",
     }

@@ -2,13 +2,15 @@
 
 ## 1. Product Definition
 
-OraTek is an active screening and candidate extraction platform for growth-stock research. The implemented product produces three active outputs:
+OraTek is an active screening, candidate extraction, and preset-performance review platform for growth-stock research. The implemented product produces five active app outputs:
 
 1. Market Dashboard
 2. RS Radar
 3. Today's Watchlist
+4. Entry Signals
+5. Tracking Analytics
 
-The application helps the user review market context, inspect sector and industry leadership, and surface candidate tickers that satisfy one or more scan conditions.
+The application helps the user review market context, inspect sector and industry leadership, surface candidate tickers that satisfy one or more scan conditions, evaluate implemented entry-timing signals on selected candidate universes, and analyze the forward performance of preset hits.
 
 ## 2. Active Scope
 
@@ -20,13 +22,14 @@ The active product scope is limited to:
 - scan-based candidate extraction
 - post-scan watchlist projection in the UI
 - duplicate-ticker prioritization from scan overlap
-- Market Dashboard, RS Radar, and Today's Watchlist rendering
+- Market Dashboard, RS Radar, Today's Watchlist, Entry Signals, and Tracking Analytics rendering
+- SQLite-backed preset-hit tracking for 1, 5, 10, and 20 business-day outcomes
 
 ## 3. Out-Of-Scope Areas
 
 The active product does not implement:
 
-- entry confirmation
+- final entry confirmation
 - chart-structure review for execution
 - position sizing
 - stop placement
@@ -60,6 +63,8 @@ For the resolved universe, the application loads:
 - Market Dashboard ETF histories
 - factor ETF histories
 
+The app can request `Force Price Data Refresh`, which bypasses the price-cache TTL for this run while still using existing cached price rows as a merge base and fallback when live refresh fails.
+
 Profile and fundamental fields are sourced from the current weekly universe snapshot first, then filled from Yahoo Finance fallback providers when missing.
 
 ### 4.3 Snapshot, Indicators, Scores, And Data Quality
@@ -75,7 +80,7 @@ The pipeline:
 
 ### 4.4 Candidate Extraction
 
-The application evaluates the configured enabled scan rules on the eligible universe. The default config currently enables 15 scan families.
+The application evaluates the configured enabled scan rules on the eligible universe. The default config currently enables 18 scan families.
 
 Tickers enter the raw watchlist only when they pass at least one scan. Annotation filters are also evaluated, but they add flags and counts only; they do not create watchlist candidates on their own.
 
@@ -85,20 +90,33 @@ The backend marks `duplicate_ticker` when `scan_hit_count >= duplicate_min_count
 
 The Today's Watchlist page then applies page-local projection on top of the raw watchlist:
 
-- selected scan cards
+- selected required and optional scan cards
 - selected annotation filters
 - selected duplicate subfilters
-- current duplicate threshold
+- current duplicate rule
 
 This UI projection recalculates overlap and duplicate state for the current session without changing the underlying scan hits.
 
-### 4.6 Dashboard Rendering
+### 4.6 Tracking Persistence
 
-The three active views consume the same run artifacts:
+Each pipeline recompute syncs preset duplicate hits into `data_runs/tracking.db` for built-in presets that are export-enabled. The tracking grain is detection-oriented:
+
+- `hit_date x preset_name x ticker` is unique
+- only one active detection is allowed per `preset_name x ticker`
+- repeated same-preset hits for the same active ticker do not create a new active tracking row
+- forward prices and returns are filled for 1, 5, 10, and 20 business-day target horizons when price history becomes available
+
+Legacy CSV files under `data_runs/preset_effectiveness/` can be backfilled into the database through the migration helper, but SQLite is the current tracking store.
+
+### 4.7 Dashboard Rendering
+
+The active views consume the same run artifacts plus the tracking database where relevant:
 
 - Market Dashboard summarizes breadth, performance, factor leadership, and ETF snapshots
 - RS Radar summarizes sector and industry ETF leadership plus top RS movers
 - Today's Watchlist rebuilds scan cards and duplicate bands from raw watchlist rows plus current sidebar controls
+- Entry Signals evaluates enabled entry-timing signals on the page-selected signal universe: preset duplicates, current-selection duplicates, both duplicate sources, Today's Watchlist, or the eligible universe
+- Tracking Analytics reads detection detail from SQLite, filters by preset universe, horizon, hit-date range, market environment, and benchmark, and displays preset ranking plus row-level detail
 
 ## 5. Core Design Principles
 
@@ -125,6 +143,10 @@ Non-public or uncertain logic remains configurable rather than fixed. This inclu
 
 Fetch status and source labels are not incidental logging. The product exposes fetch-state lineage such as `live`, `cache_fresh`, `cache_stale`, `sample`, and `missing`, and it collapses those states into short app labels such as `live`, `live + cache`, `sample fallback`, `live + sample fallback`, `missing`, or `mixed`.
 
+### 5.4 Analysis Is Derived From Recorded Detections
+
+Preset performance analysis is based on recorded preset-hit detections, not on the current preset definition alone. If a preset is renamed or its scan composition changes later, old detections remain analyzable as historical records but their interpretation depends on the recorded `preset_name`, hit scans, filters, and market environment available at detection time.
+
 ## 6. Active System Layers
 
 ### 6.1 Data Layer
@@ -136,6 +158,7 @@ Responsibilities:
 - cache reuse and stale-cache fallback
 - universe snapshot persistence
 - run snapshot persistence
+- SQLite tracking database initialization, migration, and read access
 
 ### 6.2 Indicator And Scoring Layer
 
@@ -162,6 +185,8 @@ Responsibilities:
 - Market Dashboard result shaping
 - RS Radar result shaping
 - watchlist projection and ticker-card rendering
+- entry-signal result shaping
+- preset-effectiveness sync and tracking analytics display
 - page-local control persistence for the watchlist sidebar
 
 ## 7. Current Implementation Stance

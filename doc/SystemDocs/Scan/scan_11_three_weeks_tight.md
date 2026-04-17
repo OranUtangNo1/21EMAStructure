@@ -13,7 +13,7 @@
 ## Evaluation Context
 
 - Evaluated on one latest row after `enrich_with_scan_context()`.
-- Reads one indicator flag, one trend flag, and the latest attached VCS score.
+- Reads one indicator flag and the latest attached VCS score.
 - All conditions are combined with `AND`.
 
 ## Canonical Boolean Definition
@@ -21,7 +21,6 @@
 ```python
 matched = bool(
     row.get("three_weeks_tight", False)
-    and row.get("trend_base", False)
     and row.get("vcs", 0.0) >= config.three_weeks_tight_vcs_min
 )
 ```
@@ -31,7 +30,6 @@ matched = bool(
 | Field | Producer | Missing/default used by scan | Scan use |
 |---|---|---|---|
 | `three_weeks_tight` | `src/indicators/core.py::IndicatorCalculator.calculate` | `False` | must be `True` |
-| `trend_base` | `src/indicators/core.py::IndicatorCalculator.calculate` | `False` | must be `True` |
 | `vcs` | `src/scoring/vcs.py::VCSCalculator.add_scores` | `0.0` | `>= config.three_weeks_tight_vcs_min` |
 
 ## Direct Config Dependencies
@@ -60,7 +58,6 @@ three_weeks_tight = (
 ```
 
 - The weekly boolean is forward-filled back to the daily index and stored as a daily `bool` field.
-- `trend_base = (close > sma50) & (wma10_weekly > wma30_weekly)`.
 - `vcs` is the latest score attached by `VCSCalculator.add_scores()` from the per-symbol `calculate_series()` result.
 
 ## Missing-Field Behavior

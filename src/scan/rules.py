@@ -28,7 +28,6 @@ DEFAULT_SCAN_RULE_NAMES = (
     "Near 52W High",
     "Three Weeks Tight",
     "RS Acceleration",
-    "Fundamental Demand",
     "Sustained Leadership",
     "Trend Reversal Setup",
     "Structure Pivot",
@@ -38,6 +37,8 @@ DEFAULT_ANNOTATION_FILTER_NAMES = (
     "RS 21 >= 63",
     "High Est. EPS Growth",
     "PP Count (20d)",
+    "Trend Base",
+    "Fund Score > 70",
 )
 
 ANNOTATION_FILTER_NAME_ALIASES = {
@@ -66,7 +67,6 @@ DEFAULT_CARD_SECTION_PAYLOADS = (
     {"scan_name": "Near 52W High", "display_name": "Near 52W High"},
     {"scan_name": "Three Weeks Tight", "display_name": "3WT"},
     {"scan_name": "RS Acceleration", "display_name": "RS Accel"},
-    {"scan_name": "Fundamental Demand", "display_name": "Fund Demand"},
     {"scan_name": "Sustained Leadership", "display_name": "RS Leader"},
     {"scan_name": "Trend Reversal Setup", "display_name": "Reversal Setup"},
     {"scan_name": "Structure Pivot", "display_name": "Structure Pivot"},
@@ -75,13 +75,19 @@ DEFAULT_ANNOTATION_FILTER_PAYLOADS = (
     {"filter_name": "RS 21 >= 63", "display_name": "RS 21 >= 63"},
     {"filter_name": "High Est. EPS Growth", "display_name": "High Est. EPS Growth"},
     {"filter_name": "PP Count (20d)", "display_name": "PP Count (20d)"},
+    {"filter_name": "Trend Base", "display_name": "Trend Base"},
+    {"filter_name": "Fund Score > 70", "display_name": "Fund Score > 70"},
 )
 ANNOTATION_FILTER_COLUMN_NAMES = {
     "RS 21 >= 63": "annotation_rs21_gte_63",
     "High Est. EPS Growth": "annotation_high_eps_growth",
     "PP Count (20d)": "annotation_pp_count_20d",
     "3+ Pocket Pivots (20d)": "annotation_pp_count_20d",
+    "Trend Base": "annotation_trend_base",
+    "Fund Score > 70": "annotation_fund_score_gt_70",
 }
+SCAN_STATUS_VALUES = ("enabled", "disabled")
+WATCHLIST_PRESET_STATUS_VALUES = ("enabled", "hidden_enabled", "disabled")
 
 
 @dataclass(slots=True)
@@ -137,6 +143,66 @@ class AnnotationFilterConfig:
 
 
 @dataclass(slots=True)
+class DuplicateRuleConfig:
+    """Configurable duplicate-ticker rule."""
+
+    mode: str = "min_count"
+    min_count: int = 1
+    required_scans: tuple[str, ...] = field(default_factory=tuple)
+    optional_scans: tuple[str, ...] = field(default_factory=tuple)
+    optional_min_hits: int = 1
+
+    @classmethod
+    def from_dict(
+        cls,
+        payload: dict[str, object] | None,
+        *,
+        default_min_count: int = 1,
+    ) -> "DuplicateRuleConfig":
+        data = payload if isinstance(payload, dict) else {}
+        mode = str(data.get("mode", "min_count")).strip().lower().replace("-", "_").replace(" ", "_")
+        if mode not in {"min_count", "required_plus_optional_min"}:
+            raise ValueError("duplicate_rule mode must be one of: min_count, required_plus_optional_min")
+        try:
+            min_count = int(data.get("min_count", default_min_count))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("duplicate_rule min_count must be an integer") from exc
+        if min_count < 1:
+            raise ValueError("duplicate_rule min_count must be >= 1")
+        required_scans = _normalize_name_tuple(data.get("required_scans", ()))
+        optional_scans = _normalize_name_tuple(data.get("optional_scans", ()))
+        try:
+            optional_min_hits = int(data.get("optional_min_hits", 1))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("duplicate_rule optional_min_hits must be an integer") from exc
+        if optional_min_hits < 1:
+            raise ValueError("duplicate_rule optional_min_hits must be >= 1")
+        if mode == "required_plus_optional_min":
+            if not required_scans:
+                raise ValueError("duplicate_rule required_plus_optional_min requires required_scans")
+            if not optional_scans:
+                raise ValueError("duplicate_rule required_plus_optional_min requires optional_scans")
+            if optional_min_hits > len(optional_scans):
+                raise ValueError("duplicate_rule optional_min_hits cannot exceed optional_scans count")
+        return cls(
+            mode=mode,
+            min_count=min_count,
+            required_scans=required_scans,
+            optional_scans=optional_scans,
+            optional_min_hits=optional_min_hits,
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "mode": self.mode,
+            "min_count": int(self.min_count),
+            "required_scans": list(self.required_scans),
+            "optional_scans": list(self.optional_scans),
+            "optional_min_hits": int(self.optional_min_hits),
+        }
+
+
+@dataclass(slots=True)
 class WatchlistPresetConfig:
     """Built-in watchlist preset definition loaded from config."""
 
@@ -145,7 +211,8 @@ class WatchlistPresetConfig:
     selected_annotation_filters: tuple[str, ...] = field(default_factory=tuple)
     selected_duplicate_subfilters: tuple[str, ...] = field(default_factory=tuple)
     duplicate_threshold: int = 1
-    export_enabled: bool = True
+    duplicate_rule: DuplicateRuleConfig = field(default_factory=DuplicateRuleConfig)
+    preset_status: str = "enabled"
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> "WatchlistPresetConfig":
@@ -163,13 +230,22 @@ class WatchlistPresetConfig:
             raise ValueError("watchlist_presets duplicate_threshold must be an integer") from exc
         if duplicate_threshold < 1:
             raise ValueError("watchlist_presets duplicate_threshold must be >= 1")
+        duplicate_rule = DuplicateRuleConfig.from_dict(
+            payload.get("duplicate_rule"),
+            default_min_count=duplicate_threshold,
+        )
+        raw_status = payload.get("preset_status")
+        if raw_status is None:
+            raw_status = "enabled" if bool(payload.get("export_enabled", True)) else "disabled"
+        preset_status = _normalize_watchlist_preset_status(raw_status)
         return cls(
             preset_name=preset_name,
             selected_scan_names=selected_scan_names,
             selected_annotation_filters=selected_annotation_filters,
             selected_duplicate_subfilters=selected_duplicate_subfilters,
             duplicate_threshold=duplicate_threshold,
-            export_enabled=bool(payload.get("export_enabled", True)),
+            duplicate_rule=duplicate_rule,
+            preset_status=preset_status,
         )
 
     def to_control_values(self) -> dict[str, object]:
@@ -178,7 +254,16 @@ class WatchlistPresetConfig:
             "selected_annotation_filters": list(self.selected_annotation_filters),
             "selected_duplicate_subfilters": list(self.selected_duplicate_subfilters),
             "duplicate_threshold": int(self.duplicate_threshold),
+            "duplicate_rule": self.duplicate_rule.to_dict(),
         }
+
+    @property
+    def export_enabled(self) -> bool:
+        return self.preset_status in {"enabled", "hidden_enabled"}
+
+    @property
+    def visible_in_ui(self) -> bool:
+        return self.preset_status == "enabled"
 
 
 @dataclass(slots=True)
@@ -222,7 +307,6 @@ class ScanConfig:
     vcs_52_high_vcs_min: float = 55.0
     vcs_52_high_rs21_min: float = 25.0
     vcs_52_high_dist_max: float = -20.0
-    vcs_52_high_require_trend_base: bool = True
     vcs_52_low_vcs_min: float = 60.0
     vcs_52_low_rs21_min: float = 80.0
     vcs_52_low_dist_max: float = 25.0
@@ -234,21 +318,21 @@ class ScanConfig:
     near_52w_high_hybrid_min: float = 70.0
     three_weeks_tight_vcs_min: float = 50.0
     rs_acceleration_rs21_min: float = 70.0
-    fund_demand_fundamental_min: float = 70.0
-    fund_demand_rs21_min: float = 60.0
-    fund_demand_rel_vol_min: float = 1.0
     sustained_rs21_min: float = 80.0
     sustained_rs63_min: float = 70.0
     sustained_rs126_min: float = 60.0
     reversal_dist_52w_low_max: float = 40.0
     reversal_dist_52w_high_min: float = -40.0
     reversal_rs21_min: float = 50.0
+    structure_pivot_breakout_rel_volume_min: float = 1.4
+    structure_pivot_include_gap_up_breakouts: bool = True
     duplicate_min_count: int = 3
     high_eps_growth_rank_threshold: float = 90.0
     pp_count_scan_min: int = 3
     pp_count_annotation_min: int = 2
     earnings_warning_days: int = 7
     watchlist_sort_mode: str = "hybrid_score"
+    scan_status_map: dict[str, str] = field(default_factory=dict)
     enabled_scan_rules: tuple[str, ...] = field(default_factory=lambda: DEFAULT_SCAN_RULE_NAMES)
     default_selected_scan_names: tuple[str, ...] | None = None
     enabled_annotation_filters: tuple[str, ...] = field(default_factory=tuple)
@@ -267,7 +351,17 @@ class ScanConfig:
             key: value
             for key, value in payload.items()
             if key in cls.__dataclass_fields__
-            and key not in {"enabled_scan_rules", "default_selected_scan_names", "enabled_annotation_filters", "annotation_filters", "watchlist_presets", "preset_csv_export", "card_sections"}
+            and key
+            not in {
+                "enabled_scan_rules",
+                "scan_status_map",
+                "default_selected_scan_names",
+                "enabled_annotation_filters",
+                "annotation_filters",
+                "watchlist_presets",
+                "preset_csv_export",
+                "card_sections",
+            }
         }
         enabled_scan_rules = _normalize_name_tuple(payload.get("enabled_scan_rules", DEFAULT_SCAN_RULE_NAMES))
         if "default_selected_scan_names" in payload:
@@ -283,16 +377,33 @@ class ScanConfig:
             raw_annotation_names,
             enabled_scan_rules,
         )
+        scan_status_map = _normalize_scan_status_map(payload.get("scan_status_map"))
+        enabled_scan_rules = tuple(
+            name for name in enabled_scan_rules if scan_status_map.get(name, "enabled") == "enabled"
+        )
         annotation_payloads = payload.get("annotation_filters", DEFAULT_ANNOTATION_FILTER_PAYLOADS)
         annotation_filters = tuple(AnnotationFilterConfig.from_dict(item) for item in annotation_payloads)
         watchlist_preset_payloads = payload.get("watchlist_presets", ())
         watchlist_presets = tuple(WatchlistPresetConfig.from_dict(item) for item in watchlist_preset_payloads)
         preset_csv_export = WatchlistPresetCsvExportConfig.from_dict(payload.get("preset_csv_export"))
         card_payloads = payload.get("card_sections", DEFAULT_CARD_SECTION_PAYLOADS)
-        card_sections = tuple(ScanCardConfig.from_dict(item) for item in card_payloads)
+        raw_card_sections = tuple(ScanCardConfig.from_dict(item) for item in card_payloads)
+        card_sections = tuple(
+            section for section in raw_card_sections if scan_status_map.get(section.scan_name, "enabled") == "enabled"
+        )
+        active_card_scan_names = {section.scan_name for section in card_sections}
+        if default_selected_scan_names is not None:
+            default_selected_scan_names = tuple(
+                name for name in default_selected_scan_names if name in active_card_scan_names
+            )
+        watchlist_presets = tuple(
+            _disable_preset_when_scans_inactive(preset, active_card_scan_names)
+            for preset in watchlist_presets
+        )
         config = cls(
             **base_payload,
-            enabled_scan_rules=enabled_scan_rules or DEFAULT_SCAN_RULE_NAMES,
+            scan_status_map=scan_status_map,
+            enabled_scan_rules=enabled_scan_rules,
             default_selected_scan_names=default_selected_scan_names,
             enabled_annotation_filters=enabled_annotation_filters,
             annotation_filters=annotation_filters,
@@ -307,16 +418,8 @@ class ScanConfig:
         unknown_enabled = [name for name in config.enabled_annotation_filters if name not in available_filter_names]
         if unknown_enabled:
             raise ValueError(f"enabled_annotation_filters must be defined in annotation_filters: {', '.join(sorted(unknown_enabled))}")
-        _validate_card_sections(config.card_sections)
-        available_scan_names = {section.scan_name for section in config.card_sections}
-        _validate_watchlist_presets(config.watchlist_presets, available_scan_names, available_filter_names)
-        if config.default_selected_scan_names is not None:
-            unknown_default_selected = [name for name in config.default_selected_scan_names if name not in available_scan_names]
-            if unknown_default_selected:
-                raise ValueError(
-                    "default_selected_scan_names must be defined in card_sections: "
-                    f"{', '.join(sorted(unknown_default_selected))}"
-                )
+        _validate_card_sections(raw_card_sections)
+        _validate_watchlist_presets(config.watchlist_presets, available_filter_names)
         return config
 
     def startup_selected_scan_names(self) -> tuple[str, ...]:
@@ -461,7 +564,6 @@ def _validate_annotation_filters(annotation_filters: tuple[AnnotationFilterConfi
 
 def _validate_watchlist_presets(
     watchlist_presets: tuple[WatchlistPresetConfig, ...],
-    available_scan_names: set[str],
     available_filter_names: set[str],
 ) -> None:
     seen_names: set[str] = set()
@@ -469,16 +571,85 @@ def _validate_watchlist_presets(
         if preset.preset_name in seen_names:
             raise ValueError(f"Duplicate watchlist preset name: {preset.preset_name}")
         seen_names.add(preset.preset_name)
-        unknown_scans = [name for name in preset.selected_scan_names if name not in available_scan_names]
+        unknown_scans = [name for name in preset.selected_scan_names if name not in SCAN_RULE_REGISTRY]
         if unknown_scans:
             raise ValueError(
-                f"watchlist preset '{preset.preset_name}' references unknown card_sections scan(s): {', '.join(sorted(unknown_scans))}"
+                f"watchlist preset '{preset.preset_name}' references unknown scan(s): {', '.join(sorted(unknown_scans))}"
             )
         unknown_filters = [name for name in preset.selected_annotation_filters if name not in available_filter_names]
         if unknown_filters:
             raise ValueError(
                 f"watchlist preset '{preset.preset_name}' references unknown annotation filter(s): {', '.join(sorted(unknown_filters))}"
             )
+        if preset.duplicate_rule.mode == "required_plus_optional_min":
+            unknown_required = [name for name in preset.duplicate_rule.required_scans if name not in preset.selected_scan_names]
+            if unknown_required:
+                raise ValueError(
+                    f"watchlist preset '{preset.preset_name}' duplicate_rule references required_scans outside selected_scan_names: {', '.join(sorted(unknown_required))}"
+                )
+            unknown_optional = [name for name in preset.duplicate_rule.optional_scans if name not in preset.selected_scan_names]
+            if unknown_optional:
+                raise ValueError(
+                    f"watchlist preset '{preset.preset_name}' duplicate_rule references optional_scans outside selected_scan_names: {', '.join(sorted(unknown_optional))}"
+                )
+
+
+def _normalize_scan_status_map(raw_map: object) -> dict[str, str]:
+    if raw_map is None:
+        return {}
+    if not isinstance(raw_map, dict):
+        raise ValueError("scan_status_map must be a mapping of scan name to status")
+    normalized: dict[str, str] = {}
+    for raw_name, raw_status in raw_map.items():
+        scan_name = str(raw_name).strip()
+        if not scan_name:
+            continue
+        if scan_name not in SCAN_RULE_REGISTRY:
+            raise ValueError(f"scan_status_map references unknown scan: {scan_name}")
+        status = str(raw_status).strip().lower().replace("-", "_").replace(" ", "_")
+        status = {
+            "enabled": "enabled",
+            "active": "enabled",
+            "disabled": "disabled",
+            "inactive": "disabled",
+            "off": "disabled",
+        }.get(status, status)
+        if status not in SCAN_STATUS_VALUES:
+            raise ValueError(f"scan_status_map status for '{scan_name}' must be one of: {', '.join(SCAN_STATUS_VALUES)}")
+        normalized[scan_name] = status
+    return normalized
+
+
+def _disable_preset_when_scans_inactive(
+    preset: WatchlistPresetConfig,
+    active_scan_names: set[str],
+) -> WatchlistPresetConfig:
+    if all(name in active_scan_names for name in preset.selected_scan_names):
+        return preset
+    preset.preset_status = "disabled"
+    return preset
+
+
+def _normalize_watchlist_preset_status(raw_status: object) -> str:
+    status = str(raw_status).strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "enabled": "enabled",
+        "active": "enabled",
+        "visible": "enabled",
+        "hidden_enabled": "hidden_enabled",
+        "hidden_export": "hidden_enabled",
+        "hidden": "hidden_enabled",
+        "disabled": "disabled",
+        "inactive": "disabled",
+        "off": "disabled",
+    }
+    normalized = aliases.get(status, status)
+    if normalized not in WATCHLIST_PRESET_STATUS_VALUES:
+        raise ValueError(
+            "watchlist_presets preset_status must be one of: "
+            + ", ".join(WATCHLIST_PRESET_STATUS_VALUES)
+        )
+    return normalized
 
 
 def _scan_21ema(row: pd.Series, config: ScanConfig) -> bool:
@@ -489,15 +660,13 @@ def _scan_21ema(row: pd.Series, config: ScanConfig) -> bool:
         and row.get("dcr_percent", 0.0) > 20.0
         and -0.5 <= row.get("atr_21ema_zone", float("nan")) <= 1.0
         and 0.0 <= row.get("atr_50sma_zone", float("nan")) <= 3.0
-        and row.get("trend_base", False)
     )
 
 
 def _scan_pullback_quality(row: pd.Series, config: ScanConfig) -> bool:
     weekly_return = row.get("weekly_return", float("nan"))
     return bool(
-        row.get("trend_base", False)
-        and row.get("ema21_slope_5d_pct", float("nan")) > 0.0
+        row.get("ema21_slope_5d_pct", float("nan")) > 0.0
         and row.get("sma50_slope_10d_pct", float("nan")) > 0.0
         and -1.25 <= row.get("atr_21ema_zone", float("nan")) <= 0.25
         and 0.75 <= row.get("atr_50sma_zone", float("nan")) <= 3.5
@@ -511,8 +680,7 @@ def _scan_pullback_quality(row: pd.Series, config: ScanConfig) -> bool:
 def _scan_reclaim(row: pd.Series, config: ScanConfig) -> bool:
     weekly_return = row.get("weekly_return", float("nan"))
     return bool(
-        row.get("trend_base", False)
-        and row.get("ema21_slope_5d_pct", float("nan")) > 0.0
+        row.get("ema21_slope_5d_pct", float("nan")) > 0.0
         and row.get("sma50_slope_10d_pct", float("nan")) > 0.0
         and 0.0 <= row.get("atr_21ema_zone", float("nan")) <= 1.0
         and 0.75 <= row.get("atr_50sma_zone", float("nan")) <= 4.0
@@ -526,12 +694,10 @@ def _scan_reclaim(row: pd.Series, config: ScanConfig) -> bool:
 
 
 def _scan_bullish_4pct(row: pd.Series, config: ScanConfig) -> bool:
-    raw_rs21 = _raw_rs(row, 21)
     return bool(
         row.get("rel_volume", 0.0) >= config.relative_volume_bullish_threshold
         and row.get("daily_change_pct", 0.0) >= config.daily_gain_bullish_threshold
         and row.get("from_open_pct", 0.0) > 0.0
-        and raw_rs21 > 60.0
     )
 
 
@@ -554,7 +720,6 @@ def _scan_momentum_97(row: pd.Series, config: ScanConfig) -> bool:
     return bool(
         row.get("weekly_return_rank", 0.0) >= config.momentum_97_weekly_rank
         and row.get("quarterly_return_rank", 0.0) >= config.momentum_97_quarterly_rank
-        and row.get("trend_base", False)
     )
 
 
@@ -563,13 +728,11 @@ def _scan_97_club(row: pd.Series, config: ScanConfig) -> bool:
     return bool(
         row.get("hybrid_score", 0.0) >= config.club_97_hybrid_threshold
         and raw_rs21 >= config.club_97_rs21_threshold
-        and row.get("trend_base", False)
     )
 
 
 def _scan_vcs(row: pd.Series, config: ScanConfig) -> bool:
-    raw_rs21 = _raw_rs(row, 21)
-    return bool(row.get("vcs", 0.0) >= config.vcs_min_threshold and raw_rs21 > 60.0)
+    return bool(row.get("vcs", 0.0) >= config.vcs_min_threshold)
 
 
 def _scan_vcs_52_high(row: pd.Series, config: ScanConfig) -> bool:
@@ -578,7 +741,6 @@ def _scan_vcs_52_high(row: pd.Series, config: ScanConfig) -> bool:
         row.get("vcs", 0.0) >= config.vcs_52_high_vcs_min
         and raw_rs21 > config.vcs_52_high_rs21_min
         and row.get("dist_from_52w_high", float("nan")) >= config.vcs_52_high_dist_max
-        and (not config.vcs_52_high_require_trend_base or row.get("trend_base", False))
     )
 
 
@@ -597,7 +759,7 @@ def _scan_pocket_pivot(row: pd.Series, config: ScanConfig) -> bool:
 
 
 def _scan_pp_count(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(row.get("pp_count_window", 0) >= config.pp_count_scan_min and row.get("trend_base", False))
+    return bool(row.get("pp_count_window", 0) >= config.pp_count_scan_min)
 
 
 def _scan_weekly_gainer(row: pd.Series, config: ScanConfig) -> bool:
@@ -611,14 +773,12 @@ def _scan_near_52w_high(row: pd.Series, config: ScanConfig) -> bool:
         and high_52w > 0.0
         and row.get("close", 0.0) >= high_52w * (1.0 - config.near_52w_high_threshold_pct / 100.0)
         and row.get("hybrid_score", 0.0) >= config.near_52w_high_hybrid_min
-        and row.get("trend_base", False)
     )
 
 
 def _scan_three_weeks_tight(row: pd.Series, config: ScanConfig) -> bool:
     return bool(
         row.get("three_weeks_tight", False)
-        and row.get("trend_base", False)
         and row.get("vcs", 0.0) >= config.three_weeks_tight_vcs_min
     )
 
@@ -631,18 +791,6 @@ def _scan_rs_acceleration(row: pd.Series, config: ScanConfig) -> bool:
         and pd.notna(rs63)
         and float(rs21) > float(rs63)
         and float(rs21) >= config.rs_acceleration_rs21_min
-        and row.get("trend_base", False)
-    )
-
-
-def _scan_fundamental_demand(row: pd.Series, config: ScanConfig) -> bool:
-    raw_rs21 = _raw_rs(row, 21)
-    return bool(
-        row.get("fundamental_score", 0.0) >= config.fund_demand_fundamental_min
-        and raw_rs21 >= config.fund_demand_rs21_min
-        and row.get("rel_volume", 0.0) >= config.fund_demand_rel_vol_min
-        and row.get("daily_change_pct", 0.0) > 0.0
-        and row.get("trend_base", False)
     )
 
 
@@ -657,7 +805,6 @@ def _scan_sustained_leadership(row: pd.Series, config: ScanConfig) -> bool:
         and float(rs63) >= config.sustained_rs63_min
         and pd.notna(rs126)
         and float(rs126) >= config.sustained_rs126_min
-        and row.get("trend_base", False)
     )
 
 
@@ -676,7 +823,15 @@ def _scan_trend_reversal_setup(row: pd.Series, config: ScanConfig) -> bool:
 
 
 def _scan_structure_pivot(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(row.get("structure_pivot_long_active", False))
+    if not bool(row.get("structure_pivot_long_active", False)):
+        return False
+    if not bool(row.get("structure_pivot_long_breakout_first_day", False)):
+        return False
+    if float(row.get("rel_volume", float("nan"))) < config.structure_pivot_breakout_rel_volume_min:
+        return False
+    if not config.structure_pivot_include_gap_up_breakouts and bool(row.get("structure_pivot_long_breakout_gap_up", False)):
+        return False
+    return True
 
 
 def _annotation_rs21_gte_63(row: pd.Series, config: ScanConfig) -> bool:
@@ -690,6 +845,14 @@ def _annotation_high_eps_growth(row: pd.Series, config: ScanConfig) -> bool:
 
 def _annotation_pp_count_20d(row: pd.Series, config: ScanConfig) -> bool:
     return bool(row.get("pp_count_window", 0) >= config.pp_count_annotation_min)
+
+
+def _annotation_trend_base(row: pd.Series, config: ScanConfig) -> bool:
+    return bool(row.get("trend_base", False))
+
+
+def _annotation_fund_score_gt_70(row: pd.Series, config: ScanConfig) -> bool:
+    return bool(row.get("fundamental_score", 0.0) >= 70.0)
 
 
 SCAN_RULE_REGISTRY: dict[str, RuleEvaluator] = {
@@ -710,7 +873,6 @@ SCAN_RULE_REGISTRY: dict[str, RuleEvaluator] = {
     "Near 52W High": _scan_near_52w_high,
     "Three Weeks Tight": _scan_three_weeks_tight,
     "RS Acceleration": _scan_rs_acceleration,
-    "Fundamental Demand": _scan_fundamental_demand,
     "Sustained Leadership": _scan_sustained_leadership,
     "Trend Reversal Setup": _scan_trend_reversal_setup,
     "Structure Pivot": _scan_structure_pivot,
@@ -721,6 +883,8 @@ ANNOTATION_FILTER_REGISTRY: dict[str, RuleEvaluator] = {
     "High Est. EPS Growth": _annotation_high_eps_growth,
     "PP Count (20d)": _annotation_pp_count_20d,
     "3+ Pocket Pivots (20d)": _annotation_pp_count_20d,
+    "Trend Base": _annotation_trend_base,
+    "Fund Score > 70": _annotation_fund_score_gt_70,
 }
 
 

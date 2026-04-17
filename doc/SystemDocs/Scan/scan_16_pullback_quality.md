@@ -25,8 +25,7 @@
 ```python
 weekly_return = row.get("weekly_return", float("nan"))
 matched = bool(
-    row.get("trend_base", False)
-    and row.get("ema21_slope_5d_pct", float("nan")) > 0.0
+    row.get("ema21_slope_5d_pct", float("nan")) > 0.0
     and row.get("sma50_slope_10d_pct", float("nan")) > 0.0
     and -1.25 <= row.get("atr_21ema_zone", float("nan")) <= 0.25
     and 0.75 <= row.get("atr_50sma_zone", float("nan")) <= 3.5
@@ -35,6 +34,8 @@ matched = bool(
     and 3.0 <= row.get("drawdown_from_20d_high_pct", float("nan")) <= 15.0
     and row.get("volume_ma5_to_ma20_ratio", float("nan")) <= 0.85
 )
+```
+
 Intent / Scan Role
 
 This scan is designed to identify orderly pullbacks in already-strong stocks.
@@ -54,11 +55,10 @@ stocks that are too extended above the 21EMA,
 stocks that are already reclaiming and should instead be handled by Reclaim scan.
 Condition Design Notes
 Trend integrity
-trend_base == True
 ema21_slope_5d_pct > 0.0
 sma50_slope_10d_pct > 0.0
 
-These conditions ensure the stock is still in a valid bullish structure and the moving averages are not flattening or rolling over.
+These conditions ensure the moving averages are not flattening or rolling over.
 
 Pullback location
 -1.25 <= atr_21ema_zone <= 0.25
@@ -96,7 +96,6 @@ weekly_return	src/indicators/core.py::IndicatorCalculator.calculate	float("nan")
 dcr_percent	src/indicators/core.py::IndicatorCalculator.calculate	0.0	>= 50.0
 atr_21ema_zone	src/indicators/core.py::IndicatorCalculator.calculate	float("nan")	-1.25 <= value <= 0.25
 atr_50sma_zone	src/indicators/core.py::IndicatorCalculator.calculate	float("nan")	0.75 <= value <= 3.5
-trend_base	src/indicators/core.py::IndicatorCalculator.calculate	False	must be True
 ema21_slope_5d_pct	src/indicators/core.py::IndicatorCalculator.calculate	float("nan")	> 0.0
 sma50_slope_10d_pct	src/indicators/core.py::IndicatorCalculator.calculate	float("nan")	> 0.0
 drawdown_from_20d_high_pct	src/indicators/core.py::IndicatorCalculator.calculate	float("nan")	3.0 <= value <= 15.0
@@ -110,7 +109,6 @@ weekly_return = close.pct_change(5) * 100.0
 dcr_percent = ((close - low) / (high - low)) * 100.0, zero-width range is filled with 50.0
 atr_21ema_zone = (close - ema21_close) / atr
 atr_50sma_zone = (close - sma50) / atr
-trend_base = (close > sma50) & (wma10_weekly > wma30_weekly)
 ema21_slope_5d_pct = ((ema21_close / ema21_close.shift(5)) - 1.0) * 100.0
 sma50_slope_10d_pct = ((sma50 / sma50.shift(10)) - 1.0) * 100.0
 rolling_20d_close_high = close.rolling(20).max()

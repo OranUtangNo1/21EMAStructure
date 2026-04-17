@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 
 from src.configuration import load_settings
+from src.scan.rules import ScanConfig
 
 
 def test_load_settings_merges_manifest_includes() -> None:
@@ -73,7 +74,63 @@ def test_default_settings_include_builtin_watchlist_presets() -> None:
     settings = load_settings()
 
     presets = settings["scan"]["watchlist_presets"]
+    preset_names = [preset["preset_name"] for preset in presets]
 
-    assert len(presets) == 10
-    assert presets[0]["preset_name"] == "Leader Breakout"
-    assert presets[-1]["preset_name"] == "Pattern 5 - Early Reversal Signal"
+    assert len(presets) == 9
+    assert preset_names == [
+        "Leader Breakout",
+        "Orderly Pullback",
+        "Reclaim Trigger",
+        "Momentum Surge",
+        "Early Cycle Recovery",
+        "Base Breakout",
+        "Trend Pullback",
+        "Resilient Leader",
+        "Early Recovery",
+    ]
+def test_default_watchlist_presets_use_required_plus_optional_rules() -> None:
+    settings = load_settings()
+    scan_config = ScanConfig.from_dict(settings["scan"])
+    expected_rules = {
+        "Leader Breakout": (("97 Club", "VCS 52 High"), ("RS Acceleration", "Three Weeks Tight")),
+        "Orderly Pullback": (("Pullback Quality scan", "21EMA scan"), ("RS Acceleration", "Volume Accumulation")),
+        "Reclaim Trigger": (("Reclaim scan",), ("Pocket Pivot",)),
+        "Momentum Surge": (("4% bullish", "Momentum 97"), ("PP Count", "Sustained Leadership")),
+        "Early Cycle Recovery": (("Trend Reversal Setup", "Pocket Pivot"), ("VCS 52 Low", "Volume Accumulation")),
+        "Base Breakout": (("VCS 52 High", "Pocket Pivot"), ("97 Club", "Three Weeks Tight")),
+        "Trend Pullback": (("Reclaim scan",), ("Pullback Quality scan", "RS Acceleration", "Volume Accumulation")),
+        "Early Recovery": (("Trend Reversal Setup", "Structure Pivot"), ("VCS 52 Low", "Volume Accumulation")),
+    }
+
+    presets = {preset.preset_name: preset for preset in scan_config.watchlist_presets}
+
+    assert set(presets) == {*expected_rules, "Resilient Leader"}
+    for preset_name, (required_scans, optional_scans) in expected_rules.items():
+        preset = presets[preset_name]
+        assert preset.duplicate_threshold == 1
+        assert preset.duplicate_rule.mode == "required_plus_optional_min"
+        assert preset.duplicate_rule.required_scans == required_scans
+        assert preset.duplicate_rule.optional_scans == optional_scans
+        assert preset.duplicate_rule.optional_min_hits == 1
+
+    resilient = presets["Resilient Leader"]
+    assert resilient.duplicate_threshold == 2
+    assert resilient.duplicate_rule.mode == "min_count"
+    assert resilient.duplicate_rule.min_count == 2
+    assert resilient.selected_scan_names == ("Sustained Leadership", "Near 52W High")
+
+
+def test_default_watchlist_presets_do_not_reference_disabled_scans() -> None:
+    settings = load_settings()
+    scan_config = ScanConfig.from_dict(settings["scan"])
+    disabled_scans = {
+        name
+        for name, status in scan_config.scan_status_map.items()
+        if status == "disabled"
+    }
+
+    assert {"Vol Up", "VCS"}.issubset(disabled_scans)
+    for preset in scan_config.watchlist_presets:
+        assert disabled_scans.isdisjoint(preset.selected_scan_names)
+        assert disabled_scans.isdisjoint(preset.duplicate_rule.required_scans)
+        assert disabled_scans.isdisjoint(preset.duplicate_rule.optional_scans)

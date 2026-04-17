@@ -215,12 +215,16 @@ class IndicatorCalculator:
         return {
             "structure_pivot_long_active": bool(long_state["active"]),
             "structure_pivot_long_breakout": bool(long_state["breakout"]),
+            "structure_pivot_long_breakout_first_day": bool(long_state["breakout_first_day"]),
+            "structure_pivot_long_breakout_gap_up": bool(long_state["breakout_gap_up"]),
             "structure_pivot_long_pivot_price": long_state["pivot_price"],
             "structure_pivot_long_length": long_state["length"],
             "structure_pivot_long_ll_price": long_state["prior_price"],
             "structure_pivot_long_hl_price": long_state["current_price"],
             "structure_pivot_short_active": bool(short_state["active"]),
             "structure_pivot_short_breakdown": bool(short_state["breakout"]),
+            "structure_pivot_short_breakdown_first_day": bool(short_state["breakout_first_day"]),
+            "structure_pivot_short_breakdown_gap_down": bool(short_state["breakout_gap_up"]),
             "structure_pivot_short_pivot_price": short_state["pivot_price"],
             "structure_pivot_short_length": short_state["length"],
             "structure_pivot_short_hh_price": short_state["prior_price"],
@@ -286,6 +290,8 @@ class IndicatorCalculator:
             return {
                 "active": False,
                 "breakout": False,
+                "breakout_first_day": False,
+                "breakout_gap_up": False,
                 "pivot_price": np.nan,
                 "length": np.nan,
                 "prior_price": np.nan,
@@ -294,10 +300,22 @@ class IndicatorCalculator:
 
         pivot_price = float(winner["break_val"])
         latest_close = float(closes.iloc[-1])
+        previous_close = float(closes.iloc[-2]) if len(closes) >= 2 and pd.notna(closes.iloc[-2]) else float("nan")
+        latest_open = float(df["open"].iloc[-1])
         breakout = latest_close > pivot_price if is_long else latest_close < pivot_price
+        breakout_first_day = bool(
+            breakout
+            and pd.notna(previous_close)
+            and (previous_close <= pivot_price if is_long else previous_close >= pivot_price)
+        )
+        breakout_gap_up = bool(breakout_first_day and latest_open > pivot_price) if is_long else bool(
+            breakout_first_day and latest_open < pivot_price
+        )
         return {
             "active": True,
             "breakout": bool(breakout),
+            "breakout_first_day": breakout_first_day,
+            "breakout_gap_up": breakout_gap_up,
             "pivot_price": pivot_price,
             "length": float(winner["length"]),
             "prior_price": float(winner["prev_price"]),

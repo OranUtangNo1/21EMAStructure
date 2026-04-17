@@ -11,6 +11,7 @@ from src.dashboard.market import MarketConditionResult
 from src.dashboard.radar import RadarResult
 from src.data.cache import CacheLayer
 from src.data.quality import append_data_quality, summarize_data_source_label
+from src.data.results import FetchStatus, FundamentalBatchResult, PriceHistoryBatch, ProfileBatchResult
 from src.data.store import DataSnapshotStore
 from src.pipeline import ResearchPlatform
 
@@ -201,6 +202,32 @@ def test_snapshot_store_loads_latest_run_with_dashboard_payloads() -> None:
         assert list(loaded.scan_hits["ticker"]) == ["AAA"]
 
 
+def test_snapshot_store_does_not_read_legacy_scan_hits_csv(tmp_path: Path) -> None:
+    store = DataSnapshotStore(tmp_path)
+    trade_date = pd.Timestamp("2026-04-08")
+    snapshot = pd.DataFrame({"trade_date": [trade_date], "close": [10.0]}, index=["AAA"])
+    watchlist = pd.DataFrame({"duplicate_ticker": [True]}, index=["AAA"])
+    fetch_status = pd.DataFrame()
+
+    store.save_run(
+        snapshot,
+        snapshot.copy(),
+        watchlist,
+        fetch_status,
+        {"data_source_label": "live", "config_path": "config/default.yaml", "requested_symbols": ["AAA"]},
+    )
+    legacy_dir = tmp_path / "scan_hits"
+    legacy_dir.mkdir(exist_ok=True)
+    pd.DataFrame([{"ticker": "AAA", "kind": "scan", "name": "Legacy Scan"}]).to_csv(
+        legacy_dir / "20260408.csv",
+        index=False,
+    )
+
+    loaded = store.load_latest_run()
+
+    assert loaded.scan_hits is None
+
+
 def test_research_platform_reuses_same_day_saved_run(tmp_path: Path) -> None:
     platform = ResearchPlatform()
     platform.snapshot_store = DataSnapshotStore(tmp_path)
@@ -268,3 +295,48 @@ def test_research_platform_reuses_same_day_saved_run(tmp_path: Path) -> None:
     assert reused.radar_result.top_daily.iloc[0]["TICKER"] == "QQQ"
     assert reused.earnings_today.empty
     assert platform.load_latest_run_artifacts(symbols=["MSFT"], force_universe_refresh=False) is None
+
+
+def test_research_platform_passes_force_price_refresh_to_price_provider() -> None:
+    platform = ResearchPlatform()
+    calls: list[dict[str, object]] = []
+    history = pd.DataFrame(
+        {
+            "open": [10.0],
+            "high": [11.0],
+            "low": [9.0],
+            "close": [10.5],
+            "adjusted_close": [10.5],
+            "volume": [1000.0],
+        },
+        index=pd.to_datetime(["2026-04-10"]),
+    )
+
+    class FakePriceProvider:
+        def get_price_history(self, symbols, period="18mo", interval="1d", *, force_refresh=False):
+            calls.append(
+                {"symbols": list(symbols), "period": period, "interval": interval, "force_refresh": force_refresh}
+            )
+            histories = {symbol: history for symbol in symbols}
+            statuses = {
+                symbol: FetchStatus(symbol=symbol, dataset="price", source="live", has_data=True)
+                for symbol in symbols
+            }
+            return PriceHistoryBatch(histories=histories, statuses=statuses)
+
+    class EmptyProfileProvider:
+        def get_profiles(self, symbols):
+            return ProfileBatchResult(profiles=[], statuses={})
+
+    class EmptyFundamentalProvider:
+        def get_fundamentals(self, symbols):
+            return FundamentalBatchResult(fundamentals=[], statuses={})
+
+    platform.price_provider = FakePriceProvider()
+    platform.profile_provider = EmptyProfileProvider()
+    platform.fundamental_provider = EmptyFundamentalProvider()
+
+    platform._load_data(["AAA"], None, "manual", force_price_refresh=True)
+
+    assert calls
+    assert calls[0]["force_refresh"] is True
