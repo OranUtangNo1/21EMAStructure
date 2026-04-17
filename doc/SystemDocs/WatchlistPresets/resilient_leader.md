@@ -14,15 +14,13 @@
 
 ```yaml
 preset_name: Resilient Leader
-selected_scan_names: [Sustained Leadership, Near 52W High, VCS, Fundamental Demand]
-selected_annotation_filters: []
+selected_scan_names: [Sustained Leadership, Near 52W High]
+selected_annotation_filters: [Trend Base, Fund Score > 70, RS 21 >= 63]
 selected_duplicate_subfilters: []
-duplicate_threshold: 1
+duplicate_threshold: 2
 duplicate_rule:
-  mode: required_plus_optional_min
-  required_scans: [Sustained Leadership, Near 52W High]
-  optional_scans: [VCS, Fundamental Demand]
-  optional_min_hits: 1
+  mode: min_count
+  min_count: 2
 preset_status: enabled
 ```
 
@@ -38,16 +36,14 @@ preset_status: enabled
 |---|---|---|---|
 | `Sustained Leadership` | `RS Leader` | [../Scan/scan_19_sustained_leadership.md](../Scan/scan_19_sustained_leadership.md) | `sustained_rs21_min=80.0`, `sustained_rs63_min=70.0`, `sustained_rs126_min=60.0` |
 | `Near 52W High` | `Near 52W High` | [../Scan/scan_10_near_52w_high.md](../Scan/scan_10_near_52w_high.md) | `near_52w_high_threshold_pct=5.0`, `near_52w_high_hybrid_min=70.0` |
-| `VCS` | `VCS` | [../Scan/scan_06_vcs.md](../Scan/scan_06_vcs.md) | `vcs_min_threshold=60.0`, plus hard-coded `raw_rs21 > 60.0` |
-| `Fundamental Demand` | `Fund Demand` | [../Scan/scan_18_fundamental_demand.md](../Scan/scan_18_fundamental_demand.md) | `fund_demand_fundamental_min=70.0`, `fund_demand_rs21_min=60.0`, `fund_demand_rel_vol_min=1.0` |
 
 ## Post-Scan And Duplicate Settings
 
-- selected annotation filters: none
+- selected annotation filters: `Trend Base`, `Fund Score > 70`, `RS 21 >= 63`
 - selected duplicate subfilters: none
-- UI duplicate threshold after preset load: `1`
+- UI optional threshold after preset load: not used by `min_count`
 - preset status: `enabled`
-- duplicate rule: `required_plus_optional_min`; requires every scan in `Sustained Leadership, Near 52W High` plus at least `1` hit from optional scans `VCS, Fundamental Demand`
+- duplicate rule: `min_count`; requires both selected scans because `min_count=2`
 
 ## Scan Role Mapping
 
@@ -55,33 +51,29 @@ preset_status: enabled
 |---|---|---|
 | Core | `Sustained Leadership` | All-horizon RS (21/63/126) proves persistent institutional holding through market weakness |
 | Core | `Near 52W High` | Maintaining 52-week high proximity under market pressure is direct evidence of resilience |
-| Confirmation | `VCS` | Volatility contraction score ≥ 60 shows selling pressure is contained, not expanding |
-| Confirmation | `Fundamental Demand` | Fundamental score ≥ 70 + RS + volume provides earnings-quality backing |
+| Filter | `Trend Base`, `Fund Score > 70`, `RS 21 >= 63` | Preset-level annotation filters enforce trend, fundamental score, and RS quality gates |
 
 ## Logic Structure
 
 ```
-duplicate_rule.mode: required_plus_optional_min
-required_scans: [Sustained Leadership, Near 52W High]
-optional_scans: [VCS, Fundamental Demand]
-optional_min_hits: 1
-→ ticker must hit every required scan and 1+ optional scan
+duplicate_rule.mode: min_count
+min_count: 2
+→ ticker must hit both selected scans, then pass every selected annotation filter
 ```
 
 Representative hit patterns:
 
-- `Sustained Leadership` + `Near 52W High` + `VCS` → all-horizon RS leader near highs with contraction
-- `Sustained Leadership` + `Near 52W High` + `Fundamental Demand` → near-high leader with fundamental backing and demand
+- `Sustained Leadership` + `Near 52W High` + all selected annotation filters → near-high leader with fundamental backing and trend/RS quality
 
 ## Setup Interpretation
 
 - **Target phase**: relative strength identification during market pressure; watchlist building for recovery
-- **Why effective in Under Pressure**: most stocks break down under pressure; those maintaining high-zone RS + contraction + fundamentals signal persistent institutional ownership and will be first to break out when the market environment improves
+- **Why effective in Under Pressure**: most stocks break down under pressure; those maintaining high-zone RS plus fundamentals signal persistent institutional ownership and will be first to break out when the market environment improves
 - **Not an immediate entry preset**: entry timing deferred to Base Breakout or Trend Pullback when market returns to Confirmed Uptrend
 
 ## Design Rationale
 
-Sustained Leadership's multi-horizon RS requirement (21/63/126) is environment-independent and identifies stocks that outperform regardless of market state. Near 52W High becomes a much stronger filter under pressure because fewer stocks qualify. VCS confirms quiet institutional holding. Fundamental Demand adds earnings-quality backing. None of these scans overlap with breakout triggers (Pocket Pivot, 3WT), pullback detectors (PB Quality, Reclaim), or reversal structure (Trend Reversal Setup, Structure Pivot).
+Sustained Leadership's multi-horizon RS requirement (21/63/126) is environment-independent and identifies stocks that outperform regardless of market state. Near 52W High becomes a much stronger filter under pressure because fewer stocks qualify. The selected annotation filters add trend, RS, and earnings-quality backing. The selected scans do not overlap with breakout triggers (Pocket Pivot, 3WT), pullback detectors (PB Quality, Reclaim), or reversal structure (Trend Reversal Setup, Structure Pivot).
 
 ## Scope Notes
 

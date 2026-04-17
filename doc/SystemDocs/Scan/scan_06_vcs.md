@@ -7,22 +7,21 @@
 | Canonical name | `VCS` |
 | UI display name | `VCS` |
 | Implementation owner | `src/scan/rules.py::_scan_vcs` |
+| Default config status | `disabled` |
+| Disable reason | role overlap with active VCS-derived structure scans |
 | Output | `bool` |
 
 ## Evaluation Context
 
 - Evaluated on one latest row after `enrich_with_scan_context()`.
-- `_raw_rs(row, 21)` reads `raw_rs21` first and falls back to `rs21`.
 - The scan reads the final `vcs` score only. The score itself is owned by `src/scoring/vcs.py::VCSCalculator.calculate_series`.
 - All conditions are combined with `AND`.
 
 ## Canonical Boolean Definition
 
 ```python
-raw_rs21 = _raw_rs(row, 21)
 matched = bool(
     row.get("vcs", 0.0) >= config.vcs_min_threshold
-    and raw_rs21 > 60.0
 )
 ```
 
@@ -31,17 +30,12 @@ matched = bool(
 | Field | Producer | Missing/default used by scan | Scan use |
 |---|---|---|---|
 | `vcs` | `src/scoring/vcs.py::VCSCalculator.calculate_series` | `0.0` | `>= config.vcs_min_threshold` |
-| `raw_rs21` | `src/scoring/rs.py::RSScorer.score` | fallback to `rs21`, then `nan` | `> 60.0` |
-| `rs21` | `src/scoring/rs.py::RSScorer.score` | `nan` | fallback only |
 
 ## Direct Config Dependencies
 
 | Config key | Default | Used as |
 |---|---|---|
 | `scan.vcs_min_threshold` | `60.0` | lower bound for `vcs` |
-
-Hard-coded threshold in code:
-- `raw_rs21 > 60.0`
 
 ## Upstream Field Definitions
 

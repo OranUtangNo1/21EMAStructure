@@ -7,6 +7,8 @@
 | Canonical name | `Vol Up` |
 | UI display name | `Vol Up` |
 | Implementation owner | `src/scan/rules.py::_scan_vol_up` |
+| Default config status | `disabled` |
+| Disable reason | role overlap with active volume and momentum scans |
 | Output | `bool` |
 
 ## Evaluation Context

@@ -28,7 +28,6 @@ DEFAULT_SCAN_RULE_NAMES = (
     "Near 52W High",
     "Three Weeks Tight",
     "RS Acceleration",
-    "Fundamental Demand",
     "Sustained Leadership",
     "Trend Reversal Setup",
     "Structure Pivot",
@@ -38,6 +37,8 @@ DEFAULT_ANNOTATION_FILTER_NAMES = (
     "RS 21 >= 63",
     "High Est. EPS Growth",
     "PP Count (20d)",
+    "Trend Base",
+    "Fund Score > 70",
 )
 
 ANNOTATION_FILTER_NAME_ALIASES = {
@@ -66,7 +67,6 @@ DEFAULT_CARD_SECTION_PAYLOADS = (
     {"scan_name": "Near 52W High", "display_name": "Near 52W High"},
     {"scan_name": "Three Weeks Tight", "display_name": "3WT"},
     {"scan_name": "RS Acceleration", "display_name": "RS Accel"},
-    {"scan_name": "Fundamental Demand", "display_name": "Fund Demand"},
     {"scan_name": "Sustained Leadership", "display_name": "RS Leader"},
     {"scan_name": "Trend Reversal Setup", "display_name": "Reversal Setup"},
     {"scan_name": "Structure Pivot", "display_name": "Structure Pivot"},
@@ -75,12 +75,16 @@ DEFAULT_ANNOTATION_FILTER_PAYLOADS = (
     {"filter_name": "RS 21 >= 63", "display_name": "RS 21 >= 63"},
     {"filter_name": "High Est. EPS Growth", "display_name": "High Est. EPS Growth"},
     {"filter_name": "PP Count (20d)", "display_name": "PP Count (20d)"},
+    {"filter_name": "Trend Base", "display_name": "Trend Base"},
+    {"filter_name": "Fund Score > 70", "display_name": "Fund Score > 70"},
 )
 ANNOTATION_FILTER_COLUMN_NAMES = {
     "RS 21 >= 63": "annotation_rs21_gte_63",
     "High Est. EPS Growth": "annotation_high_eps_growth",
     "PP Count (20d)": "annotation_pp_count_20d",
     "3+ Pocket Pivots (20d)": "annotation_pp_count_20d",
+    "Trend Base": "annotation_trend_base",
+    "Fund Score > 70": "annotation_fund_score_gt_70",
 }
 SCAN_STATUS_VALUES = ("enabled", "disabled")
 WATCHLIST_PRESET_STATUS_VALUES = ("enabled", "hidden_enabled", "disabled")
@@ -303,7 +307,6 @@ class ScanConfig:
     vcs_52_high_vcs_min: float = 55.0
     vcs_52_high_rs21_min: float = 25.0
     vcs_52_high_dist_max: float = -20.0
-    vcs_52_high_require_trend_base: bool = True
     vcs_52_low_vcs_min: float = 60.0
     vcs_52_low_rs21_min: float = 80.0
     vcs_52_low_dist_max: float = 25.0
@@ -315,9 +318,6 @@ class ScanConfig:
     near_52w_high_hybrid_min: float = 70.0
     three_weeks_tight_vcs_min: float = 50.0
     rs_acceleration_rs21_min: float = 70.0
-    fund_demand_fundamental_min: float = 70.0
-    fund_demand_rs21_min: float = 60.0
-    fund_demand_rel_vol_min: float = 1.0
     sustained_rs21_min: float = 80.0
     sustained_rs63_min: float = 70.0
     sustained_rs126_min: float = 60.0
@@ -660,15 +660,13 @@ def _scan_21ema(row: pd.Series, config: ScanConfig) -> bool:
         and row.get("dcr_percent", 0.0) > 20.0
         and -0.5 <= row.get("atr_21ema_zone", float("nan")) <= 1.0
         and 0.0 <= row.get("atr_50sma_zone", float("nan")) <= 3.0
-        and row.get("trend_base", False)
     )
 
 
 def _scan_pullback_quality(row: pd.Series, config: ScanConfig) -> bool:
     weekly_return = row.get("weekly_return", float("nan"))
     return bool(
-        row.get("trend_base", False)
-        and row.get("ema21_slope_5d_pct", float("nan")) > 0.0
+        row.get("ema21_slope_5d_pct", float("nan")) > 0.0
         and row.get("sma50_slope_10d_pct", float("nan")) > 0.0
         and -1.25 <= row.get("atr_21ema_zone", float("nan")) <= 0.25
         and 0.75 <= row.get("atr_50sma_zone", float("nan")) <= 3.5
@@ -682,8 +680,7 @@ def _scan_pullback_quality(row: pd.Series, config: ScanConfig) -> bool:
 def _scan_reclaim(row: pd.Series, config: ScanConfig) -> bool:
     weekly_return = row.get("weekly_return", float("nan"))
     return bool(
-        row.get("trend_base", False)
-        and row.get("ema21_slope_5d_pct", float("nan")) > 0.0
+        row.get("ema21_slope_5d_pct", float("nan")) > 0.0
         and row.get("sma50_slope_10d_pct", float("nan")) > 0.0
         and 0.0 <= row.get("atr_21ema_zone", float("nan")) <= 1.0
         and 0.75 <= row.get("atr_50sma_zone", float("nan")) <= 4.0
@@ -697,12 +694,10 @@ def _scan_reclaim(row: pd.Series, config: ScanConfig) -> bool:
 
 
 def _scan_bullish_4pct(row: pd.Series, config: ScanConfig) -> bool:
-    raw_rs21 = _raw_rs(row, 21)
     return bool(
         row.get("rel_volume", 0.0) >= config.relative_volume_bullish_threshold
         and row.get("daily_change_pct", 0.0) >= config.daily_gain_bullish_threshold
         and row.get("from_open_pct", 0.0) > 0.0
-        and raw_rs21 > 60.0
     )
 
 
@@ -725,7 +720,6 @@ def _scan_momentum_97(row: pd.Series, config: ScanConfig) -> bool:
     return bool(
         row.get("weekly_return_rank", 0.0) >= config.momentum_97_weekly_rank
         and row.get("quarterly_return_rank", 0.0) >= config.momentum_97_quarterly_rank
-        and row.get("trend_base", False)
     )
 
 
@@ -734,13 +728,11 @@ def _scan_97_club(row: pd.Series, config: ScanConfig) -> bool:
     return bool(
         row.get("hybrid_score", 0.0) >= config.club_97_hybrid_threshold
         and raw_rs21 >= config.club_97_rs21_threshold
-        and row.get("trend_base", False)
     )
 
 
 def _scan_vcs(row: pd.Series, config: ScanConfig) -> bool:
-    raw_rs21 = _raw_rs(row, 21)
-    return bool(row.get("vcs", 0.0) >= config.vcs_min_threshold and raw_rs21 > 60.0)
+    return bool(row.get("vcs", 0.0) >= config.vcs_min_threshold)
 
 
 def _scan_vcs_52_high(row: pd.Series, config: ScanConfig) -> bool:
@@ -749,7 +741,6 @@ def _scan_vcs_52_high(row: pd.Series, config: ScanConfig) -> bool:
         row.get("vcs", 0.0) >= config.vcs_52_high_vcs_min
         and raw_rs21 > config.vcs_52_high_rs21_min
         and row.get("dist_from_52w_high", float("nan")) >= config.vcs_52_high_dist_max
-        and (not config.vcs_52_high_require_trend_base or row.get("trend_base", False))
     )
 
 
@@ -768,7 +759,7 @@ def _scan_pocket_pivot(row: pd.Series, config: ScanConfig) -> bool:
 
 
 def _scan_pp_count(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(row.get("pp_count_window", 0) >= config.pp_count_scan_min and row.get("trend_base", False))
+    return bool(row.get("pp_count_window", 0) >= config.pp_count_scan_min)
 
 
 def _scan_weekly_gainer(row: pd.Series, config: ScanConfig) -> bool:
@@ -782,14 +773,12 @@ def _scan_near_52w_high(row: pd.Series, config: ScanConfig) -> bool:
         and high_52w > 0.0
         and row.get("close", 0.0) >= high_52w * (1.0 - config.near_52w_high_threshold_pct / 100.0)
         and row.get("hybrid_score", 0.0) >= config.near_52w_high_hybrid_min
-        and row.get("trend_base", False)
     )
 
 
 def _scan_three_weeks_tight(row: pd.Series, config: ScanConfig) -> bool:
     return bool(
         row.get("three_weeks_tight", False)
-        and row.get("trend_base", False)
         and row.get("vcs", 0.0) >= config.three_weeks_tight_vcs_min
     )
 
@@ -802,18 +791,6 @@ def _scan_rs_acceleration(row: pd.Series, config: ScanConfig) -> bool:
         and pd.notna(rs63)
         and float(rs21) > float(rs63)
         and float(rs21) >= config.rs_acceleration_rs21_min
-        and row.get("trend_base", False)
-    )
-
-
-def _scan_fundamental_demand(row: pd.Series, config: ScanConfig) -> bool:
-    raw_rs21 = _raw_rs(row, 21)
-    return bool(
-        row.get("fundamental_score", 0.0) >= config.fund_demand_fundamental_min
-        and raw_rs21 >= config.fund_demand_rs21_min
-        and row.get("rel_volume", 0.0) >= config.fund_demand_rel_vol_min
-        and row.get("daily_change_pct", 0.0) > 0.0
-        and row.get("trend_base", False)
     )
 
 
@@ -828,7 +805,6 @@ def _scan_sustained_leadership(row: pd.Series, config: ScanConfig) -> bool:
         and float(rs63) >= config.sustained_rs63_min
         and pd.notna(rs126)
         and float(rs126) >= config.sustained_rs126_min
-        and row.get("trend_base", False)
     )
 
 
@@ -871,6 +847,14 @@ def _annotation_pp_count_20d(row: pd.Series, config: ScanConfig) -> bool:
     return bool(row.get("pp_count_window", 0) >= config.pp_count_annotation_min)
 
 
+def _annotation_trend_base(row: pd.Series, config: ScanConfig) -> bool:
+    return bool(row.get("trend_base", False))
+
+
+def _annotation_fund_score_gt_70(row: pd.Series, config: ScanConfig) -> bool:
+    return bool(row.get("fundamental_score", 0.0) >= 70.0)
+
+
 SCAN_RULE_REGISTRY: dict[str, RuleEvaluator] = {
     "21EMA scan": _scan_21ema,
     "Pullback Quality scan": _scan_pullback_quality,
@@ -889,7 +873,6 @@ SCAN_RULE_REGISTRY: dict[str, RuleEvaluator] = {
     "Near 52W High": _scan_near_52w_high,
     "Three Weeks Tight": _scan_three_weeks_tight,
     "RS Acceleration": _scan_rs_acceleration,
-    "Fundamental Demand": _scan_fundamental_demand,
     "Sustained Leadership": _scan_sustained_leadership,
     "Trend Reversal Setup": _scan_trend_reversal_setup,
     "Structure Pivot": _scan_structure_pivot,
@@ -900,6 +883,8 @@ ANNOTATION_FILTER_REGISTRY: dict[str, RuleEvaluator] = {
     "High Est. EPS Growth": _annotation_high_eps_growth,
     "PP Count (20d)": _annotation_pp_count_20d,
     "3+ Pocket Pivots (20d)": _annotation_pp_count_20d,
+    "Trend Base": _annotation_trend_base,
+    "Fund Score > 70": _annotation_fund_score_gt_70,
 }
 
 

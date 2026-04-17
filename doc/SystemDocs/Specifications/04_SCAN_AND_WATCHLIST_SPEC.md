@@ -66,10 +66,12 @@ The application also evaluates configured annotation filters on the same eligibl
 Current implemented behavior:
 
 - annotation filters are defined by `scan.annotation_filters`
-- the default config ships three available filters:
+- the default config ships five available filters:
   - `RS 21 >= 63`
   - `High Est. EPS Growth`
   - `PP Count (20d)`
+  - `Trend Base`
+  - `Fund Score > 70`
 - the default config enables none of them at runtime because `enabled_annotation_filters` is `[]`
 - annotation results are attached to the raw watchlist as:
   - one boolean column per configured filter
@@ -124,10 +126,11 @@ The page builds a projected watchlist from raw artifacts plus page-local control
 
 Current controls:
 
-- selected scan cards
+- required scan cards
+- optional scan cards
 - selected annotation filters
 - selected duplicate subfilters
-- duplicate threshold
+- optional threshold
 
 These values are persisted under the `watchlist_controls` group in the user-preferences store and are namespaced by the resolved config path.
 
@@ -140,7 +143,7 @@ Current preset behavior:
 
 - record shape: `schema_version`, `kind`, `values`
 - `kind` is currently `watchlist_controls`
-- `values` stores the four sidebar control fields plus an optional hidden `duplicate_rule` payload
+- `values` stores the sidebar control fields plus an editable `duplicate_rule` payload
 - the active UI supports save, load, update, and delete
 - built-in presets use `preset_status` to control UI visibility and automatic export participation
 - only built-in presets with `preset_status: enabled` appear in the preset picker
@@ -150,7 +153,8 @@ Current preset behavior:
 - at most 10 presets are stored per config namespace
 - preset load drops any saved preset that references scan names no longer available in the current config
 - invalid annotation filters are ignored during preset load
-- duplicate threshold is clamped to the selected-card count when the effective duplicate rule uses `min_count`
+- optional threshold is clamped to the optional-card count
+- `selected_scan_names` remains the persisted union of required and optional cards for compatibility
 
 ### 3.2 Annotation-filter projection
 
@@ -182,6 +186,8 @@ Current implemented behavior:
 - supported duplicate-rule modes:
   - `min_count`
   - `required_plus_optional_min`
+- the UI uses `required_plus_optional_min` when both required and optional cards are selected
+- the UI uses `min_count` when only required cards or only optional cards are selected
 - `overlap_count` is overwritten with the selected-scan overlap count
 - if no scan cards are selected, the projection forces:
   - `selected_scan_hit_count = 0`
@@ -216,48 +222,28 @@ Preset export behavior uses the preset's own duplicate rule when one is defined 
 
 `preset_summary.csv` uses one row per output ticker. The `hit_presets` column lists the built-in presets that emitted that ticker, and the selected scan, annotation, duplicate-threshold, and duplicate-rule columns summarize the unique settings across those hit presets.
 
-### 3.5 Preset effectiveness logs
+### 3.5 Preset tracking database
 
-The app also maintains a cumulative fact log for built-in watchlist presets that are export-enabled.
+The app also maintains a cumulative SQLite tracking store for built-in watchlist presets that are export-enabled.
 
 Current implemented behavior:
 
-- output directory: `data_runs/preset_effectiveness/`
-- file set:
-  - `events.csv`
-  - `outcomes.csv`
-- `events.csv` grain is one row per `trade_date x preset_name x ticker`
-- rows are written only for duplicate tickers produced by each preset's own duplicate rule
-- the event payload stores detection-time facts only
-- current stored event fields include:
-  - `market_score`
-  - `market_label`
-  - `selected_scan_names`
-  - `hit_scans`
-  - `close_at_signal`
-  - `volume`
-  - `avg_volume_50d`
-  - `rel_volume`
-  - `hybrid_score`
-  - `vcs`
-  - `rs21`
-  - `rs63`
-  - `rs126`
-  - `dist_from_52w_high`
-  - `dist_from_52w_low`
-- `outcomes.csv` stores forward-tracking rows keyed by `event_id` plus horizon
-- current fixed forward horizons are `1d`, `5d`, `10d`, and `20d`
-- each outcome row carries:
-  - `target_date`
-  - `close_at_signal`
-  - `close_at_target`
-  - `return_pct`
-  - `status`
-- current status values are:
-  - `pending`
-  - `ready`
-- outcome rows are updated on later runs once the latest snapshot has reached or passed the target business date
-- this log is cumulative and is not overwritten per daily export folder
+- database path: `data_runs/tracking.db`
+- rows are written only for duplicate tickers produced by each export-enabled preset's own duplicate rule
+- detection grain is `hit_date x preset_name x ticker`
+- the database enforces one active row per `preset_name x ticker`
+- detection rows store detection-time fields such as `market_env`, `close_at_hit`, `rs21_at_hit`, `vcs_at_hit`, `atr_at_hit`, `hybrid_score_at_hit`, and `duplicate_hit_count`
+- hit scan names are stored in `detection_scans`
+- selected annotation filters are stored in `detection_filters`
+- forward horizons are fixed at `1d`, `5d`, `10d`, and `20d`
+- forward closes are stored as `close_at_1d`, `close_at_5d`, `close_at_10d`, and `close_at_20d`
+- forward returns are stored as `return_1d`, `return_5d`, `return_10d`, and `return_20d`
+- horizon dates are calculated from `hit_date + BDay(horizon_days)`
+- return fields are updated on later runs when price history for the target date or a later available trading day exists
+- a detection is closed after the 20D horizon is filled
+- date-level scan-hit history is stored in the same database table `scan_hits`
+
+Legacy CSVs under `data_runs/preset_effectiveness/` are migration inputs only. They are not the current authoritative tracking store.
 
 ### 3.6 Scan-card grid
 
@@ -353,7 +339,7 @@ Current end-to-end sequence:
 9. keep only symbols with `scan_hit_count > 0`
 10. mark backend duplicate tickers from scan overlap
 11. sort the raw watchlist
-12. in the app, project the raw watchlist through selected scan names, annotation filters, duplicate subfilters, and the current duplicate threshold
+12. in the app, project the raw watchlist through required and optional scan names, annotation filters, duplicate subfilters, and the current duplicate rule
 
 ## 7. Configurable Areas
 
@@ -365,11 +351,11 @@ The active implementation keeps these areas configurable:
 - enabled annotation filters
 - card sections and their display names
 - built-in watchlist presets
-- startup-selected watchlist cards
+- startup-selected watchlist cards loaded as optional cards
 - backend duplicate minimum count
 - watchlist sort mode
 - universe thresholds
-- UI-selected scan subset for display and duplicate counting
+- UI-selected required and optional scan subsets for display and duplicate counting
 - UI-selected annotation filters for display narrowing
-- UI duplicate threshold for the current page session
+- UI optional threshold for the current page session
 - UI duplicate-only subfilters for the current page session

@@ -10,7 +10,6 @@
   vcs_52_high_vcs_min: 55.0
   vcs_52_high_rs21_min: 25.0
   vcs_52_high_dist_max: -20.0
-  vcs_52_high_require_trend_base: true
   vcs_52_low_vcs_min: 60.0
   vcs_52_low_rs21_min: 80.0
   vcs_52_low_dist_max: 25.0
@@ -22,9 +21,6 @@
   near_52w_high_hybrid_min: 70.0
   three_weeks_tight_vcs_min: 50.0
   rs_acceleration_rs21_min: 70.0
-  fund_demand_fundamental_min: 70.0
-  fund_demand_rs21_min: 60.0
-  fund_demand_rel_vol_min: 1.0
   sustained_rs21_min: 80.0
   sustained_rs63_min: 70.0
   sustained_rs126_min: 60.0
@@ -44,11 +40,11 @@
     Pullback Quality scan: enabled
     Reclaim scan: enabled
     4% bullish: enabled
-    Vol Up: enabled
+    Vol Up: disabled
     Volume Accumulation: enabled
     Momentum 97: enabled
     97 Club: enabled
-    VCS: enabled
+    VCS: disabled
     VCS 52 High: enabled
     VCS 52 Low: enabled
     Pocket Pivot: enabled
@@ -57,7 +53,6 @@
     Near 52W High: enabled
     Three Weeks Tight: enabled
     RS Acceleration: enabled
-    Fundamental Demand: enabled
     Sustained Leadership: enabled
     Trend Reversal Setup: enabled
     Structure Pivot: enabled
@@ -66,11 +61,9 @@
   - Pullback Quality scan
   - Reclaim scan
   - 4% bullish
-  - Vol Up
   - Volume Accumulation
   - Momentum 97
   - 97 Club
-  - VCS
   - VCS 52 High
   - VCS 52 Low
   - Pocket Pivot
@@ -79,7 +72,6 @@
   - Near 52W High
   - Three Weeks Tight
   - RS Acceleration
-  - Fundamental Demand
   - Sustained Leadership
   - Trend Reversal Setup
   - Structure Pivot
@@ -91,6 +83,10 @@
     display_name: High Est. EPS Growth
   - filter_name: PP Count (20d)
     display_name: PP Count (20d)
+  - filter_name: Trend Base
+    display_name: Trend Base
+  - filter_name: Fund Score > 70
+    display_name: Fund Score > 70
   preset_csv_export:
     enabled: true
     output_dir: data_runs/preset_exports
@@ -99,7 +95,7 @@
   watchlist_presets:
   - preset_name: Leader Breakout
     selected_scan_names: [97 Club, VCS 52 High, RS Acceleration, Three Weeks Tight]
-    selected_annotation_filters: []
+    selected_annotation_filters: [Trend Base]
     selected_duplicate_subfilters: []
     duplicate_threshold: 1
     duplicate_rule:
@@ -110,7 +106,7 @@
     preset_status: enabled
   - preset_name: Orderly Pullback
     selected_scan_names: [Pullback Quality scan, 21EMA scan, RS Acceleration, Volume Accumulation]
-    selected_annotation_filters: []
+    selected_annotation_filters: [Trend Base]
     selected_duplicate_subfilters: []
     duplicate_threshold: 1
     duplicate_rule:
@@ -120,19 +116,19 @@
       optional_min_hits: 1
     preset_status: enabled
   - preset_name: Reclaim Trigger
-    selected_scan_names: [Reclaim scan, Pocket Pivot, Fundamental Demand]
-    selected_annotation_filters: []
+    selected_scan_names: [Reclaim scan, Pocket Pivot]
+    selected_annotation_filters: [Trend Base, Fund Score > 70, RS 21 >= 63]
     selected_duplicate_subfilters: []
     duplicate_threshold: 1
     duplicate_rule:
       mode: required_plus_optional_min
       required_scans: [Reclaim scan]
-      optional_scans: [Pocket Pivot, Fundamental Demand]
+      optional_scans: [Pocket Pivot]
       optional_min_hits: 1
     preset_status: enabled
   - preset_name: Momentum Surge
     selected_scan_names: [4% bullish, Momentum 97, PP Count, Sustained Leadership]
-    selected_annotation_filters: []
+    selected_annotation_filters: [Trend Base, RS 21 >= 63]
     selected_duplicate_subfilters: []
     duplicate_threshold: 1
     duplicate_rule:
@@ -154,7 +150,7 @@
     preset_status: enabled
   - preset_name: Base Breakout
     selected_scan_names: [VCS 52 High, Pocket Pivot, 97 Club, Three Weeks Tight]
-    selected_annotation_filters: []
+    selected_annotation_filters: [Trend Base]
     selected_duplicate_subfilters: []
     duplicate_threshold: 1
     duplicate_rule:
@@ -165,7 +161,7 @@
     preset_status: enabled
   - preset_name: Trend Pullback
     selected_scan_names: [Reclaim scan, Pullback Quality scan, RS Acceleration, Volume Accumulation]
-    selected_annotation_filters: []
+    selected_annotation_filters: [Trend Base]
     selected_duplicate_subfilters: []
     duplicate_threshold: 1
     duplicate_rule:
@@ -175,15 +171,13 @@
       optional_min_hits: 1
     preset_status: enabled
   - preset_name: Resilient Leader
-    selected_scan_names: [Sustained Leadership, Near 52W High, VCS, Fundamental Demand]
-    selected_annotation_filters: []
+    selected_scan_names: [Sustained Leadership, Near 52W High]
+    selected_annotation_filters: [Trend Base, Fund Score > 70, RS 21 >= 63]
     selected_duplicate_subfilters: []
-    duplicate_threshold: 1
+    duplicate_threshold: 2
     duplicate_rule:
-      mode: required_plus_optional_min
-      required_scans: [Sustained Leadership, Near 52W High]
-      optional_scans: [VCS, Fundamental Demand]
-      optional_min_hits: 1
+      mode: min_count
+      min_count: 2
     preset_status: enabled
   - preset_name: Early Recovery
     selected_scan_names: [Trend Reversal Setup, Structure Pivot, VCS 52 Low, Volume Accumulation]
@@ -231,8 +225,6 @@
     display_name: 3WT
   - scan_name: RS Acceleration
     display_name: RS Accel
-  - scan_name: Fundamental Demand
-    display_name: Fund Demand
   - scan_name: Sustained Leadership
     display_name: RS Leader
   - scan_name: Trend Reversal Setup

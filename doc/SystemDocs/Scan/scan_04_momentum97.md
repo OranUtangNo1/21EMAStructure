@@ -21,7 +21,6 @@
 matched = bool(
     row.get("weekly_return_rank", 0.0) >= config.momentum_97_weekly_rank
     and row.get("quarterly_return_rank", 0.0) >= config.momentum_97_quarterly_rank
-    and row.get("trend_base", False)
 )
 ```
 
@@ -31,7 +30,6 @@ matched = bool(
 |---|---|---|---|
 | `weekly_return_rank` | `src/scan/rules.py::enrich_with_scan_context` | `0.0` | `>= config.momentum_97_weekly_rank` |
 | `quarterly_return_rank` | `src/scan/rules.py::enrich_with_scan_context` | `0.0` | `>= config.momentum_97_quarterly_rank` |
-| `trend_base` | `src/indicators/core.py::IndicatorCalculator.calculate` | `False` | must be `True` |
 
 ## Direct Config Dependencies
 
@@ -47,4 +45,3 @@ matched = bool(
 - `weekly_return_rank = percent_rank(snapshot["weekly_return"])`
 - `quarterly_return_rank = percent_rank(snapshot["quarterly_return"])`
 - `percent_rank` owner: `src/utils.py::percent_rank`
-- `trend_base = (close > sma50) & (wma10_weekly > wma30_weekly)`

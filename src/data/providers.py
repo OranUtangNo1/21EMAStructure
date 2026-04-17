@@ -1,8 +1,11 @@
 ﻿from __future__ import annotations
 
 from abc import ABC, abstractmethod
+import contextlib
 from dataclasses import dataclass, field
 from datetime import date, datetime
+import io
+import logging
 import time
 from typing import Any
 
@@ -348,7 +351,7 @@ class YFinancePriceDataProvider(PriceDataProvider):
             if not remaining:
                 break
             try:
-                raw = yf.download(
+                raw = self._download_quietly(
                     remaining,
                     period=period,
                     interval=interval,
@@ -375,6 +378,16 @@ class YFinancePriceDataProvider(PriceDataProvider):
                 time.sleep(delay)
 
         return downloaded, error_note
+
+    def _download_quietly(self, *args: object, **kwargs: object) -> pd.DataFrame:
+        """Call yfinance without leaking provider diagnostics into the UI."""
+        previous_logging_disable = logging.root.manager.disable
+        logging.disable(logging.CRITICAL)
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                return yf.download(*args, **kwargs)
+        finally:
+            logging.disable(previous_logging_disable)
 
     def _split_download_frame(self, frame: pd.DataFrame, symbols: list[str]) -> dict[str, pd.DataFrame]:
         if frame is None or frame.empty:

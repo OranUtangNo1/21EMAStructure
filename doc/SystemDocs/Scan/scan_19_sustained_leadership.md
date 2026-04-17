@@ -13,7 +13,7 @@
 ## Evaluation Context
 
 - Evaluated on one latest row after `enrich_with_scan_context()`.
-- Reads multi-horizon RS fields and trend-base state.
+- Reads multi-horizon RS fields.
 - All conditions are combined with `AND`.
 
 ## Canonical Boolean Definition
@@ -30,7 +30,6 @@ matched = bool(
     and float(rs63) >= config.sustained_rs63_min
     and pd.notna(rs126)
     and float(rs126) >= config.sustained_rs126_min
-    and row.get("trend_base", False)
 )
 ```
 
@@ -41,7 +40,6 @@ matched = bool(
 | `raw_rs21` with `rs21` fallback via `_raw_rs(row, 21)` | `src/scoring/rs.py::RSScorer.score` | `float("nan")` | `>= sustained_rs21_min` |
 | `rs63` | `src/scoring/rs.py::RSScorer.score` | `float("nan")` | `>= sustained_rs63_min` |
 | `rs126` | `src/scoring/rs.py::RSScorer.score` | `float("nan")` | `>= sustained_rs126_min` |
-| `trend_base` | `src/indicators/core.py::IndicatorCalculator.calculate` | `False` | must be `True` |
 
 ## Direct Config Dependencies
 
@@ -55,4 +53,3 @@ matched = bool(
 
 - `_raw_rs(row, 21)` uses `raw_rs21` when present and falls back to `rs21`
 - `rs63` and `rs126` are percentile-style relative-strength outputs from `RSScorer`
-- `trend_base = bool(close > sma50 and wma10_weekly > wma30_weekly)`

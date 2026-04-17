@@ -2,12 +2,13 @@
 
 ## 1. Active UI Scope
 
-The active Streamlit app exposes exactly four pages:
+The active Streamlit app exposes exactly five pages:
 
 1. `Today's Watchlist`
 2. `Entry Signals`
-3. `RS Radar`
-4. `Market Dashboard`
+3. `Tracking Analytics`
+4. `RS Radar`
+5. `Market Dashboard`
 
 There is no active chart, cockpit, sizing, or exit page in the current app.
 
@@ -28,12 +29,14 @@ The main content area exposes a top page tab bar:
 
 - `Today's Watchlist`
 - `Entry Signals`
+- `Tracking Analytics`
 - `RS Radar`
 - `Market Dashboard`
 
 Current navigation behavior:
 
-- page switching uses a single-select top tab control, not a sidebar radio
+- page switching uses a full-width top button row, not a sidebar radio
+- each top page button uses the whole visible button area as the pointer and click target
 - the app resolves the active page from a page-definition registry so additional tabs can be added without reshaping the main flow
 - page-specific sidebar controls are rendered from the active page definition only
 
@@ -43,9 +46,11 @@ Current load behavior:
 
 - explicit `Refresh` always recomputes the pipeline
 - otherwise the app reuses the current in-session artifacts until the artifact key changes
+- when the artifact key changes without explicit refresh or force-refresh controls, the app first attempts same-day saved-run restore through `ResearchPlatform.load_latest_run_artifacts()`
+- if same-day restore succeeds, the app skips full pipeline recomputation
+- if same-day restore fails, the app recomputes through `ResearchPlatform.run()`
 - `Force Weekly Universe Refresh` bypasses weekly universe snapshot reuse for symbol resolution
 - `Force Price Data Refresh` bypasses the price-cache TTL for the active run while keeping existing cached price rows as merge/fallback data
-- the current app load path calls `ResearchPlatform.run()` directly; the pipeline's same-day saved-run restore helper is not currently used by the Streamlit startup flow
 
 ### 2.2 Shared context and health
 
@@ -67,10 +72,12 @@ Current implemented behavior:
 - namespace: resolved config path
 - current sidebar state stores:
   - `selected_scan_names`
+  - `required_scan_names`
+  - `optional_scan_names`
   - `selected_annotation_filters`
   - `selected_duplicate_subfilters`
   - `duplicate_threshold`
-  - hidden `duplicate_rule`
+  - editable `duplicate_rule`
 - preset records store:
   - `schema_version`
   - `kind`
@@ -95,7 +102,7 @@ The current page header shows:
   - `Cards Selected`
   - `Post-scan Filters`
   - `Duplicate Subfilters`
-  - `Duplicate Threshold`
+  - `Duplicate Rule`
 
 ### 3.2 Sidebar-only watchlist controls
 
@@ -104,10 +111,11 @@ On `Today's Watchlist`, the sidebar additionally exposes:
 - saved-preset selectbox
 - `Load Preset` action
 - `Delete Preset` action
-- card multiselect used for watchlist-card display and duplicate counting
+- required-card multiselect
+- optional-card multiselect
+- optional-threshold input
 - post-scan annotation filter multiselect
 - duplicate subfilter multiselect
-- duplicate threshold input
 - preset-name input
 - `Save Preset` action
 - `Update Preset` action
@@ -115,18 +123,20 @@ On `Today's Watchlist`, the sidebar additionally exposes:
 
 Current defaults:
 
-- card defaults come from `scan.default_selected_scan_names` or all card sections when unspecified
+- legacy card defaults come from `scan.default_selected_scan_names` or all card sections when unspecified and are loaded as optional cards
+- presets with `required_plus_optional_min` duplicate rules load their required and optional cards into the matching sidebar controls
 - annotation-filter defaults come from `scan.enabled_annotation_filters`
 - duplicate-subfilter default is empty
-- duplicate threshold defaults to `scan.duplicate_min_count`
+- optional threshold defaults to `scan.duplicate_min_count` for optional-only legacy controls or the preset rule's `optional_min_hits`
 - preset-name input defaults to empty until the user loads or saves a preset
 
 Preset load behavior:
 
 - saved presets are dropped when they reference scan names that are not available in the current config
 - invalid annotation-filter names are ignored against the current config
-- duplicate threshold is clamped to the current selected-card count
-- hidden preset duplicate rules are loaded and persisted, but are not editable from the current UI
+- optional threshold is clamped to the current optional-card count
+- required-card and optional-card UI roles are persisted separately from `duplicate_rule` so required-only selections survive page navigation
+- duplicate rules are loaded, editable, and persisted from the required-card, optional-card, and optional-threshold controls
 - built-in presets cannot be deleted or updated from the UI
 - `Update Preset` overwrites the currently selected saved preset
 - `Export Preset CSV` uses the currently selected saved preset record, not unsaved sidebar edits
@@ -140,11 +150,12 @@ Preset export CSV behavior:
 - each scan-card column stores the comma-separated ticker list shown in that preset's projected card
 - file encoding is UTF-8 with BOM for spreadsheet compatibility
 
-Preset effectiveness log behavior:
+Preset tracking behavior:
 
-- each artifact refresh also syncs cumulative preset-effectiveness files under `data_runs/preset_effectiveness/`
+- each full pipeline recompute syncs export-enabled preset detections into `data_runs/tracking.db`
+- same-day saved-run restore refreshes existing tracking prices but does not register new detections
 - this sync is automatic and separate from the manual `Export Preset CSV` action
-- the current UI does not render these files directly
+- Tracking Analytics reads from the SQLite tracking database and renders analysis tables
 
 ### 3.3 Duplicate Tickers priority band
 
@@ -154,9 +165,10 @@ Current logic:
 
 - source rows are rebuilt from raw `artifacts.watchlist` plus raw `artifacts.scan_hits`
 - selected annotation filters narrow the displayed watchlist first
-- selected scan cards determine overlap counting
-- the sidebar duplicate threshold applies only when the current duplicate rule uses `min_count`
-- when a loaded preset provides a hidden duplicate rule, that rule drives duplicate membership in the projected view
+- selected required and optional cards determine overlap counting
+- required cards must all hit when both required and optional cards are selected
+- optional threshold requires at least that many optional-card hits
+- when required cards are empty, optional cards use the existing simple `min_count` duplicate rule
 - duplicate-only subfilters are applied after duplicate rows are formed
 
 The band currently renders:
@@ -174,10 +186,11 @@ The page rebuilds scan cards from the current projected watchlist. It does not r
 
 Current card behavior:
 
-- only selected scan cards are shown
+- only selected required and optional scan cards are shown
+- required-card and optional-card selections are distinguished by card border color
 - card selection does not change the raw watchlist candidate set
 - selected annotation filters can remove names from cards
-- current duplicate threshold can change the duplicate badge state used by the card projection
+- current duplicate rule can change the duplicate badge state used by the card projection
 - cards render ticker symbols only, not row tables
 
 ### 3.5 Earnings for today
@@ -232,7 +245,7 @@ The page header shows:
 - subtitle: `ETF-based radar using configured sector and industry universes.`
 - `Updated: HH:MM:SS`
 
-### 4.2 Left column
+### 5.2 Left column
 
 The left column contains two styled mover panels:
 
@@ -250,7 +263,7 @@ Each mover row is built from:
 - one performance column (`DAY %` or `WK %`)
 - one relative-strength change column (`RS DAY%` or `RS WK%`)
 
-### 4.3 Right and lower sections
+### 5.3 Right and lower sections
 
 The page also renders:
 
@@ -280,16 +293,58 @@ Current `Industry Leaders` columns:
 - all sector-leader columns above
 - `MAJOR STOCKS`
 
-## 6. Market Dashboard
+## 6. Tracking Analytics
 
-### 6.1 Header
+Tracking Analytics is a preset-hit performance analysis page backed by `data_runs/tracking.db`.
+
+Current scope controls:
+
+- `Preset Universe`: multiselect over built-in preset names
+- `Horizon`: one of `1D`, `5D`, `10D`, `20D`
+- `Hit Date Range`: date range over recorded detection hit dates
+- `Hit Market Env`: multiselect over `bull`, `neutral`, `weak`, and `bear`
+- `Benchmark`: one of `SPY`, `QQQ`, or `IWM`
+
+Current behavior:
+
+- preset and market-environment filters use OR semantics within each control
+- horizon selection requires a filled return for that horizon to appear in ranking
+- benchmark returns are aligned to each detection hit date and selected horizon, not to the overall analysis period start
+- benchmark prices are loaded through the same yfinance price provider and cache layer used by the app
+- filter state is persisted in Streamlit session state separately from widget state so tab transitions do not reset the selected preset universe
+
+Current result areas:
+
+- `Ranking`: grouped by `preset_name x market_env`
+- `Detail`: row-level detection detail for the selected scope and horizon
+- `Export Observations CSV`: analysis-oriented observation export with one row per detection horizon that has target data
+- `Export Detection Scans CSV`: bridge export from detection to hit scan names
+- `Tracking Health`: compact diagnostic expander, not a primary analysis surface
+
+Current ranking columns:
+
+- `preset`
+- `env`
+- `avg%`
+- `bench%`
+- `excess%`
+- `max%`
+- `min%`
+- `win`
+- `n`
+
+The page is intended to help compare preset effectiveness. It is not a trade-management or position-performance ledger.
+
+## 7. Market Dashboard
+
+### 7.1 Header
 
 The page header is centered and shows:
 
 - title: `Market Dashboard`
 - `Updated: HH:MM:SS`
 
-### 6.2 Top layout
+### 7.2 Top layout
 
 The page uses a three-part top layout:
 
@@ -302,7 +357,7 @@ The page uses a three-part top layout:
 
 The page does not render the older top stat-card row or a separate component-score table.
 
-### 6.3 Market Conditions hero
+### 7.3 Market Conditions hero
 
 The hero panel shows:
 
@@ -315,7 +370,7 @@ The four prior-score cards show:
 - the historical score
 - the label derived from that historical score
 
-### 6.4 Summary metric panels
+### 7.4 Summary metric panels
 
 Current `Breadth & Trend Metrics` items:
 
@@ -339,7 +394,7 @@ Current `High, VIX & Safe Haven` items:
 - `VIX`
 - `Safe Haven`
 
-### 5.5 Core / Leadership / External
+### 7.5 Core / Leadership / External
 
 The page renders three snapshot sections using the same card layout:
 
@@ -372,7 +427,7 @@ The underlying 21EMA position labels are:
 - `above 21EMA High`
 - `unknown`
 
-### 5.6 Factors vs SP500
+### 7.6 Factors vs SP500
 
 The page renders `Factors vs SP500` as stacked factor cards and uses the configured factor universe.
 
@@ -386,13 +441,13 @@ Each factor row currently shows:
 
 The underlying result frame still includes `REL 1Y %`, but the active page does not render it.
 
-### 5.7 S5TH chart
+### 7.7 S5TH chart
 
 The page does not render the S5TH chart.
 
 The underlying result object may still carry `result.s5th_series`, but the active Market Dashboard does not display it.
 
-## 7. Current UI Conventions
+## 8. Current UI Conventions
 
 - page navigation is defined from a centralized page-definition list and rendered as a top tab selector
 - the app loads all page data through `PlatformArtifacts`

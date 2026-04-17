@@ -24,7 +24,6 @@ matched = bool(
     and row.get("high_52w", 0.0) > 0.0
     and row.get("close", 0.0) >= row.get("high_52w", float("inf")) * (1.0 - config.near_52w_high_threshold_pct / 100.0)
     and row.get("hybrid_score", 0.0) >= config.near_52w_high_hybrid_min
-    and row.get("trend_base", False)
 )
 ```
 
@@ -35,7 +34,6 @@ matched = bool(
 | `high_52w` | `src/indicators/core.py::IndicatorCalculator.calculate` | `float("nan")` and `0.0` | must be present and positive; used for the 52-week-high distance check |
 | `close` | `src/indicators/core.py::IndicatorCalculator.calculate` | `0.0` | compared against the thresholded `high_52w` value |
 | `hybrid_score` | `src/scoring/hybrid.py::HybridScoreCalculator.score` | `0.0` | `>= near_52w_high_hybrid_min` |
-| `trend_base` | `src/indicators/core.py::IndicatorCalculator.calculate` | `False` | must be `True` |
 
 ## Direct Config Dependencies
 
@@ -49,4 +47,3 @@ matched = bool(
 - `high_52w = high.rolling(252).max()`
 - `close` is the latest daily close from the indicator history
 - `hybrid_score` is the configured weighted composite of RS, fundamental, and industry components
-- `trend_base = (close > sma50) & (wma10_weekly > wma30_weekly)`

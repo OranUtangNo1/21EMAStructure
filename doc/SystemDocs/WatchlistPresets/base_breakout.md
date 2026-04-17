@@ -15,7 +15,7 @@
 ```yaml
 preset_name: Base Breakout
 selected_scan_names: [VCS 52 High, Pocket Pivot, 97 Club, Three Weeks Tight]
-selected_annotation_filters: []
+selected_annotation_filters: [Trend Base]
 selected_duplicate_subfilters: []
 duplicate_threshold: 1
 duplicate_rule:
@@ -37,15 +37,15 @@ preset_status: enabled
 | Scan name | Card display | Scan reference | Direct threshold summary |
 |---|---|---|---|
 | `97 Club` | `97 Club` | [../Scan/scan_05_97club.md](../Scan/scan_05_97club.md) | `club_97_hybrid_threshold=90.0`, `club_97_rs21_threshold=97.0` |
-| `VCS 52 High` | `VCS 52 High` | [../Scan/scan_13_vcs_52_high.md](../Scan/scan_13_vcs_52_high.md) | `vcs_52_high_vcs_min=55.0`, `vcs_52_high_rs21_min=25.0`, `vcs_52_high_dist_max=-20.0`, `vcs_52_high_require_trend_base=true` |
+| `VCS 52 High` | `VCS 52 High` | [../Scan/scan_13_vcs_52_high.md](../Scan/scan_13_vcs_52_high.md) | `vcs_52_high_vcs_min=55.0`, `vcs_52_high_rs21_min=25.0`, `vcs_52_high_dist_max=-20.0` |
 | `Three Weeks Tight` | `3WT` | [../Scan/scan_11_three_weeks_tight.md](../Scan/scan_11_three_weeks_tight.md) | `three_weeks_tight_vcs_min=50.0`; upstream `three_weeks_tight_pct_threshold=1.5` |
 | `Pocket Pivot` | `Pocket Pivot` | [../Scan/scan_07_pocket_pivot.md](../Scan/scan_07_pocket_pivot.md) | no scan config keys; requires `close > sma50` and `pocket_pivot=true` |
 
 ## Post-Scan And Duplicate Settings
 
-- selected annotation filters: none
+- selected annotation filters: `Trend Base`
 - selected duplicate subfilters: none
-- UI duplicate threshold after preset load: `1`
+- UI optional threshold after preset load: `1`
 - preset status: `enabled`
 - duplicate rule: `required_plus_optional_min`; requires every scan in `VCS 52 High, Pocket Pivot` plus at least `1` hit from optional scans `97 Club, Three Weeks Tight`
 

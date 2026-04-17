@@ -13,7 +13,7 @@
 ## Evaluation Context
 
 - Evaluated on one latest row after `enrich_with_scan_context()`.
-- Reads only precomputed scoring fields plus `trend_base`.
+- Reads only precomputed scoring fields.
 - `rs21` and `rs63` are the app RS fields, not RSI fields.
 - All conditions are combined with `AND`.
 
@@ -27,7 +27,6 @@ matched = bool(
     and pd.notna(rs63)
     and float(rs21) > float(rs63)
     and float(rs21) >= config.rs_acceleration_rs21_min
-    and row.get("trend_base", False)
 )
 ```
 
@@ -37,7 +36,6 @@ matched = bool(
 |---|---|---|---|
 | `rs21` | `src/scoring/rs.py::RSScorer.score` | `float("nan")` with explicit `notna` guard | `rs21 > rs63` and `>= rs_acceleration_rs21_min` |
 | `rs63` | `src/scoring/rs.py::RSScorer.score` | `float("nan")` with explicit `notna` guard | `rs21 > rs63` |
-| `trend_base` | `src/indicators/core.py::IndicatorCalculator.calculate` | `False` | must be `True` |
 
 ## Direct Config Dependencies
 
@@ -57,13 +55,11 @@ window = ratio.tail(lookback)
 rs_value = (window.le(window.iloc[-1]).sum() / len(window)) * 100.0
 ```
 
-- `trend_base = (close > sma50) & (wma10_weekly > wma30_weekly)`.
-
 ## Relationship To The Annotation Filter
 
 The annotation filter `RS 21 >= 63` is broader than this scan.
 
 - annotation filter: `rs21 >= 63`
-- this scan: `rs21 > rs63`, `rs21 >= rs_acceleration_rs21_min`, and `trend_base`
+- this scan: `rs21 > rs63` and `rs21 >= rs_acceleration_rs21_min`
 
-The scan is therefore an acceleration-and-trend condition, not just a simple RS floor.
+The scan is therefore an acceleration condition, not just a simple RS floor.

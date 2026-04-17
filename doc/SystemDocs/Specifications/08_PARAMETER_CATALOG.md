@@ -6,7 +6,7 @@ The active implementation keeps thresholds, weights, universes, and modes rooted
 That entry file is a manifest which includes section-level files under `config/default/`.
 This catalog lists the parameters that are active in the current codebase and calls out shipped keys that are currently inactive.
 
-Archived final-entry, chart-structure, sizing, and trade-management parameters are out of scope for this file. The implemented `entry_signals` timing layer is documented because it is present in the active config and UI.
+Archived final chart-structure execution, sizing, and trade-management parameters are out of scope for this file. The implemented `entry_signals` timing layer and Tracking Analytics database behavior are documented because they are present in the active config and UI.
 
 ## 2. App and persistence
 
@@ -159,7 +159,7 @@ Archived final-entry, chart-structure, sizing, and trade-management parameters a
 - current default: `10`
 
 ### indicators.weekly_long_wma_period
-- current default: `20`
+- current default: `30`
 
 ### indicators.three_weeks_tight_pct_threshold
 - current default: `1.5`
@@ -194,6 +194,15 @@ Archived final-entry, chart-structure, sizing, and trade-management parameters a
 
 ### indicators.pocket_pivot_lookback
 - current default: `10`
+
+### indicators.structure_pivot_min_length
+- current default: `2`
+
+### indicators.structure_pivot_max_length
+- current default: `10`
+
+### indicators.structure_pivot_priority_mode
+- current default: `tightest`
 
 ## 6. Scoring
 
@@ -249,7 +258,6 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 - `vcs_52_high_vcs_min`: `55.0`
 - `vcs_52_high_rs21_min`: `25.0`
 - `vcs_52_high_dist_max`: `-20.0`
-- `vcs_52_high_require_trend_base`: `true`
 - `vcs_52_low_vcs_min`: `60.0`
 - `vcs_52_low_rs21_min`: `80.0`
 - `vcs_52_low_dist_max`: `25.0`
@@ -261,15 +269,14 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 - `near_52w_high_hybrid_min`: `70.0`
 - `three_weeks_tight_vcs_min`: `50.0`
 - `rs_acceleration_rs21_min`: `70.0`
-- `fund_demand_fundamental_min`: `70.0`
-- `fund_demand_rs21_min`: `60.0`
-- `fund_demand_rel_vol_min`: `1.0`
 - `sustained_rs21_min`: `80.0`
 - `sustained_rs63_min`: `70.0`
 - `sustained_rs126_min`: `60.0`
 - `reversal_dist_52w_low_max`: `40.0`
 - `reversal_dist_52w_high_min`: `-40.0`
 - `reversal_rs21_min`: `50.0`
+- `structure_pivot_breakout_rel_volume_min`: `1.4`
+- `structure_pivot_include_gap_up_breakouts`: `true`
 - `pp_count_scan_min`: `3`
 - `pp_count_annotation_min`: `2`
 - `duplicate_min_count`: `3`
@@ -381,9 +388,23 @@ Current built-in entry signal names:
 
 When persistence is enabled, the current implementation saves these run-level artifacts:
 
-- latest snapshot
-- eligible snapshot
 - watchlist table
-- fetch-status table
 - run metadata
 - weekly universe snapshots
+- market summary JSON
+- radar summary JSON
+- date-level scan-hit history in `data_runs/tracking.db`
+
+The current implementation also maintains preset-hit tracking data in `data_runs/tracking.db`:
+
+- detection rows for export-enabled built-in preset duplicate hits
+- detection-to-scan bridge rows
+- detection-to-filter bridge rows
+- horizon closes and returns for 1D, 5D, 10D, and 20D
+- SQLite views used by Tracking Analytics and repository read APIs
+
+Tracking Analytics UI constants currently live in `app/main.py`, not in YAML:
+
+- horizons: `1`, `5`, `10`, `20`
+- market environments: `bull`, `neutral`, `weak`, `bear`
+- benchmark choices: `SPY`, `QQQ`, `IWM`

@@ -44,7 +44,7 @@ preset_status: enabled
 
 - selected annotation filters: none
 - selected duplicate subfilters: none
-- UI duplicate threshold after preset load: `1`
+- UI optional threshold after preset load: `1`
 - preset status: `enabled`
 - duplicate rule: `required_plus_optional_min`; requires every scan in `Trend Reversal Setup, Pocket Pivot` plus at least `1` hit from optional scans `VCS 52 Low, Volume Accumulation`
 

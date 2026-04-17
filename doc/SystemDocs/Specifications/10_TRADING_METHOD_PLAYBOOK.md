@@ -10,6 +10,7 @@ The active product is a screening and candidate extraction platform. It supports
 2. sector and industry RS review
 3. watchlist candidate extraction
 4. entry-timing signal review over duplicate-ticker candidates
+5. preset-hit performance analysis
 
 The product does not perform final chart-based trade execution decisions, position sizing, or trade management.
 
@@ -31,6 +32,7 @@ Current flow:
 8. create the raw watchlist as the union of scan hits
 9. mark duplicate tickers when a ticker appears in `duplicate_min_count` or more scan hits
 10. optionally evaluate configured entry-timing signals on the selected Entry Signals universe
+11. record export-enabled preset duplicate hits and refresh forward tracking returns in SQLite
 
 ### 2.2 Market Review
 
@@ -64,7 +66,7 @@ This is intended to answer:
 
 - which names pass one or more active scan rules?
 - which names survive the currently selected post-scan filters?
-- which names appear repeatedly across the currently selected scan cards?
+- which names satisfy the current required and optional scan-card rule?
 - which names have same-day earnings inside the current eligible universe?
 
 ### 2.5 Entry Signal Review
@@ -76,6 +78,17 @@ This is intended to answer:
 - which tickers in the selected signal universe satisfy enabled entry-timing signal definitions?
 - which source contributed the ticker to the signal universe?
 - what risk-reference field is available for the signal row?
+
+### 2.6 Preset Performance Review
+
+The user can review the Tracking Analytics tab after preset detections have been recorded.
+
+This is intended to answer:
+
+- which presets have produced the best average return over a selected horizon?
+- how often did a preset produce positive returns?
+- how did preset returns compare with SPY, QQQ, or IWM over the same hit-date-aligned horizon?
+- which individual detections and hit scans contributed to the aggregate result?
 
 ## 3. Active Scan Workflow
 
@@ -89,7 +102,7 @@ Stable rule:
 - annotation filters do not create watchlist candidates by themselves
 
 The exact active scan family is documented under `doc/SystemDocs/Scan/scan_00_index.md`.
-The default config currently enables 21 scan families.
+The default config currently enables 18 scan families.
 
 ### 3.2 Duplicate Tickers
 
@@ -102,8 +115,8 @@ Backend rule:
 
 UI rule:
 
-- recompute duplicate counting from the currently selected scan cards
-- apply the current duplicate threshold
+- recompute duplicate counting from the currently selected required and optional scan cards
+- apply the current duplicate rule
 - optionally apply duplicate-only subfilters such as `Top3 HybridRS`
 
 ### 3.3 Annotation Filters
@@ -115,6 +128,8 @@ Available default definitions:
 - `RS 21 >= 63`
 - `High Est. EPS Growth`
 - `PP Count (20d)`
+- `Trend Base`
+- `Fund Score > 70`
 
 These rules do not determine raw watchlist eligibility. They narrow the displayed watchlist only when the user selects them in the sidebar.
 
@@ -209,12 +224,13 @@ The following outputs are useful, but still research-oriented:
 - VCS values
 - market condition composite score
 - annotation flags based on internal heuristics
+- preset ranking and benchmark-relative tracking results
 
 The current implementation exposes them as configurable calculations, not immutable truth.
 
 ## 6. What Happens Outside The App
 
-The application stops at candidate extraction.
+The application stops at candidate extraction, timing-signal review, and historical preset-hit analysis.
 
 The following remain outside the active product workflow:
 

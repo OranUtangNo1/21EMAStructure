@@ -23,6 +23,24 @@ def test_relative_strength_annotation_uses_app_rs_threshold() -> None:
     assert result["RS 21 >= 63"] is True
 
 
+def test_trend_base_annotation_uses_existing_indicator_flag() -> None:
+    row = pd.Series({"trend_base": True})
+    config = ScanConfig()
+
+    result = evaluate_annotation_filters(row, config)
+
+    assert result["Trend Base"] is True
+
+
+def test_fund_score_annotation_uses_fixed_threshold() -> None:
+    row = pd.Series({"fundamental_score": 70.0})
+    config = ScanConfig()
+
+    result = evaluate_annotation_filters(row, config)
+
+    assert result["Fund Score > 70"] is True
+
+
 def test_enabled_scan_rules_can_be_swapped_from_config() -> None:
     row = pd.Series({"rel_volume": 2.0, "daily_change_pct": 1.0})
     config = ScanConfig(enabled_scan_rules=("Vol Up",))
@@ -31,8 +49,8 @@ def test_enabled_scan_rules_can_be_swapped_from_config() -> None:
     assert result["Vol Up"] is True
 
 
-def test_near_52w_high_scan_uses_distance_hybrid_and_trend_filters() -> None:
-    row = pd.Series({"high_52w": 100.0, "close": 95.0, "hybrid_score": 70.0, "trend_base": True})
+def test_near_52w_high_scan_uses_distance_and_hybrid_filters() -> None:
+    row = pd.Series({"high_52w": 100.0, "close": 95.0, "hybrid_score": 70.0, "trend_base": False})
     config = ScanConfig(enabled_scan_rules=("Near 52W High",))
 
     result = evaluate_scan_rules(row, config)
@@ -40,8 +58,8 @@ def test_near_52w_high_scan_uses_distance_hybrid_and_trend_filters() -> None:
     assert result["Near 52W High"] is True
 
 
-def test_vcs_52_high_scan_uses_relaxed_thresholds_with_trend_base() -> None:
-    row = pd.Series({"vcs": 55.0, "raw_rs21": 30.0, "dist_from_52w_high": -20.0, "trend_base": True})
+def test_vcs_52_high_scan_uses_relaxed_thresholds() -> None:
+    row = pd.Series({"vcs": 55.0, "raw_rs21": 30.0, "dist_from_52w_high": -20.0, "trend_base": False})
     config = ScanConfig(enabled_scan_rules=("VCS 52 High",))
 
     result = evaluate_scan_rules(row, config)
@@ -49,13 +67,13 @@ def test_vcs_52_high_scan_uses_relaxed_thresholds_with_trend_base() -> None:
     assert result["VCS 52 High"] is True
 
 
-def test_vcs_52_high_scan_requires_trend_base() -> None:
+def test_vcs_52_high_scan_no_longer_requires_trend_base() -> None:
     row = pd.Series({"vcs": 80.0, "raw_rs21": 90.0, "dist_from_52w_high": -5.0, "trend_base": False})
     config = ScanConfig(enabled_scan_rules=("VCS 52 High",))
 
     result = evaluate_scan_rules(row, config)
 
-    assert result["VCS 52 High"] is False
+    assert result["VCS 52 High"] is True
 
 
 def test_vcs_52_low_scan_requires_stronger_rs_and_deep_distance_from_high() -> None:
@@ -153,8 +171,8 @@ def test_pp_count_annotation_triggers_at_two_pocket_pivots() -> None:
     assert result["PP Count (20d)"] is True
 
 
-def test_pp_count_scan_requires_trend_base_and_scan_threshold() -> None:
-    row = pd.Series({"pp_count_window": 3, "trend_base": True})
+def test_pp_count_scan_uses_scan_threshold() -> None:
+    row = pd.Series({"pp_count_window": 3, "trend_base": False})
     config = ScanConfig(enabled_scan_rules=("PP Count",))
 
     result = evaluate_scan_rules(row, config)
@@ -213,24 +231,7 @@ def test_rs_acceleration_scan_uses_rs_fields_not_rsi_fields() -> None:
     assert result["RS Acceleration"] is True
 
 
-def test_fundamental_demand_scan_requires_fundamental_rs_volume_and_trend() -> None:
-    row = pd.Series(
-        {
-            "fundamental_score": 70.0,
-            "raw_rs21": 60.0,
-            "rel_volume": 1.0,
-            "daily_change_pct": 0.5,
-            "trend_base": True,
-        }
-    )
-    config = ScanConfig(enabled_scan_rules=("Fundamental Demand",))
-
-    result = evaluate_scan_rules(row, config)
-
-    assert result["Fundamental Demand"] is True
-
-
-def test_sustained_leadership_scan_requires_all_rs_windows_and_trend() -> None:
+def test_sustained_leadership_scan_requires_all_rs_windows() -> None:
     row = pd.Series(
         {
             "raw_rs21": 80.0,
@@ -518,7 +519,7 @@ def test_watchlist_is_empty_when_no_scans_hit_even_if_annotations_exist() -> Non
         },
         index=["AAA"],
     )
-    runner = ScanRunner(ScanConfig())
+    runner = ScanRunner(ScanConfig(enabled_scan_rules=("4% bullish",)))
 
     result = runner.run(snapshot)
 
@@ -557,7 +558,7 @@ def test_runner_attaches_annotation_flags_to_scan_hits() -> None:
             "atr_50sma_zone": [2.0],
             "dcr_percent": [10.0],
             "rel_volume": [2.0],
-            "daily_change_pct": [1.0],
+            "daily_change_pct": [4.0],
             "from_open_pct": [1.0],
             "hybrid_score": [80.0],
             "vcs": [10.0],
@@ -574,7 +575,7 @@ def test_runner_attaches_annotation_flags_to_scan_hits() -> None:
         },
         index=["AAA"],
     )
-    runner = ScanRunner(ScanConfig(duplicate_min_count=3))
+    runner = ScanRunner(ScanConfig(enabled_scan_rules=("4% bullish",), duplicate_min_count=3))
 
     result = runner.run(snapshot)
 
@@ -785,7 +786,6 @@ def test_default_scan_config_includes_new_scan_names_and_cards() -> None:
         "Volume Accumulation",
         "VCS 52 High",
         "VCS 52 Low",
-        "Fundamental Demand",
         "Sustained Leadership",
         "Trend Reversal Setup",
         "Structure Pivot",
@@ -798,7 +798,6 @@ def test_default_scan_config_includes_new_scan_names_and_cards() -> None:
         "Volume Accumulation",
         "VCS 52 High",
         "VCS 52 Low",
-        "Fundamental Demand",
         "Sustained Leadership",
         "Trend Reversal Setup",
         "Structure Pivot",
@@ -807,7 +806,11 @@ def test_default_scan_config_includes_new_scan_names_and_cards() -> None:
     )
     assert {section.scan_name for section in config.card_sections}.isdisjoint({"21EMA scan V2"})
     assert "PP Count" in {section.scan_name for section in config.card_sections}
-    assert {section.filter_name for section in config.annotation_filters} >= {"PP Count (20d)"}
+    assert {section.filter_name for section in config.annotation_filters} >= {
+        "PP Count (20d)",
+        "Trend Base",
+        "Fund Score > 70",
+    }
 
 
 def test_scan_config_startup_selection_defaults_to_all_card_sections() -> None:
@@ -858,11 +861,11 @@ def test_scan_config_coerces_misplaced_scan_names_out_of_enabled_annotation_filt
     config = ScanConfig.from_dict(
         {
             "enabled_scan_rules": ["Vol Up"],
-            "enabled_annotation_filters": ["RS 21 >= 63", "Fundamental Demand", "Trend Reversal Setup"],
+            "enabled_annotation_filters": ["RS 21 >= 63", "Trend Reversal Setup"],
         }
     )
 
-    assert config.enabled_scan_rules == ("Vol Up", "Fundamental Demand", "Trend Reversal Setup")
+    assert config.enabled_scan_rules == ("Vol Up", "Trend Reversal Setup")
     assert config.enabled_annotation_filters == ("RS 21 >= 63",)
 
 

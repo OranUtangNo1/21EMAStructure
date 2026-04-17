@@ -45,7 +45,7 @@ preset_status: enabled
 
 - selected annotation filters: none
 - selected duplicate subfilters: none
-- UI duplicate threshold after preset load: `1`
+- UI optional threshold after preset load: `1`
 - preset status: `enabled`
 - duplicate rule: `required_plus_optional_min`; requires every scan in `Trend Reversal Setup, Structure Pivot` plus at least `1` hit from optional scans `VCS 52 Low, Volume Accumulation`
 
@@ -77,11 +77,11 @@ Representative hit patterns:
 
 - **Target phase**: late correction → early recovery; detecting the earliest structural change in beaten-down names
 - **Why effective in Correction**: most stocks continue declining; those where SMA50 is turning up, higher lows are forming, volatility is contracting, and volume shows accumulation are the most likely next-cycle leaders
-- **Very early detection**: this preset identifies candidates well before trend_base becomes true, making it complementary to all Uptrend and Under Pressure presets
+- **Very early detection**: this preset identifies candidates well before `Trend Base` becomes true, making it complementary to the uptrend and pressure presets that require the `Trend Base` annotation filter
 
 ## Design Rationale
 
-Trend Reversal Setup's `sma50 <= sma200` condition is unique to this preset — all other presets require `trend_base` (close > sma50 + bullish weekly MA structure), which excludes dead-cross stocks entirely. Structure Pivot's LL→HL detection operates at the price structure level independent of MA state. VCS 52 Low requires the stock to be within 25% of the 52-week low and more than 65% below the 52-week high — the polar opposite of VCS 52 High used in Base Breakout. Volume Accumulation is shared with Trend Pullback but the co-occurring scans guarantee no ticker overlap (trend_base stocks vs dead-cross stocks).
+Trend Reversal Setup's `sma50 <= sma200` condition is unique to this preset among the built-in presets. Presets that require the `Trend Base` annotation filter exclude dead-cross stocks entirely. Structure Pivot's LL->HL detection operates at the price structure level independent of MA state. VCS 52 Low requires the stock to be within 25% of the 52-week low and more than 65% below the 52-week high, the polar opposite of VCS 52 High used in Base Breakout. Volume Accumulation is shared with Trend Pullback, but the co-occurring scans separate recovery candidates from `Trend Base` candidates.
 
 ## Scope Notes
 

@@ -3,14 +3,15 @@
 ## Scope Definition
 
 This system is a screening and candidate extraction platform.
-Its active responsibility ends at four app outputs:
+Its active responsibility ends at five app outputs:
 
 1. Market Dashboard
 2. RS Radar
 3. Today's Watchlist
 4. Entry Signals
+5. Tracking Analytics
 
-Entry Signals is an implemented downstream timing layer over duplicate tickers. Full chart-based structure review, position sizing, trade execution, and trade management remain out of scope and archived.
+Entry Signals is an implemented downstream timing-review layer over selected candidate universes. Tracking Analytics is an implemented preset-hit performance analysis layer. Full chart-based structure review, position sizing, trade execution, and trade management remain out of scope and archived.
 
 ---
 
@@ -77,16 +78,22 @@ Related folders:
    - Config / Calculator / Result split
    - active interfaces
 
-7. `08_PARAMETER_CATALOG.md`
+7. `07_TRACKING_ANALYTICS_AND_DB.md`
+   - SQLite tracking database
+   - preset-hit detection grain
+   - forward-return refresh model
+   - Tracking Analytics UI contract
+
+8. `08_PARAMETER_CATALOG.md`
    - active config parameters
    - thresholds, weights, universes, and modes
 
-8. `10_TRADING_METHOD_PLAYBOOK.md`
+9. `10_TRADING_METHOD_PLAYBOOK.md`
     - human-readable method guide
     - screening workflow
     - active scope boundary
 
-9. `12_UNIVERSE_PROVIDER_DECISIONS.md`
+10. `12_UNIVERSE_PROVIDER_DECISIONS.md`
    - universe discovery strategy
    - refresh cadence
    - current provider decisions
@@ -105,21 +112,7 @@ Related folders:
 - `doc/SystemDocs/WatchlistPresets/00_index.md`
   - built-in watchlist preset catalog
   - one preset per document
-  - exact preset scan selections, duplicate threshold, and filter settings
-
-## State And Planning
-
-- `doc/SystemDocs/State/IMPLEMENTATION_PLAN.md`
-  - implementation phases
-  - active priorities
-- `doc/SystemDocs/State/CURRENT_STATUS.md`
-  - current implementation status
-  - near-term roadmap
-- `doc/SystemDocs/State/GAP_ANALYSIS.md`
-  - code-first gap analysis
-  - remaining active-scope issues
-
----
+  - exact preset scan selections, duplicate rule, and filter settings
 
 ## Suggested Reading Order
 
@@ -128,7 +121,7 @@ Related folders:
 3. `03_INDICATORS_AND_SCORING.md`
 4. `04_SCAN_AND_WATCHLIST_SPEC.md`
 5. `05_DASHBOARD_UI_SPEC.md`
-6. `doc/SystemDocs/State/CURRENT_STATUS.md`
+6. `07_TRACKING_ANALYTICS_AND_DB.md`
 
 ## Agent Operations
 

@@ -31,7 +31,7 @@ preset_status: disabled_legacy_reference
 
 | Scan name | Card display | Scan reference | Direct threshold summary |
 |---|---|---|---|
-| `VCS` | `VCS` | [../Scan/scan_06_vcs.md](../Scan/scan_06_vcs.md) | `vcs_min_threshold=60.0`, plus hard-coded `raw_rs21 > 60.0` |
+| `VCS` | `VCS` | [../Scan/scan_06_vcs.md](../Scan/scan_06_vcs.md) | `vcs_min_threshold=60.0` |
 | `Three Weeks Tight` | `3WT` | [../Scan/scan_11_three_weeks_tight.md](../Scan/scan_11_three_weeks_tight.md) | `three_weeks_tight_vcs_min=50.0`; upstream `three_weeks_tight_pct_threshold=1.5` |
 | `Near 52W High` | `Near 52W High` | [../Scan/scan_10_near_52w_high.md](../Scan/scan_10_near_52w_high.md) | `near_52w_high_threshold_pct=5.0`, `near_52w_high_hybrid_min=70.0` |
 

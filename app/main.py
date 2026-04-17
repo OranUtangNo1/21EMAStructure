@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from pandas.tseries.offsets import BDay
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -18,6 +19,9 @@ if str(ROOT) not in sys.path:
 from src.configuration import load_settings
 from src.dashboard.effectiveness import sync_preset_effectiveness_logs
 from src.dashboard.watchlist import WatchlistViewModelBuilder
+from src.data.cache import CacheLayer
+from src.data.providers import YFinancePriceDataProvider
+from src.data.tracking_repository import read_detection_detail, read_preset_horizon_performance
 from src.pipeline import PlatformArtifacts, ResearchPlatform
 from src.scan.rules import DuplicateRuleConfig, ScanConfig
 from src.signals.rules import ENTRY_SIGNAL_REGISTRY, EntrySignalConfig
@@ -52,7 +56,10 @@ html, body, [class*="css"] { font-family:"Aptos","Segoe UI","Yu Gothic UI",sans-
 header[data-testid="stHeader"] { background:transparent; box-shadow:none; }
 .block-container { max-width:1440px; padding-top:.9rem; padding-bottom:2.3rem; }
 section[data-testid="stSidebar"] { background:linear-gradient(180deg, #fbfdff 0%, #f4f8ff 100%); border-right:1px solid var(--panel-border); }
-div.stButton > button { background:linear-gradient(135deg, #2d6cdf 0%, #528eee 100%); color:#fff; border:none; border-radius:14px; font-weight:700; box-shadow:0 12px 24px rgba(45,108,223,.18); }
+div.stButton { width:100%; }
+div.stButton > button { width:100%; min-height:44px; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg, #2d6cdf 0%, #528eee 100%); color:#fff; border:none; border-radius:8px; font-weight:700; box-shadow:0 12px 24px rgba(45,108,223,.18); cursor:pointer; }
+div.stButton > button * { pointer-events:none; }
+div.stButton > button:disabled { cursor:not-allowed; opacity:.62; }
 div[data-testid="stDataFrame"], div[data-testid="stExpander"] { background:rgba(255,255,255,.9); border:1px solid var(--panel-border); border-radius:18px; overflow:hidden; box-shadow:0 16px 34px rgba(34,48,69,.05); }
 [data-testid="stAlert"] { border-radius:16px; }
 .oratek-sidebar-title { font-size:1.3rem; font-weight:800; letter-spacing:-.02em; color:var(--text); }
@@ -82,7 +89,11 @@ div[data-testid="stDataFrame"], div[data-testid="stExpander"] { background:rgba(
 .oratek-hero-score { font-size:1.42rem; }
 .oratek-page-submeta { color:var(--muted); font-size:.8rem; line-height:1.45; margin-top:.22rem; text-align:right; }
 .oratek-ticker-card { background:rgba(255,255,255,.94); border:1px solid var(--panel-border); border-radius:22px; overflow:hidden; box-shadow:0 18px 36px rgba(34,48,69,.06); min-height:220px; margin-bottom:1rem; }
+.oratek-ticker-card.role-required { border-color:#2d6cdf; box-shadow:0 18px 36px rgba(45,108,223,.13); }
+.oratek-ticker-card.role-optional { border-color:#21a46f; box-shadow:0 18px 36px rgba(33,164,111,.12); }
 .oratek-ticker-card-head { display:flex; justify-content:space-between; gap:.8rem; align-items:center; padding:.9rem 1rem; background:linear-gradient(180deg, #eef4ff 0%, #e7f0ff 100%); border-bottom:1px solid var(--panel-border); }
+.oratek-ticker-card.role-required .oratek-ticker-card-head { background:linear-gradient(180deg, #edf4ff 0%, #e3efff 100%); border-bottom-color:rgba(45,108,223,.24); }
+.oratek-ticker-card.role-optional .oratek-ticker-card-head { background:linear-gradient(180deg, #edf8f2 0%, #e4f4eb 100%); border-bottom-color:rgba(33,164,111,.24); }
 .oratek-ticker-card-title { color:var(--text); font-size:.98rem; font-weight:800; }
 .oratek-ticker-card-count { color:var(--muted); font-size:.8rem; font-weight:700; white-space:nowrap; }
 .oratek-ticker-grid { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:.65rem 1rem; padding:1rem 1.1rem 1.15rem; }
@@ -192,6 +203,8 @@ class AppPageDefinition:
 class WatchlistSidebarState:
     scan_config: ScanConfig
     selected_scan_names: list[str]
+    required_scan_names: list[str]
+    optional_scan_names: list[str]
     selected_annotation_filters: list[str]
     selected_duplicate_subfilters: list[str]
     duplicate_threshold: int
@@ -218,12 +231,16 @@ ENTRY_SIGNAL_UNIVERSE_LABELS: dict[str, str] = {
 APP_PAGES: tuple[AppPageDefinition, ...] = (
     AppPageDefinition("watchlist", "Today's Watchlist"),
     AppPageDefinition("entry_signals", "Entry Signals"),
+    AppPageDefinition("tracking_analytics", "Tracking Analytics"),
     AppPageDefinition("rs_radar", "RS Radar"),
     AppPageDefinition("market_dashboard", "Market Dashboard"),
 )
 APP_PAGE_KEYS = tuple(page.key for page in APP_PAGES)
 APP_PAGE_LABELS = {page.key: page.label for page in APP_PAGES}
 DEFAULT_PAGE_KEY = APP_PAGES[0].key
+TRACKING_HORIZON_OPTIONS = (1, 5, 10, 20)
+TRACKING_MARKET_ENV_OPTIONS = ("bull", "neutral", "weak", "bear")
+TRACKING_BENCHMARK_OPTIONS = ("SPY", "QQQ", "IWM")
 
 def inject_global_styles() -> None:
     st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
@@ -314,15 +331,16 @@ def _to_ticker_list(frame: pd.DataFrame, sort_column: str | None = None) -> list
     return [str(value).strip().upper() for value in working[ticker_column].tolist() if str(value).strip()]
 
 
-def render_ticker_card(title: str, tickers: list[str], empty_text: str) -> None:
+def render_ticker_card(title: str, tickers: list[str], empty_text: str, role: str | None = None) -> None:
     count = len(tickers)
     body = "".join(f"<div class='oratek-ticker-item'>{html.escape(ticker)}</div>" for ticker in tickers)
     if not body:
         body = f"<div class='oratek-empty-state'>{html.escape(empty_text)}</div>"
     else:
         body = f"<div class='oratek-ticker-grid'>{body}</div>"
+    role_class = f" role-{html.escape(role)}" if role in {"required", "optional"} else ""
     st.markdown(
-        f"<div class='oratek-ticker-card'><div class='oratek-ticker-card-head'><div class='oratek-ticker-card-title'>{html.escape(title)}</div><div class='oratek-ticker-card-count'>{count} tickers</div></div>{body}</div>",
+        f"<div class='oratek-ticker-card{role_class}'><div class='oratek-ticker-card-head'><div class='oratek-ticker-card-title'>{html.escape(title)}</div><div class='oratek-ticker-card-count'>{count} tickers</div></div>{body}</div>",
         unsafe_allow_html=True,
     )
 
@@ -461,8 +479,17 @@ def load_artifacts(
     symbols: list[str],
     force_universe_refresh: bool,
     force_price_refresh: bool,
+    *,
+    prefer_saved_run: bool = True,
 ) -> PlatformArtifacts:
     platform = get_research_platform_class()(config_path)
+    if prefer_saved_run and not force_universe_refresh and not force_price_refresh:
+        saved = platform.load_latest_run_artifacts(
+            symbols or None,
+            force_universe_refresh=force_universe_refresh,
+        )
+        if saved is not None:
+            return saved
     return platform.run(
         symbols or None,
         force_universe_refresh=force_universe_refresh,
@@ -568,22 +595,30 @@ def current_page_key() -> str:
 
 def render_page_tabs() -> str:
     page_key = current_page_key()
-    selected_page = st.segmented_control(
-        "Page",
-        options=list(APP_PAGE_KEYS),
-        default=page_key,
-        format_func=lambda key: APP_PAGE_LABELS.get(key, str(key)),
-        selection_mode="single",
-        key=PAGE_SELECTION_KEY,
-        label_visibility="collapsed",
-    )
-    if selected_page is None:
-        return page_key
-    return str(selected_page)
+    selected_page = page_key
+    columns = st.columns(len(APP_PAGES), gap="small")
+    for column, page in zip(columns, APP_PAGES):
+        with column:
+            if st.button(
+                page.label,
+                key=f"page_tab_{page.key}",
+                type="primary" if page.key == page_key else "secondary",
+                use_container_width=True,
+            ):
+                if page.key != page_key:
+                    st.session_state[PAGE_SELECTION_KEY] = page.key
+                    st.rerun()
+                selected_page = page.key
+    return selected_page
 
 
 def _normalize_watchlist_preset_name(raw_value: object) -> str:
     return str(raw_value).strip()
+
+
+def _resolve_selected_watchlist_preset_name(raw_value: object, presets: dict[str, dict[str, object]]) -> str:
+    preset_name = _normalize_watchlist_preset_name(raw_value)
+    return preset_name if preset_name in presets else ""
 
 
 def _build_watchlist_control_values(
@@ -592,14 +627,121 @@ def _build_watchlist_control_values(
     selected_duplicate_subfilters: list[str],
     duplicate_threshold: int,
     duplicate_rule: dict[str, object] | None = None,
+    required_scan_names: list[str] | None = None,
+    optional_scan_names: list[str] | None = None,
 ) -> dict[str, object]:
     return {
         "selected_scan_names": list(selected_scan_names),
+        "required_scan_names": list(required_scan_names or []),
+        "optional_scan_names": list(optional_scan_names or []),
         "selected_annotation_filters": list(selected_annotation_filters),
         "selected_duplicate_subfilters": list(selected_duplicate_subfilters),
         "duplicate_threshold": int(duplicate_threshold),
         "duplicate_rule": dict(duplicate_rule) if isinstance(duplicate_rule, dict) else DuplicateRuleConfig(min_count=int(duplicate_threshold)).to_dict(),
     }
+
+
+def _filter_available_scan_names(raw_names: object, available_scan_names: list[str]) -> list[str]:
+    if not isinstance(raw_names, (list, tuple, set)):
+        return []
+    available = set(available_scan_names)
+    return list(
+        dict.fromkeys(
+            str(name)
+            for name in raw_names
+            if str(name) in available
+        )
+    )
+
+
+def _merge_scan_role_names(required_scan_names: list[str], optional_scan_names: list[str]) -> list[str]:
+    return list(dict.fromkeys([*required_scan_names, *optional_scan_names]))
+
+
+def _resolve_duplicate_role_controls(
+    selected_scan_names: object,
+    duplicate_rule: object,
+    duplicate_threshold: int,
+    available_scan_names: list[str],
+    required_scan_names: object = None,
+    optional_scan_names: object = None,
+) -> tuple[list[str], list[str], int]:
+    selected_names = _filter_available_scan_names(selected_scan_names, available_scan_names)
+    try:
+        rule = DuplicateRuleConfig.from_dict(
+            duplicate_rule if isinstance(duplicate_rule, dict) else None,
+            default_min_count=int(duplicate_threshold),
+        )
+    except ValueError:
+        rule = DuplicateRuleConfig(min_count=int(duplicate_threshold))
+
+    explicit_required_scan_names = _filter_available_scan_names(required_scan_names, available_scan_names)
+    explicit_optional_scan_names = [
+        name
+        for name in _filter_available_scan_names(optional_scan_names, available_scan_names)
+        if name not in explicit_required_scan_names
+    ]
+    if explicit_required_scan_names or explicit_optional_scan_names:
+        selected_name_set = set(selected_names)
+        if selected_name_set:
+            explicit_required_scan_names = [
+                name for name in explicit_required_scan_names if name in selected_name_set
+            ]
+            explicit_optional_scan_names = [
+                name for name in explicit_optional_scan_names if name in selected_name_set
+            ]
+        if not explicit_required_scan_names and not explicit_optional_scan_names:
+            optional_threshold = max(1, min(int(rule.min_count), len(selected_names))) if selected_names else 1
+            return [], selected_names, optional_threshold
+        optional_threshold_source = (
+            int(rule.optional_min_hits)
+            if rule.mode == "required_plus_optional_min"
+            else int(duplicate_threshold)
+        )
+        optional_threshold = (
+            max(1, min(optional_threshold_source, len(explicit_optional_scan_names)))
+            if explicit_optional_scan_names
+            else 1
+        )
+        return explicit_required_scan_names, explicit_optional_scan_names, optional_threshold
+
+    if rule.mode == "required_plus_optional_min":
+        required_scan_names = _filter_available_scan_names(rule.required_scans, available_scan_names)
+        optional_scan_names = [
+            name
+            for name in _filter_available_scan_names(rule.optional_scans, available_scan_names)
+            if name not in required_scan_names
+        ]
+        if required_scan_names and optional_scan_names:
+            optional_threshold = max(1, min(int(rule.optional_min_hits), len(optional_scan_names)))
+            return required_scan_names, optional_scan_names, optional_threshold
+
+    optional_threshold = max(1, min(int(rule.min_count), len(selected_names))) if selected_names else 1
+    return [], selected_names, optional_threshold
+
+
+def _build_duplicate_role_state(
+    required_scan_names: list[str],
+    optional_scan_names: list[str],
+    optional_threshold: int,
+) -> tuple[list[str], int, dict[str, object]]:
+    selected_scan_names = _merge_scan_role_names(required_scan_names, optional_scan_names)
+    if required_scan_names and optional_scan_names:
+        threshold = max(1, min(int(optional_threshold), len(optional_scan_names)))
+        rule = DuplicateRuleConfig(
+            mode="required_plus_optional_min",
+            min_count=threshold,
+            required_scans=tuple(required_scan_names),
+            optional_scans=tuple(optional_scan_names),
+            optional_min_hits=threshold,
+        )
+        return selected_scan_names, threshold, rule.to_dict()
+
+    threshold = max(1, len(required_scan_names)) if required_scan_names else max(1, int(optional_threshold))
+    if optional_scan_names:
+        threshold = min(threshold, len(optional_scan_names))
+    rule = DuplicateRuleConfig(min_count=threshold)
+    return selected_scan_names, threshold, rule.to_dict()
 
 
 def _watchlist_controls_equal(left: dict[str, object] | None, right: dict[str, object] | None) -> bool:
@@ -611,12 +753,16 @@ def _watchlist_controls_equal(left: dict[str, object] | None, right: dict[str, o
         list(left.get("selected_duplicate_subfilters", [])),
         int(left.get("duplicate_threshold", 1)),
         left.get("duplicate_rule"),
+        list(left.get("required_scan_names", [])),
+        list(left.get("optional_scan_names", [])),
     ) == _build_watchlist_control_values(
         list(right.get("selected_scan_names", [])),
         list(right.get("selected_annotation_filters", [])),
         list(right.get("selected_duplicate_subfilters", [])),
         int(right.get("duplicate_threshold", 1)),
         right.get("duplicate_rule"),
+        list(right.get("required_scan_names", [])),
+        list(right.get("optional_scan_names", [])),
     )
 
 
@@ -630,13 +776,29 @@ def _build_watchlist_preset_record(values: dict[str, object]) -> dict[str, objec
 
 def _build_builtin_watchlist_presets(scan_config: ScanConfig) -> dict[str, dict[str, object]]:
     presets: dict[str, dict[str, object]] = {}
+    available_scan_names = [section.scan_name for section in scan_config.card_sections]
     for preset in scan_config.watchlist_presets:
         if not preset.visible_in_ui:
             continue
         preset_name = _normalize_watchlist_preset_name(preset.preset_name)
         if not preset_name:
             continue
-        presets[preset_name] = preset.to_control_values()
+        values = preset.to_control_values()
+        required_scan_names, optional_scan_names, _ = _resolve_duplicate_role_controls(
+            values.get("selected_scan_names", []),
+            values.get("duplicate_rule"),
+            int(values.get("duplicate_threshold", 1)),
+            available_scan_names,
+        )
+        presets[preset_name] = _build_watchlist_control_values(
+            list(values.get("selected_scan_names", [])),
+            list(values.get("selected_annotation_filters", [])),
+            list(values.get("selected_duplicate_subfilters", [])),
+            int(values.get("duplicate_threshold", 1)),
+            values.get("duplicate_rule"),
+            required_scan_names,
+            optional_scan_names,
+        )
     return presets
 
 
@@ -693,12 +855,22 @@ def _read_watchlist_preset_values(
     except ValueError:
         return None
 
+    required_scan_names, optional_scan_names, _ = _resolve_duplicate_role_controls(
+        selected_scan_names,
+        parsed_duplicate_rule,
+        duplicate_threshold,
+        available_scan_names,
+        values.get("required_scan_names"),
+        values.get("optional_scan_names"),
+    )
     return _build_watchlist_control_values(
         selected_scan_names,
         selected_annotation_filters,
         selected_duplicate_subfilters,
         duplicate_threshold,
         parsed_duplicate_rule,
+        required_scan_names,
+        optional_scan_names,
     )
 
 
@@ -751,6 +923,8 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
 
     selection_key = "watchlist_selected_scan_names"
     selection_defaults_key = "watchlist_selected_scan_names_defaults"
+    required_scan_key = "watchlist_required_scan_names"
+    optional_scan_key = "watchlist_optional_scan_names"
     annotation_key = "watchlist_selected_annotation_filters"
     annotation_defaults_key = "watchlist_selected_annotation_filters_defaults"
     duplicate_subfilter_key = "watchlist_selected_duplicate_subfilters"
@@ -825,6 +999,18 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
         watchlist_preferences.get("duplicate_rule"),
         default_min_count=persisted_duplicate_threshold_int,
     ).to_dict()
+    (
+        persisted_required_scan_names,
+        persisted_optional_scan_names,
+        persisted_optional_threshold,
+    ) = _resolve_duplicate_role_controls(
+        persisted_selected_scan_names,
+        persisted_duplicate_rule,
+        persisted_duplicate_threshold_int,
+        available_scan_names,
+        watchlist_preferences.get("required_scan_names"),
+        watchlist_preferences.get("optional_scan_names"),
+    )
 
     saved_watchlist_presets: dict[str, dict[str, object]] = {}
     for raw_name, raw_record in raw_watchlist_presets.items():
@@ -860,6 +1046,10 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
         key=preset_select_key,
         format_func=lambda name: name if name else "Select a preset",
     )
+    selected_preset_name = _resolve_selected_watchlist_preset_name(
+        st.session_state.get(preset_select_key, selected_preset_name),
+        watchlist_presets,
+    )
     selected_preset_is_builtin = bool(selected_preset_name and selected_preset_name in builtin_watchlist_presets)
     selected_preset_export_name = selected_preset_name or None
     selected_preset_export_values = watchlist_presets.get(selected_preset_name) if selected_preset_name else None
@@ -867,7 +1057,7 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
     load_preset = preset_action_columns[0].button(
         "Load Preset",
         use_container_width=True,
-        disabled=not selected_preset_name,
+        disabled=not bool(watchlist_presets),
     )
     delete_preset = preset_action_columns[1].button(
         "Delete Preset",
@@ -875,9 +1065,15 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
         disabled=not selected_preset_name or selected_preset_is_builtin,
     )
 
-    if load_preset and selected_preset_name:
+    if load_preset:
+        selected_preset_name = _resolve_selected_watchlist_preset_name(
+            st.session_state.get(preset_select_key, selected_preset_name),
+            watchlist_presets,
+        )
         loaded_values = watchlist_presets.get(selected_preset_name)
-        if loaded_values is not None:
+        if not selected_preset_name or loaded_values is None:
+            st.warning("Select a preset before loading.")
+        else:
             _apply_watchlist_preset_to_session_state(
                 loaded_values,
                 selection_key=selection_key,
@@ -893,6 +1089,17 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
                 watchlist_preferences_namespace,
                 max(1, len(loaded_values["selected_scan_names"])) if loaded_values["selected_scan_names"] else 1,
             )
+            loaded_required_scan_names, loaded_optional_scan_names, loaded_optional_threshold = _resolve_duplicate_role_controls(
+                loaded_values.get("selected_scan_names", []),
+                loaded_values.get("duplicate_rule"),
+                int(loaded_values.get("duplicate_threshold", 1)),
+                available_scan_names,
+                loaded_values.get("required_scan_names"),
+                loaded_values.get("optional_scan_names"),
+            )
+            st.session_state[required_scan_key] = loaded_required_scan_names
+            st.session_state[optional_scan_key] = loaded_optional_scan_names
+            st.session_state[threshold_key] = loaded_optional_threshold
             st.session_state[preset_name_key] = selected_preset_name
             st.success(f"Loaded preset '{selected_preset_name}'.")
 
@@ -917,19 +1124,59 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
         persisted_selected_scan_names,
     )
     if st.session_state.get(selection_defaults_key) != selection_defaults_signature:
-        st.session_state[selection_key] = persisted_selected_scan_names
+        st.session_state[required_scan_key] = persisted_required_scan_names
+        st.session_state[optional_scan_key] = persisted_optional_scan_names
+        st.session_state[selection_key] = _merge_scan_role_names(
+            persisted_required_scan_names,
+            persisted_optional_scan_names,
+        )
+        st.session_state[threshold_key] = persisted_optional_threshold
         st.session_state[selection_defaults_key] = selection_defaults_signature
     else:
-        st.session_state[selection_key] = [
-            name for name in current_selected_scan_names if name in available_scan_names
+        st.session_state[required_scan_key] = [
+            name
+            for name in st.session_state.get(required_scan_key, [])
+            if name in available_scan_names
         ]
+        st.session_state[optional_scan_key] = [
+            name
+            for name in st.session_state.get(optional_scan_key, current_selected_scan_names)
+            if name in available_scan_names and name not in st.session_state[required_scan_key]
+        ]
+        st.session_state[selection_key] = _merge_scan_role_names(
+            st.session_state[required_scan_key],
+            st.session_state[optional_scan_key],
+        )
 
-    selected_watchlist_scans = st.multiselect(
-        "Cards used for display and Duplicate counting",
+    selected_required_scans = st.multiselect(
+        "Required cards",
         options=available_scan_names,
         format_func=lambda name: display_names.get(name, name),
-        key=selection_key,
+        key=required_scan_key,
     )
+    optional_scan_options = [
+        name
+        for name in available_scan_names
+        if name not in selected_required_scans
+    ]
+    st.session_state[optional_scan_key] = [
+        name
+        for name in st.session_state.get(optional_scan_key, [])
+        if name in optional_scan_options
+    ]
+    selected_optional_scans = st.multiselect(
+        "Optional cards",
+        options=optional_scan_options,
+        format_func=lambda name: display_names.get(name, name),
+        key=optional_scan_key,
+    )
+    selected_watchlist_scans, duplicate_threshold, current_duplicate_rule = _build_duplicate_role_state(
+        selected_required_scans,
+        selected_optional_scans,
+        int(st.session_state.get(threshold_key, persisted_optional_threshold)),
+    )
+    st.session_state[selection_key] = selected_watchlist_scans
+    st.session_state[duplicate_rule_key] = current_duplicate_rule
 
     if st.session_state.get(annotation_defaults_key) != annotation_defaults_signature:
         st.session_state[annotation_key] = persisted_annotation_names
@@ -961,35 +1208,34 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
     selected_duplicate_subfilters: list[str] = []
     st.session_state[duplicate_subfilter_key] = selected_duplicate_subfilters
 
-    max_threshold = max(1, len(selected_watchlist_scans)) if selected_watchlist_scans else 1
+    max_threshold = max(1, len(selected_optional_scans)) if selected_optional_scans else 1
     threshold_defaults_signature = (watchlist_preferences_namespace, max_threshold)
     if st.session_state.get(threshold_defaults_key) != threshold_defaults_signature:
-        st.session_state[threshold_key] = min(persisted_duplicate_threshold_int, max_threshold)
+        st.session_state[threshold_key] = min(duplicate_threshold, max_threshold)
         st.session_state[threshold_defaults_key] = threshold_defaults_signature
     else:
         st.session_state[threshold_key] = max(
             1,
-            min(int(st.session_state.get(threshold_key, persisted_duplicate_threshold_int)), max_threshold),
+            min(int(st.session_state.get(threshold_key, persisted_optional_threshold)), max_threshold),
         )
 
-    duplicate_threshold = int(
+    optional_threshold = int(
         st.number_input(
-            "Duplicate threshold",
+            "Optional threshold",
             min_value=1,
             max_value=max_threshold,
             step=1,
             key=threshold_key,
-            help="A ticker is shown in Duplicate Tickers only if it appears in at least this many selected scan cards.",
+            disabled=not selected_optional_scans,
         )
     )
-    if duplicate_rule_key not in st.session_state:
-        st.session_state[duplicate_rule_key] = persisted_duplicate_rule
-    current_duplicate_rule = DuplicateRuleConfig.from_dict(
-        st.session_state.get(duplicate_rule_key),
-        default_min_count=duplicate_threshold,
+    selected_watchlist_scans, duplicate_threshold, current_duplicate_rule = _build_duplicate_role_state(
+        selected_required_scans,
+        selected_optional_scans,
+        optional_threshold,
     )
-    if current_duplicate_rule.mode == "min_count":
-        st.session_state[duplicate_rule_key] = DuplicateRuleConfig(min_count=duplicate_threshold).to_dict()
+    st.session_state[selection_key] = selected_watchlist_scans
+    st.session_state[duplicate_rule_key] = current_duplicate_rule
 
     current_watchlist_controls = _build_watchlist_control_values(
         selected_watchlist_scans,
@@ -997,6 +1243,8 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
         selected_duplicate_subfilters,
         duplicate_threshold,
         st.session_state.get(duplicate_rule_key),
+        selected_required_scans,
+        selected_optional_scans,
     )
     selected_saved_preset_values = (
         saved_watchlist_presets.get(selected_preset_name)
@@ -1062,12 +1310,12 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
         watchlist_preferences_namespace,
         current_watchlist_controls,
     )
-    st.caption("Load any preset to apply it. Only saved presets can be updated or deleted; built-in presets are read-only.")
-    st.caption("Selected cards drive card display and Duplicate Tickers. Post-scan filters narrow the displayed watchlist after scan hits are computed.")
 
     return WatchlistSidebarState(
         scan_config=watchlist_scan_config,
         selected_scan_names=selected_watchlist_scans,
+        required_scan_names=selected_required_scans,
+        optional_scan_names=selected_optional_scans,
         selected_annotation_filters=selected_annotation_filters,
         selected_duplicate_subfilters=selected_duplicate_subfilters,
         duplicate_threshold=duplicate_threshold,
@@ -1107,6 +1355,8 @@ def render_watchlist(
     artifacts: PlatformArtifacts,
     scan_config: ScanConfig | None = None,
     selected_scan_names: list[str] | None = None,
+    required_scan_names: list[str] | None = None,
+    optional_scan_names: list[str] | None = None,
     duplicate_min_count: int | None = None,
     selected_annotation_filters: list[str] | None = None,
     selected_duplicate_subfilters: list[str] | None = None,
@@ -1125,6 +1375,8 @@ def render_watchlist(
         selected_duplicate_subfilters if selected_duplicate_subfilters is not None else []
     )
     selected_scan_name_set = set(effective_selected_scan_names)
+    required_scan_name_set = set(required_scan_names or [])
+    optional_scan_name_set = set(optional_scan_names or [])
     duplicate_threshold = int(duplicate_min_count if duplicate_min_count is not None else scan_config.duplicate_min_count)
     parsed_duplicate_rule = DuplicateRuleConfig.from_dict(duplicate_rule, default_min_count=duplicate_threshold)
 
@@ -1148,8 +1400,13 @@ def render_watchlist(
     st.markdown("<div class='oratek-page-title'>Today's Watchlist</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='oratek-page-subtitle'>{html.escape(_format_trade_date(artifacts))}</div>", unsafe_allow_html=True)
 
-    cards: list[tuple[str, list[str], str]] = [
-        (card.display_name, _to_ticker_list(card.rows), "No tickers matched this scan.")
+    cards: list[tuple[str, list[str], str, str | None]] = [
+        (
+            card.display_name,
+            _to_ticker_list(card.rows),
+            "No tickers matched this scan.",
+            "required" if card.scan_name in required_scan_name_set else "optional" if card.scan_name in optional_scan_name_set else None,
+        )
         for card in display_cards
         if card.scan_name in selected_scan_name_set
     ]
@@ -1200,9 +1457,9 @@ def render_watchlist(
         for start_offset in range(0, len(cards), 3):
             batch = cards[start_offset : start_offset + 3]
             columns = st.columns(3)
-            for column, (title, tickers, empty_text) in zip(columns, batch):
+            for column, (title, tickers, empty_text, role) in zip(columns, batch):
                 with column:
-                    render_ticker_card(title, tickers, empty_text)
+                    render_ticker_card(title, tickers, empty_text, role=role)
 
     st.markdown("<div style='margin-top:.2rem;'></div>", unsafe_allow_html=True)
     render_ticker_card(
@@ -1547,6 +1804,522 @@ def render_market_dashboard(artifacts: PlatformArtifacts) -> None:
     render_data_health_table(artifacts)
 
 
+def _tracking_health_value(payload: dict[str, object], key: str) -> int:
+    try:
+        return int(payload.get(key, 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _load_benchmark_price_history(config_path: str, benchmark_ticker: str) -> pd.DataFrame:
+    settings = load_settings(config_path)
+    app_settings = settings.get("app", {}) if isinstance(settings.get("app", {}), dict) else {}
+    data_settings = settings.get("data", {}) if isinstance(settings.get("data", {}), dict) else {}
+    cache_dir = Path(str(app_settings.get("cache_dir", "data_cache"))).expanduser()
+    if not cache_dir.is_absolute():
+        cache_dir = ROOT / cache_dir
+    provider = YFinancePriceDataProvider(
+        CacheLayer(cache_dir),
+        technical_ttl_hours=int(data_settings.get("technical_cache_ttl_hours", 12)),
+        allow_stale_cache_on_failure=bool(data_settings.get("allow_stale_cache_on_failure", True)),
+        batch_size=int(data_settings.get("price_batch_size", 80)),
+        max_retries=int(data_settings.get("price_max_retries", 3)),
+        request_sleep_seconds=float(data_settings.get("price_request_sleep_seconds", 2.0)),
+        retry_backoff_multiplier=float(data_settings.get("price_retry_backoff_multiplier", 2.0)),
+        incremental_period=data_settings.get("price_incremental_period", "5d"),
+    )
+    period = str(app_settings.get("price_period", "18mo"))
+    try:
+        result = provider.get_price_history([benchmark_ticker], period=period, force_refresh=False)
+    except RuntimeError:
+        return pd.DataFrame()
+    history = result.histories.get(benchmark_ticker, pd.DataFrame())
+    return _normalized_price_history(history)
+
+
+def _normalized_price_history(history: pd.DataFrame) -> pd.DataFrame:
+    if history.empty or "close" not in history.columns:
+        return pd.DataFrame()
+    working = history.copy()
+    working.index = pd.to_datetime(working.index, errors="coerce")
+    working = working.loc[working.index.notna()].sort_index()
+    return working
+
+
+def _close_on_or_after(history: pd.DataFrame, target_date: pd.Timestamp) -> float | None:
+    if history.empty:
+        return None
+    normalized_target = pd.Timestamp(target_date).normalize()
+    candidates = history.loc[history.index.normalize() >= normalized_target]
+    if candidates.empty:
+        return None
+    try:
+        return float(candidates.iloc[0]["close"])
+    except (TypeError, ValueError, KeyError):
+        return None
+
+
+def _build_benchmark_return_map(
+    history: pd.DataFrame,
+    start_date: pd.Timestamp,
+    end_date: pd.Timestamp,
+    horizon_days: int,
+) -> dict[pd.Timestamp, float]:
+    if history.empty:
+        return {}
+    start = pd.Timestamp(start_date).normalize()
+    end = pd.Timestamp(end_date).normalize()
+    if end < start:
+        return {}
+    results: dict[pd.Timestamp, float] = {}
+    for current in pd.date_range(start=start, end=end, freq="D"):
+        base_close = _close_on_or_after(history, current)
+        if base_close is None or base_close == 0:
+            continue
+        target_close = _close_on_or_after(history, current + BDay(horizon_days))
+        if target_close is None:
+            continue
+        results[current.normalize()] = ((target_close / base_close) - 1.0) * 100.0
+    return results
+
+
+def _build_benchmark_horizon_payload_map(
+    history: pd.DataFrame,
+    start_date: pd.Timestamp,
+    end_date: pd.Timestamp,
+    horizon_days: int,
+) -> dict[pd.Timestamp, dict[str, float]]:
+    if history.empty:
+        return {}
+    start = pd.Timestamp(start_date).normalize()
+    end = pd.Timestamp(end_date).normalize()
+    if end < start:
+        return {}
+    results: dict[pd.Timestamp, dict[str, float]] = {}
+    for current in pd.date_range(start=start, end=end, freq="D"):
+        base_close = _close_on_or_after(history, current)
+        if base_close is None or base_close == 0:
+            continue
+        target_close = _close_on_or_after(history, current + BDay(horizon_days))
+        if target_close is None:
+            continue
+        results[current.normalize()] = {
+            "benchmark_close_at_hit": base_close,
+            "benchmark_close_at_target": target_close,
+            "benchmark_return_pct": ((target_close / base_close) - 1.0) * 100.0,
+        }
+    return results
+
+
+def _build_tracking_analysis_export_frames(
+    scoped_detail: pd.DataFrame,
+    *,
+    benchmark_ticker: str,
+    benchmark_history: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    if scoped_detail.empty:
+        return pd.DataFrame(), pd.DataFrame()
+    working = scoped_detail.copy()
+    working["hit_date"] = pd.to_datetime(working["hit_date"], errors="coerce")
+    working = working.loc[working["hit_date"].notna()].copy()
+    if working.empty:
+        return pd.DataFrame(), pd.DataFrame()
+    min_hit_date = pd.Timestamp(working["hit_date"].min()).normalize()
+    max_hit_date = pd.Timestamp(working["hit_date"].max()).normalize()
+    benchmark_maps = {
+        horizon: _build_benchmark_horizon_payload_map(benchmark_history, min_hit_date, max_hit_date, horizon)
+        for horizon in TRACKING_HORIZON_OPTIONS
+    }
+    observation_rows: list[dict[str, object]] = []
+    for _, row in working.iterrows():
+        hit_date = pd.Timestamp(row["hit_date"]).normalize()
+        for horizon in TRACKING_HORIZON_OPTIONS:
+            return_column = f"return_{horizon}d"
+            close_column = f"close_at_{horizon}d"
+            return_value = row.get(return_column)
+            close_at_target = row.get(close_column)
+            if pd.isna(return_value) and pd.isna(close_at_target):
+                continue
+            benchmark_payload = benchmark_maps[horizon].get(hit_date, {})
+            benchmark_return = benchmark_payload.get("benchmark_return_pct")
+            observation_rows.append(
+                {
+                    "detection_id": row.get("detection_id"),
+                    "hit_date": hit_date.strftime("%Y-%m-%d"),
+                    "preset_name": row.get("preset_name"),
+                    "ticker": row.get("ticker"),
+                    "status": row.get("status"),
+                    "market_env": row.get("market_env"),
+                    "horizon_days": horizon,
+                    "return_pct": return_value if not pd.isna(return_value) else None,
+                    "benchmark_ticker": benchmark_ticker,
+                    "benchmark_return_pct": benchmark_return,
+                    "excess_return_pct": (
+                        (float(return_value) - float(benchmark_return))
+                        if (not pd.isna(return_value) and benchmark_return is not None)
+                        else None
+                    ),
+                    "close_at_hit": row.get("close_at_hit"),
+                    "close_at_target": close_at_target if not pd.isna(close_at_target) else None,
+                    "benchmark_close_at_hit": benchmark_payload.get("benchmark_close_at_hit"),
+                    "benchmark_close_at_target": benchmark_payload.get("benchmark_close_at_target"),
+                    "hit_scans": row.get("hit_scans"),
+                }
+            )
+    observations = pd.DataFrame(observation_rows)
+    scan_bridge_rows: list[dict[str, object]] = []
+    for _, row in working.iterrows():
+        detection_id = row.get("detection_id")
+        if pd.isna(detection_id):
+            continue
+        hit_scans = str(row.get("hit_scans", "")).strip()
+        if not hit_scans:
+            continue
+        for scan_name in [part.strip() for part in hit_scans.split(",") if part.strip()]:
+            scan_bridge_rows.append(
+                {
+                    "detection_id": int(detection_id),
+                    "hit_date": pd.Timestamp(row["hit_date"]).strftime("%Y-%m-%d"),
+                    "preset_name": row.get("preset_name"),
+                    "ticker": row.get("ticker"),
+                    "scan_name": scan_name,
+                }
+            )
+    detection_scans = pd.DataFrame(scan_bridge_rows)
+    return observations, detection_scans
+
+
+def render_tracking_analytics() -> None:
+    render_page_header(
+        "Tracking Analytics",
+        subtitle="Preset-level performance summary with unified filters.",
+    )
+    detail_frame = read_detection_detail()
+    if detail_frame.empty:
+        st.caption("No detection rows are available.")
+        return
+
+    config_path = str(ROOT / "config" / "default.yaml")
+    preset_universe = sorted(
+        {
+            str(preset.preset_name).strip()
+            for preset in load_scan_config(config_path).watchlist_presets
+            if str(preset.preset_name).strip()
+        }
+    )
+    if not preset_universe:
+        preset_universe = sorted(str(value) for value in detail_frame["preset_name"].dropna().unique().tolist())
+
+    detail_frame = detail_frame.copy()
+    detail_frame["hit_date"] = pd.to_datetime(detail_frame["hit_date"], errors="coerce")
+    detail_frame["market_env"] = detail_frame["market_env"].astype(str).str.strip().str.lower()
+    detail_frame = detail_frame.loc[detail_frame["market_env"].isin(TRACKING_MARKET_ENV_OPTIONS)].copy()
+    valid_dates = detail_frame["hit_date"].dropna()
+    render_section_heading("Aggregation Scope", "Preset universe / horizon / hit date / market environment.")
+
+    selected_presets_state_key = "tracking_scope_presets_state"
+    selected_horizon_state_key = "tracking_scope_horizon_state"
+    selected_date_range_state_key = "tracking_scope_date_range_state"
+    selected_market_env_state_key = "tracking_scope_market_env_state"
+    selected_benchmark_state_key = "tracking_scope_benchmark_state"
+    selected_presets_widget_key = "tracking_scope_presets_widget"
+    selected_horizon_widget_key = "tracking_scope_horizon_widget"
+    selected_date_range_widget_key = "tracking_scope_date_range_widget"
+    selected_market_env_widget_key = "tracking_scope_market_env_widget"
+    selected_benchmark_widget_key = "tracking_scope_benchmark_widget"
+
+    persisted_presets = st.session_state.get(selected_presets_state_key, preset_universe)
+    if not isinstance(persisted_presets, list):
+        persisted_presets = list(preset_universe)
+    persisted_presets = [name for name in persisted_presets if name in preset_universe]
+    if not persisted_presets:
+        persisted_presets = list(preset_universe)
+
+    persisted_horizon = st.session_state.get(selected_horizon_state_key, TRACKING_HORIZON_OPTIONS[0])
+    if persisted_horizon not in TRACKING_HORIZON_OPTIONS:
+        persisted_horizon = TRACKING_HORIZON_OPTIONS[0]
+
+    default_date_range: tuple[object, object] | tuple[()] = ()
+    if not valid_dates.empty:
+        fallback_start = valid_dates.min().date()
+        fallback_end = valid_dates.max().date()
+        persisted_date_range = st.session_state.get(selected_date_range_state_key, (fallback_start, fallback_end))
+        if not (
+            isinstance(persisted_date_range, tuple)
+            and len(persisted_date_range) == 2
+            and persisted_date_range[0] is not None
+            and persisted_date_range[1] is not None
+        ):
+            persisted_date_range = (fallback_start, fallback_end)
+        default_date_range = persisted_date_range
+
+    persisted_market_envs = st.session_state.get(selected_market_env_state_key, list(TRACKING_MARKET_ENV_OPTIONS))
+    if not isinstance(persisted_market_envs, list):
+        persisted_market_envs = list(TRACKING_MARKET_ENV_OPTIONS)
+    persisted_market_envs = [name for name in persisted_market_envs if name in TRACKING_MARKET_ENV_OPTIONS]
+    if not persisted_market_envs:
+        persisted_market_envs = list(TRACKING_MARKET_ENV_OPTIONS)
+
+    persisted_benchmark = st.session_state.get(selected_benchmark_state_key, TRACKING_BENCHMARK_OPTIONS[0])
+    if persisted_benchmark not in TRACKING_BENCHMARK_OPTIONS:
+        persisted_benchmark = TRACKING_BENCHMARK_OPTIONS[0]
+
+    if selected_presets_widget_key not in st.session_state:
+        st.session_state[selected_presets_widget_key] = list(persisted_presets)
+    else:
+        widget_presets = st.session_state.get(selected_presets_widget_key, [])
+        if not isinstance(widget_presets, list):
+            st.session_state[selected_presets_widget_key] = list(persisted_presets)
+        else:
+            st.session_state[selected_presets_widget_key] = [name for name in widget_presets if name in preset_universe]
+
+    if selected_horizon_widget_key not in st.session_state:
+        st.session_state[selected_horizon_widget_key] = int(persisted_horizon)
+    elif st.session_state.get(selected_horizon_widget_key) not in TRACKING_HORIZON_OPTIONS:
+        st.session_state[selected_horizon_widget_key] = int(persisted_horizon)
+
+    if valid_dates.empty:
+        st.session_state.pop(selected_date_range_widget_key, None)
+    elif selected_date_range_widget_key not in st.session_state:
+        st.session_state[selected_date_range_widget_key] = default_date_range
+    else:
+        widget_date_range = st.session_state.get(selected_date_range_widget_key, default_date_range)
+        if not (
+            isinstance(widget_date_range, tuple)
+            and len(widget_date_range) == 2
+            and widget_date_range[0] is not None
+            and widget_date_range[1] is not None
+        ):
+            st.session_state[selected_date_range_widget_key] = default_date_range
+
+    if selected_market_env_widget_key not in st.session_state:
+        st.session_state[selected_market_env_widget_key] = list(persisted_market_envs)
+    else:
+        widget_market_envs = st.session_state.get(selected_market_env_widget_key, [])
+        if not isinstance(widget_market_envs, list):
+            st.session_state[selected_market_env_widget_key] = list(persisted_market_envs)
+        else:
+            st.session_state[selected_market_env_widget_key] = [
+                name for name in widget_market_envs if name in TRACKING_MARKET_ENV_OPTIONS
+            ]
+
+    if selected_benchmark_widget_key not in st.session_state:
+        st.session_state[selected_benchmark_widget_key] = str(persisted_benchmark)
+    elif st.session_state.get(selected_benchmark_widget_key) not in TRACKING_BENCHMARK_OPTIONS:
+        st.session_state[selected_benchmark_widget_key] = str(persisted_benchmark)
+
+    p_col, h_col, d_col, e_col, b_col = st.columns([1.5, 0.8, 1.3, 1.1, 0.8])
+    with p_col:
+        selected_presets = st.multiselect(
+            "Preset Universe",
+            options=preset_universe,
+            key=selected_presets_widget_key,
+        )
+    with h_col:
+        selected_horizon = int(
+            st.selectbox(
+                "Horizon",
+                options=list(TRACKING_HORIZON_OPTIONS),
+                format_func=lambda value: f"{value}D",
+                key=selected_horizon_widget_key,
+            )
+        )
+    with d_col:
+        if valid_dates.empty:
+            selected_date_range: tuple[object, object] | tuple[()] = ()
+            st.caption("No valid hit dates")
+        else:
+            selected_date_range = st.date_input(
+                "Hit Date Range",
+                value=st.session_state[selected_date_range_widget_key],
+                key=selected_date_range_widget_key,
+            )
+    with e_col:
+        selected_market_envs = st.multiselect(
+            "Hit Market Env",
+            options=list(TRACKING_MARKET_ENV_OPTIONS),
+            key=selected_market_env_widget_key,
+        )
+    with b_col:
+        selected_benchmark = st.selectbox(
+            "Benchmark",
+            options=list(TRACKING_BENCHMARK_OPTIONS),
+            key=selected_benchmark_widget_key,
+        )
+
+    st.session_state[selected_presets_state_key] = list(selected_presets)
+    st.session_state[selected_horizon_state_key] = int(selected_horizon)
+    if isinstance(selected_date_range, tuple) and len(selected_date_range) == 2:
+        st.session_state[selected_date_range_state_key] = selected_date_range
+    st.session_state[selected_market_env_state_key] = list(selected_market_envs)
+    st.session_state[selected_benchmark_state_key] = str(selected_benchmark)
+
+    filtered_detail = detail_frame.copy()
+    if (
+        isinstance(selected_date_range, tuple)
+        and len(selected_date_range) == 2
+        and selected_date_range[0] is not None
+        and selected_date_range[1] is not None
+    ):
+        start_date = pd.Timestamp(selected_date_range[0]).normalize()
+        end_date = pd.Timestamp(selected_date_range[1]).normalize()
+        filtered_detail = filtered_detail.loc[
+            (filtered_detail["hit_date"] >= start_date) & (filtered_detail["hit_date"] <= end_date)
+        ].copy()
+    if selected_presets:
+        filtered_detail = filtered_detail.loc[filtered_detail["preset_name"].isin(selected_presets)].copy()
+    if selected_market_envs:
+        filtered_detail = filtered_detail.loc[filtered_detail["market_env"].isin(selected_market_envs)].copy()
+
+    return_column = f"return_{selected_horizon}d"
+    close_column = f"close_at_{selected_horizon}d"
+    aggregation_base = filtered_detail.loc[filtered_detail[return_column].notna()].copy()
+    aggregation_base["selected_return_pct"] = aggregation_base[return_column]
+    benchmark_history = pd.DataFrame()
+    benchmark_return_map: dict[pd.Timestamp, float] = {}
+    if not aggregation_base.empty:
+        hit_dates = aggregation_base["hit_date"].dropna()
+        if not hit_dates.empty:
+            benchmark_history = _load_benchmark_price_history(config_path, selected_benchmark)
+            benchmark_return_map = _build_benchmark_return_map(
+                benchmark_history,
+                hit_dates.min(),
+                hit_dates.max(),
+                selected_horizon,
+            )
+    aggregation_base["benchmark_return_pct"] = aggregation_base["hit_date"].map(
+        lambda value: benchmark_return_map.get(pd.Timestamp(value).normalize()) if pd.notna(value) else None
+    )
+    aggregation_base["excess_return_pct"] = aggregation_base["selected_return_pct"] - aggregation_base["benchmark_return_pct"]
+
+    render_section_heading("Ranking", "Per-preset summary using selected scope and horizon return.")
+    if aggregation_base.empty:
+        st.caption("No rows matched the selected horizon and filters.")
+    else:
+        ranking = aggregation_base.groupby(["preset_name", "market_env"], as_index=False).agg(
+            detection_count=(return_column, "count"),
+            avg_return_pct=(return_column, "mean"),
+            max_return_pct=(return_column, "max"),
+            min_return_pct=(return_column, "min"),
+        )
+        win_rate = (
+            aggregation_base.assign(is_win=aggregation_base[return_column] > 0)
+            .groupby(["preset_name", "market_env"], as_index=False)["is_win"]
+            .mean()
+            .rename(columns={"is_win": "win_rate"})
+        )
+        benchmark_stats = aggregation_base.groupby(["preset_name", "market_env"], as_index=False).agg(
+            benchmark_avg_pct=("benchmark_return_pct", "mean"),
+            excess_avg_pct=("excess_return_pct", "mean"),
+        )
+        ranking = ranking.merge(win_rate, on=["preset_name", "market_env"], how="left")
+        ranking = ranking.merge(benchmark_stats, on=["preset_name", "market_env"], how="left")
+        ranking["avg_return_pct"] = ranking["avg_return_pct"].round(2)
+        ranking["max_return_pct"] = ranking["max_return_pct"].round(2)
+        ranking["min_return_pct"] = ranking["min_return_pct"].round(2)
+        ranking["win_rate"] = ranking["win_rate"].round(3)
+        ranking["benchmark_avg_pct"] = ranking["benchmark_avg_pct"].round(2)
+        ranking["excess_avg_pct"] = ranking["excess_avg_pct"].round(2)
+        ranking = ranking.sort_values(["avg_return_pct", "detection_count"], ascending=[False, False]).reset_index(drop=True)
+        st.caption(f"{len(ranking):,} rows")
+        ranking_display = ranking.rename(
+            columns={
+                "preset_name": "preset",
+                "market_env": "env",
+                "avg_return_pct": "avg%",
+                "benchmark_avg_pct": "bench%",
+                "excess_avg_pct": "excess%",
+                "max_return_pct": "max%",
+                "min_return_pct": "min%",
+                "win_rate": "win",
+                "detection_count": "n",
+            }
+        )
+        st.dataframe(
+            ranking_display[["preset", "env", "avg%", "bench%", "excess%", "max%", "min%", "win", "n"]],
+            width="stretch",
+            hide_index=True,
+            height=min(620, 110 + max(1, len(ranking)) * 32),
+        )
+
+    render_section_heading("Detail", "Scope-matched rows with selected horizon return.")
+    filtered_detail["selected_return_pct"] = filtered_detail[return_column]
+    filtered_detail["selected_close_at_target"] = filtered_detail[close_column]
+    filtered_detail["benchmark_return_pct"] = filtered_detail["hit_date"].map(
+        lambda value: benchmark_return_map.get(pd.Timestamp(value).normalize()) if pd.notna(value) else None
+    )
+    filtered_detail["excess_return_pct"] = filtered_detail["selected_return_pct"] - filtered_detail["benchmark_return_pct"]
+    export_detail = filtered_detail.copy()
+    observations_export, detection_scans_export = _build_tracking_analysis_export_frames(
+        export_detail,
+        benchmark_ticker=selected_benchmark,
+        benchmark_history=benchmark_history,
+    )
+    filtered_detail = filtered_detail.sort_values(["hit_date", "preset_name", "ticker"], ascending=[False, True, True])
+    filtered_detail["hit_date"] = filtered_detail["hit_date"].dt.strftime("%Y-%m-%d")
+    st.caption(f"{len(filtered_detail):,} rows")
+    st.dataframe(
+        filtered_detail[
+            [
+                "hit_date",
+                "preset_name",
+                "market_env",
+                "ticker",
+                "status",
+                "close_at_hit",
+                "selected_close_at_target",
+                "selected_return_pct",
+                "benchmark_return_pct",
+                "excess_return_pct",
+                "hit_scans",
+            ]
+        ],
+        width="stretch",
+        hide_index=True,
+        height=min(760, 110 + max(1, len(filtered_detail)) * 30),
+    )
+    render_section_heading("Export", "Analysis-oriented normalized CSV output.")
+    export_col1, export_col2 = st.columns(2)
+    with export_col1:
+        st.download_button(
+            "Export Observations CSV",
+            data=_dataframe_to_csv_bytes(observations_export),
+            file_name=f"tracking_observations_h{selected_horizon}_{selected_benchmark.lower()}.csv",
+            mime="text/csv",
+            use_container_width=True,
+            disabled=observations_export.empty,
+        )
+    with export_col2:
+        st.download_button(
+            "Export Detection Scans CSV",
+            data=_dataframe_to_csv_bytes(detection_scans_export),
+            file_name=f"tracking_detection_scans_h{selected_horizon}_{selected_benchmark.lower()}.csv",
+            mime="text/csv",
+            use_container_width=True,
+            disabled=detection_scans_export.empty,
+        )
+    if observations_export.empty:
+        st.caption("No scoped observations were available for export.")
+    else:
+        st.caption(f"observations: {len(observations_export):,} rows / detection_scans: {len(detection_scans_export):,} rows")
+    tracking_health = st.session_state.get("tracking_health")
+    tracking_health_payload = tracking_health if isinstance(tracking_health, dict) else {}
+    with st.expander("Tracking Health (Ops)", expanded=False):
+        st.caption(
+            " / ".join(
+                [
+                    f"active {_tracking_health_value(tracking_health_payload, 'active_detection_count')}",
+                    f"missing hit close {_tracking_health_value(tracking_health_payload, 'missing_hit_close_count')}",
+                    f"missing 1D close {_tracking_health_value(tracking_health_payload, 'missing_close_1d_count')}",
+                    f"missing 5D close {_tracking_health_value(tracking_health_payload, 'missing_close_5d_count')}",
+                    f"filled 1D return {_tracking_health_value(tracking_health_payload, 'filled_return_1d_count')}",
+                    f"filled 5D return {_tracking_health_value(tracking_health_payload, 'filled_return_5d_count')}",
+                ]
+            )
+        )
+
+
 def render_active_page(
     page_key: str,
     artifacts: PlatformArtifacts,
@@ -1561,6 +2334,8 @@ def render_active_page(
             artifacts,
             scan_config=watchlist_state.scan_config,
             selected_scan_names=watchlist_state.selected_scan_names,
+            required_scan_names=watchlist_state.required_scan_names,
+            optional_scan_names=watchlist_state.optional_scan_names,
             duplicate_min_count=watchlist_state.duplicate_threshold,
             selected_annotation_filters=watchlist_state.selected_annotation_filters,
             selected_duplicate_subfilters=watchlist_state.selected_duplicate_subfilters,
@@ -1575,6 +2350,9 @@ def render_active_page(
         return
     if page_key == "rs_radar":
         render_rs_radar(artifacts)
+        return
+    if page_key == "tracking_analytics":
+        render_tracking_analytics()
         return
     render_market_dashboard(artifacts)
 
@@ -1607,18 +2385,42 @@ def main() -> None:
     cache_key = (config_path, tuple(symbols), force_universe_refresh, force_price_refresh)
     if refresh or st.session_state.get("artifacts_key") != cache_key:
         with st.spinner("Loading screening artifacts..."):
-            st.session_state["artifacts"] = load_artifacts(
+            artifacts = load_artifacts(
                 config_path,
                 symbols,
                 force_universe_refresh,
                 force_price_refresh,
+                prefer_saved_run=not refresh,
             )
-            st.session_state["preset_export_directory"] = (
-                str(export_watchlist_preset_csvs(config_path, st.session_state["artifacts"]) or "")
-            )
-            effectiveness_sync = sync_preset_effectiveness_logs(config_path, st.session_state["artifacts"])
+            st.session_state["artifacts"] = artifacts
+            if artifacts.artifact_origin == "pipeline_recomputed":
+                st.session_state["preset_export_directory"] = ""
+                effectiveness_sync = sync_preset_effectiveness_logs(
+                    config_path,
+                    artifacts,
+                    register_detections=True,
+                )
+            else:
+                st.session_state["preset_export_directory"] = ""
+                effectiveness_sync = sync_preset_effectiveness_logs(
+                    config_path,
+                    artifacts,
+                    register_detections=False,
+                )
             st.session_state["preset_effectiveness_directory"] = (
-                effectiveness_sync.output_dir if effectiveness_sync is not None else ""
+                effectiveness_sync.tracking_db_path if effectiveness_sync is not None else ""
+            )
+            st.session_state["tracking_health"] = (
+                {
+                    "active_detection_count": effectiveness_sync.active_detection_count,
+                    "missing_hit_close_count": effectiveness_sync.missing_hit_close_count,
+                    "missing_close_1d_count": effectiveness_sync.missing_close_1d_count,
+                    "missing_close_5d_count": effectiveness_sync.missing_close_5d_count,
+                    "filled_return_1d_count": effectiveness_sync.filled_return_1d_count,
+                    "filled_return_5d_count": effectiveness_sync.filled_return_5d_count,
+                }
+                if effectiveness_sync is not None
+                else {}
             )
             st.session_state["artifacts_key"] = cache_key
 
@@ -1626,6 +2428,9 @@ def main() -> None:
     page_key = render_page_tabs()
     render_context_strip([f"Data source: {artifacts.data_source_label}"])
     render_data_health_banner(artifacts)
+    if page_key in {"watchlist", "entry_signals"} and watchlist_state is None:
+        with st.sidebar:
+            watchlist_state = render_watchlist_sidebar_controls(config_path)
 
     if (
         page_key == "watchlist"
@@ -1666,9 +2471,12 @@ def main() -> None:
         )
     if page_key == "entry_signals" and watchlist_state is None:
         scan_config = load_scan_config(config_path)
+        startup_scan_names = list(scan_config.startup_selected_scan_names())
         watchlist_state = WatchlistSidebarState(
             scan_config=scan_config,
-            selected_scan_names=list(scan_config.startup_selected_scan_names()),
+            selected_scan_names=startup_scan_names,
+            required_scan_names=[],
+            optional_scan_names=startup_scan_names,
             selected_annotation_filters=list(scan_config.enabled_annotation_filters),
             selected_duplicate_subfilters=[],
             duplicate_threshold=scan_config.duplicate_min_count,
@@ -1676,6 +2484,29 @@ def main() -> None:
         )
 
     render_active_page(page_key, artifacts, watchlist_state, signal_state)
+
+    tracking_health = st.session_state.get("tracking_health")
+    if isinstance(tracking_health, dict):
+        with st.sidebar:
+            st.markdown("**Tracking Health**")
+            st.caption(
+                " / ".join(
+                    [
+                        f"active {tracking_health.get('active_detection_count', 0)}",
+                        f"missing hit close {tracking_health.get('missing_hit_close_count', 0)}",
+                        f"missing 1D close {tracking_health.get('missing_close_1d_count', 0)}",
+                        f"missing 5D close {tracking_health.get('missing_close_5d_count', 0)}",
+                    ]
+                )
+            )
+            st.caption(
+                " / ".join(
+                    [
+                        f"filled 1D return {tracking_health.get('filled_return_1d_count', 0)}",
+                        f"filled 5D return {tracking_health.get('filled_return_5d_count', 0)}",
+                    ]
+                )
+            )
 
 
 if __name__ == "__main__":

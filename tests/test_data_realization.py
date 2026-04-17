@@ -202,6 +202,32 @@ def test_snapshot_store_loads_latest_run_with_dashboard_payloads() -> None:
         assert list(loaded.scan_hits["ticker"]) == ["AAA"]
 
 
+def test_snapshot_store_does_not_read_legacy_scan_hits_csv(tmp_path: Path) -> None:
+    store = DataSnapshotStore(tmp_path)
+    trade_date = pd.Timestamp("2026-04-08")
+    snapshot = pd.DataFrame({"trade_date": [trade_date], "close": [10.0]}, index=["AAA"])
+    watchlist = pd.DataFrame({"duplicate_ticker": [True]}, index=["AAA"])
+    fetch_status = pd.DataFrame()
+
+    store.save_run(
+        snapshot,
+        snapshot.copy(),
+        watchlist,
+        fetch_status,
+        {"data_source_label": "live", "config_path": "config/default.yaml", "requested_symbols": ["AAA"]},
+    )
+    legacy_dir = tmp_path / "scan_hits"
+    legacy_dir.mkdir(exist_ok=True)
+    pd.DataFrame([{"ticker": "AAA", "kind": "scan", "name": "Legacy Scan"}]).to_csv(
+        legacy_dir / "20260408.csv",
+        index=False,
+    )
+
+    loaded = store.load_latest_run()
+
+    assert loaded.scan_hits is None
+
+
 def test_research_platform_reuses_same_day_saved_run(tmp_path: Path) -> None:
     platform = ResearchPlatform()
     platform.snapshot_store = DataSnapshotStore(tmp_path)
