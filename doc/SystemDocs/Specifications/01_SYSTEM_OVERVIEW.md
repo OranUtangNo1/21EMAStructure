@@ -2,15 +2,16 @@
 
 ## 1. Product Definition
 
-OraTek is an active screening, candidate extraction, and preset-performance review platform for growth-stock research. The implemented product produces five active app outputs:
+OraTek is an active screening, candidate extraction, and preset-performance review platform for growth-stock research. The implemented product produces six active app outputs:
 
-1. Market Dashboard
-2. RS Radar
-3. Today's Watchlist
-4. Entry Signals
-5. Tracking Analytics
+1. Watchlist
+2. Entry Signal
+3. Market Dashboard
+4. RS
+5. Analysis
+6. Setting
 
-The application helps the user review market context, inspect sector and industry leadership, surface candidate tickers that satisfy one or more scan conditions, evaluate implemented entry-timing signals on selected candidate universes, and analyze the forward performance of preset hits.
+The application helps the user surface candidate tickers that satisfy one or more scan conditions, evaluate implemented entry-timing signals on selected candidate universes, review market context, inspect sector and industry leadership, analyze the forward performance of preset hits, and inspect tracking-store health from the Setting tab.
 
 ## 2. Active Scope
 
@@ -22,7 +23,7 @@ The active product scope is limited to:
 - scan-based candidate extraction
 - post-scan watchlist projection in the UI
 - duplicate-ticker prioritization from scan overlap
-- Market Dashboard, RS Radar, Today's Watchlist, Entry Signals, and Tracking Analytics rendering
+- Watchlist, Entry Signal, Market Dashboard, RS, Analysis, and Setting rendering
 - SQLite-backed preset-hit tracking for 1, 5, 10, and 20 business-day outcomes
 
 ## 3. Out-Of-Scope Areas
@@ -63,7 +64,7 @@ For the resolved universe, the application loads:
 - Market Dashboard ETF histories
 - factor ETF histories
 
-The app can request `Force Price Data Refresh`, which bypasses the price-cache TTL for this run while still using existing cached price rows as a merge base and fallback when live refresh fails.
+The app can request `Force price data refresh`, which bypasses the price-cache TTL for this run while still using existing cached price rows as a merge base and fallback when live refresh fails.
 
 Profile and fundamental fields are sourced from the current weekly universe snapshot first, then filled from Yahoo Finance fallback providers when missing.
 
@@ -114,9 +115,9 @@ The active views consume the same run artifacts plus the tracking database where
 
 - Market Dashboard summarizes breadth, performance, factor leadership, and ETF snapshots
 - RS Radar summarizes sector and industry ETF leadership plus top RS movers
-- Today's Watchlist rebuilds scan cards and duplicate bands from raw watchlist rows plus current sidebar controls
+- Today's Watchlist rebuilds scan cards and duplicate bands from raw watchlist rows plus current watchlist controls
 - Entry Signals evaluates enabled entry-timing signals on the page-selected signal universe: preset duplicates, current-selection duplicates, both duplicate sources, Today's Watchlist, or the eligible universe
-- Tracking Analytics reads detection detail from SQLite, filters by preset universe, horizon, hit-date range, market environment, and benchmark, and displays preset ranking plus row-level detail
+- Analysis reads detection detail from SQLite, filters by preset universe, horizon, hit-date range, market environment, and benchmark, and displays preset ranking plus row-level detail
 
 ## 5. Core Design Principles
 
@@ -187,7 +188,7 @@ Responsibilities:
 - watchlist projection and ticker-card rendering
 - entry-signal result shaping
 - preset-effectiveness sync and tracking analytics display
-- page-local control persistence for the watchlist sidebar
+- page-local control persistence for watchlist controls
 
 ## 7. Current Implementation Stance
 

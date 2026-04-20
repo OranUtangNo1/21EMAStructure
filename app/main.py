@@ -23,7 +23,7 @@ from src.data.cache import CacheLayer
 from src.data.providers import YFinancePriceDataProvider
 from src.data.tracking_repository import read_detection_detail, read_preset_horizon_performance
 from src.pipeline import PlatformArtifacts, ResearchPlatform
-from src.scan.rules import DuplicateRuleConfig, ScanConfig
+from src.scan.rules import DuplicateRuleConfig, ScanConfig, WatchlistPresetConfig
 from src.signals.rules import ENTRY_SIGNAL_REGISTRY, EntrySignalConfig
 from src.signals.runner import (
     ENTRY_SIGNAL_UNIVERSE_MODE_BOTH,
@@ -39,7 +39,7 @@ from src.ui_preferences import UserPreferenceStore
 st.set_page_config(
     page_title="Growth Trading Screener",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 WATCHLIST_PRESET_GROUP = "watchlist_presets"
@@ -200,17 +200,25 @@ class AppPageDefinition:
 
 
 @dataclass(frozen=True)
-class WatchlistSidebarState:
+class WatchlistControlState:
     scan_config: ScanConfig
     selected_scan_names: list[str]
     required_scan_names: list[str]
     optional_scan_names: list[str]
+    optional_scan_groups: list[dict[str, object]]
     selected_annotation_filters: list[str]
     selected_duplicate_subfilters: list[str]
     duplicate_threshold: int
     duplicate_rule: dict[str, object] | None = None
     selected_preset_export_name: str | None = None
     selected_preset_export_values: dict[str, object] | None = None
+
+
+@dataclass(frozen=True)
+class WatchlistPresetDefinition:
+    preset_name: str
+    source: str
+    values: dict[str, object]
 
 
 @dataclass(frozen=True)
@@ -229,11 +237,12 @@ ENTRY_SIGNAL_UNIVERSE_LABELS: dict[str, str] = {
 
 
 APP_PAGES: tuple[AppPageDefinition, ...] = (
-    AppPageDefinition("watchlist", "Today's Watchlist"),
-    AppPageDefinition("entry_signals", "Entry Signals"),
-    AppPageDefinition("tracking_analytics", "Tracking Analytics"),
-    AppPageDefinition("rs_radar", "RS Radar"),
+    AppPageDefinition("watchlist", "Watchlist"),
+    AppPageDefinition("entry_signals", "Entry Signal"),
     AppPageDefinition("market_dashboard", "Market Dashboard"),
+    AppPageDefinition("rs_radar", "RS"),
+    AppPageDefinition("analysis", "Analysis"),
+    AppPageDefinition("setting", "Setting"),
 )
 APP_PAGE_KEYS = tuple(page.key for page in APP_PAGES)
 APP_PAGE_LABELS = {page.key: page.label for page in APP_PAGES}
@@ -528,14 +537,19 @@ def _resolve_preset_export_directory(config_path: str, output_dir: str, artifact
     return base_dir / _export_folder_name(artifacts)
 
 
-def export_watchlist_preset_csvs(config_path: str, artifacts: PlatformArtifacts) -> Path | None:
+def export_watchlist_preset_csvs(
+    config_path: str,
+    artifacts: PlatformArtifacts,
+    *,
+    respect_config: bool = True,
+) -> Path | None:
     scan_config = load_scan_config(config_path)
     export_config = scan_config.preset_csv_export
-    if not export_config.enabled:
+    if respect_config and not export_config.enabled:
         return None
 
-    export_presets = [preset for preset in scan_config.watchlist_presets if preset.export_enabled]
-    if not export_presets:
+    preset_definitions = load_watchlist_preset_definitions(config_path, scan_config)
+    if not preset_definitions:
         return None
 
     builder = WatchlistViewModelBuilder(scan_config)
@@ -544,25 +558,285 @@ def export_watchlist_preset_csvs(config_path: str, artifacts: PlatformArtifacts)
     export_dir = _resolve_preset_export_directory(config_path, export_config.output_dir, artifacts)
     export_dir.mkdir(parents=True, exist_ok=True)
 
-    summary_frame = builder.build_preset_summary_exports(
-        export_presets,
-        artifacts.watchlist,
-        artifacts.scan_hits,
+    summary_frame, hits_frame = build_watchlist_preset_hit_exports(
+        preset_definitions,
+        artifacts,
+        builder,
         trade_date=trade_date,
         output_date=output_date,
-        top_ticker_limit=export_config.top_ticker_limit,
     )
     summary_frame.to_csv(export_dir / "preset_summary.csv", index=False)
+    hits_frame.to_csv(export_dir / "preset_hits.csv", index=False)
 
     if export_config.write_details:
+        detail_presets = [
+            _watchlist_preset_config_from_definition(definition)
+            for definition in preset_definitions
+        ]
         details_frame = builder.build_preset_detail_exports(
-            export_presets,
+            detail_presets,
             artifacts.watchlist,
             artifacts.scan_hits,
         )
         details_frame.to_csv(export_dir / "preset_details.csv", index=False)
 
     return export_dir
+
+
+def build_watchlist_preset_hit_exports(
+    preset_definitions: list[WatchlistPresetDefinition],
+    artifacts: PlatformArtifacts,
+    builder: WatchlistViewModelBuilder,
+    *,
+    trade_date: str,
+    output_date: str,
+    export_target: str = "Today's Watchlist",
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    hit_columns = [
+        "Output Target",
+        "trade_date",
+        "output_date",
+        "preset_name",
+        "preset_source",
+        "ticker",
+        "scan_hit_count",
+        "matched_scans",
+        "selected_scan_names",
+        "selected_annotation_filters",
+        "duplicate_threshold",
+        "duplicate_rule_mode",
+        "hybrid_score",
+        "vcs",
+    ]
+    summary_columns = [
+        "Output Target",
+        "trade_date",
+        "output_date",
+        "ticker",
+        "hit_presets",
+        "hit_preset_count",
+        "builtin_presets",
+        "custom_presets",
+        "matched_scans",
+        "selected_scan_names",
+        "selected_annotation_filters",
+        "duplicate_thresholds",
+        "duplicate_rule_modes",
+    ]
+    hit_rows: list[dict[str, object]] = []
+    scan_hits = artifacts.scan_hits.copy() if not artifacts.scan_hits.empty else pd.DataFrame(columns=["ticker", "name", "kind"])
+    if not scan_hits.empty and "ticker" in scan_hits.columns:
+        scan_hits["ticker"] = scan_hits["ticker"].astype(str).str.upper()
+    if "kind" in scan_hits.columns:
+        scan_hits = scan_hits.loc[scan_hits["kind"] == "scan"].copy()
+
+    for definition in preset_definitions:
+        preset = _watchlist_preset_config_from_definition(definition)
+        duplicate_frame, _ = builder._build_preset_frames(preset, artifacts.watchlist, artifacts.scan_hits)
+        if duplicate_frame.empty or "Ticker" not in duplicate_frame.columns:
+            continue
+        for row in duplicate_frame.to_dict("records"):
+            ticker = str(row.get("Ticker", "")).strip().upper()
+            if not ticker:
+                continue
+            matched_scans = sorted(
+                {
+                    str(name)
+                    for name in scan_hits.loc[
+                        (scan_hits["ticker"] == ticker)
+                        & (scan_hits["name"].isin(preset.selected_scan_names)),
+                        "name",
+                    ].tolist()
+                }
+            )
+            hit_rows.append(
+                {
+                    "Output Target": str(export_target).strip(),
+                    "trade_date": str(trade_date).strip(),
+                    "output_date": str(output_date).strip(),
+                    "preset_name": preset.preset_name,
+                    "preset_source": definition.source,
+                    "ticker": ticker,
+                    "scan_hit_count": int(row.get("Scan Hits", len(matched_scans)) or 0),
+                    "matched_scans": ", ".join(matched_scans),
+                    "selected_scan_names": ", ".join(preset.selected_scan_names),
+                    "selected_annotation_filters": ", ".join(preset.selected_annotation_filters),
+                    "duplicate_threshold": int(preset.duplicate_threshold),
+                    "duplicate_rule_mode": preset.duplicate_rule.mode,
+                    "hybrid_score": row.get("Hybrid-RS", ""),
+                    "vcs": row.get("VCS", ""),
+                }
+            )
+
+    hits_frame = pd.DataFrame(hit_rows, columns=hit_columns)
+
+    grouped: dict[str, dict[str, object]] = {}
+    for row in hits_frame.to_dict("records"):
+        ticker = str(row["ticker"])
+        grouped_row = grouped.setdefault(
+            ticker,
+            {
+                "Output Target": row["Output Target"],
+                "trade_date": row["trade_date"],
+                "output_date": row["output_date"],
+                "ticker": ticker,
+                "hit_presets": [],
+                "builtin_presets": [],
+                "custom_presets": [],
+                "matched_scans": [],
+                "selected_scan_names": [],
+                "selected_annotation_filters": [],
+                "duplicate_thresholds": [],
+                "duplicate_rule_modes": [],
+            },
+        )
+        preset_name = str(row["preset_name"])
+        _extend_unique_text(grouped_row["hit_presets"], [preset_name])
+        if str(row["preset_source"]) == "Custom":
+            _extend_unique_text(grouped_row["custom_presets"], [preset_name])
+        else:
+            _extend_unique_text(grouped_row["builtin_presets"], [preset_name])
+        _extend_unique_text(grouped_row["matched_scans"], str(row["matched_scans"]).split(", "))
+        _extend_unique_text(grouped_row["selected_scan_names"], str(row["selected_scan_names"]).split(", "))
+        _extend_unique_text(grouped_row["selected_annotation_filters"], str(row["selected_annotation_filters"]).split(", "))
+        _extend_unique_text(grouped_row["duplicate_thresholds"], [str(row["duplicate_threshold"])])
+        _extend_unique_text(grouped_row["duplicate_rule_modes"], [str(row["duplicate_rule_mode"])])
+
+    summary_rows: list[dict[str, object]] = []
+    for row in grouped.values():
+        hit_presets = row["hit_presets"]
+        summary_rows.append(
+            {
+                "Output Target": row["Output Target"],
+                "trade_date": row["trade_date"],
+                "output_date": row["output_date"],
+                "ticker": row["ticker"],
+                "hit_presets": ", ".join(hit_presets),
+                "hit_preset_count": len(hit_presets),
+                "builtin_presets": ", ".join(row["builtin_presets"]),
+                "custom_presets": ", ".join(row["custom_presets"]),
+                "matched_scans": ", ".join(row["matched_scans"]),
+                "selected_scan_names": ", ".join(row["selected_scan_names"]),
+                "selected_annotation_filters": ", ".join(row["selected_annotation_filters"]),
+                "duplicate_thresholds": ", ".join(row["duplicate_thresholds"]),
+                "duplicate_rule_modes": ", ".join(row["duplicate_rule_modes"]),
+            }
+        )
+    summary_frame = pd.DataFrame(summary_rows, columns=summary_columns)
+    if not summary_frame.empty:
+        summary_frame = summary_frame.sort_values(["hit_preset_count", "ticker"], ascending=[False, True]).reset_index(drop=True)
+    if not hits_frame.empty:
+        hits_frame = hits_frame.sort_values(["ticker", "preset_source", "preset_name"]).reset_index(drop=True)
+    return summary_frame, hits_frame
+
+
+def _watchlist_preset_config_from_definition(definition: WatchlistPresetDefinition) -> WatchlistPresetConfig:
+    values = definition.values
+    duplicate_threshold = int(values.get("duplicate_threshold", 1))
+    return WatchlistPresetConfig(
+        preset_name=definition.preset_name,
+        selected_scan_names=tuple(str(name) for name in values.get("selected_scan_names", [])),
+        selected_annotation_filters=tuple(str(name) for name in values.get("selected_annotation_filters", [])),
+        selected_duplicate_subfilters=tuple(str(name) for name in values.get("selected_duplicate_subfilters", [])),
+        duplicate_threshold=duplicate_threshold,
+        duplicate_rule=DuplicateRuleConfig.from_dict(values.get("duplicate_rule"), default_min_count=duplicate_threshold),
+    )
+
+
+def _extend_unique_text(target: list[str], values: list[object]) -> None:
+    existing = set(target)
+    for value in values:
+        text = str(value).strip()
+        if text and text not in existing:
+            target.append(text)
+            existing.add(text)
+
+
+def _load_builtin_watchlist_preset_definitions(scan_config: ScanConfig, *, visible_only: bool) -> list[WatchlistPresetDefinition]:
+    definitions: list[WatchlistPresetDefinition] = []
+    available_scan_names = [section.scan_name for section in scan_config.card_sections]
+    for preset in scan_config.watchlist_presets:
+        if not preset.export_enabled:
+            continue
+        if visible_only and not preset.visible_in_ui:
+            continue
+        preset_name = _normalize_watchlist_preset_name(preset.preset_name)
+        if not preset_name:
+            continue
+        values = preset.to_control_values()
+        required_scan_names, optional_scan_groups, _ = _resolve_duplicate_role_controls(
+            values.get("selected_scan_names", []),
+            values.get("duplicate_rule"),
+            int(values.get("duplicate_threshold", 1)),
+            available_scan_names,
+            return_groups=True,
+        )
+        optional_scan_names = _flatten_optional_scan_groups(optional_scan_groups)
+        definitions.append(
+            WatchlistPresetDefinition(
+                preset_name=preset_name,
+                source="Built-in",
+                values=_build_watchlist_control_values(
+                    list(values.get("selected_scan_names", [])),
+                    list(values.get("selected_annotation_filters", [])),
+                    list(values.get("selected_duplicate_subfilters", [])),
+                    int(values.get("duplicate_threshold", 1)),
+                    values.get("duplicate_rule"),
+                    required_scan_names,
+                    optional_scan_names,
+                    optional_scan_groups,
+                ),
+            )
+        )
+    return definitions
+
+
+def load_watchlist_preset_definitions(config_path: str, scan_config: ScanConfig | None = None) -> list[WatchlistPresetDefinition]:
+    scan_config = scan_config or load_scan_config(config_path)
+    definitions = _load_builtin_watchlist_preset_definitions(scan_config, visible_only=False)
+    available_scan_names = [section.scan_name for section in scan_config.card_sections]
+    available_annotation_names = [section.filter_name for section in scan_config.annotation_filters]
+    available_duplicate_subfilters = list(WatchlistViewModelBuilder(scan_config).available_duplicate_subfilters())
+    preference_store = load_user_preference_store(config_path)
+    raw_presets = preference_store.load_collection(WATCHLIST_PRESET_GROUP, watchlist_preference_namespace(config_path))
+    for raw_name, raw_record in raw_presets.items():
+        preset_name = _normalize_watchlist_preset_name(raw_name)
+        if not preset_name:
+            continue
+        values = _read_watchlist_preset_values(
+            raw_record,
+            available_scan_names=available_scan_names,
+            available_annotation_names=available_annotation_names,
+            available_duplicate_subfilters=available_duplicate_subfilters,
+            default_duplicate_threshold=scan_config.duplicate_min_count,
+        )
+        if values is None:
+            continue
+        definitions.append(
+            WatchlistPresetDefinition(
+                preset_name=preset_name,
+                source="Custom",
+                values=values,
+            )
+        )
+    return definitions
+
+
+def build_watchlist_preset_hit_frames(
+    config_path: str,
+    artifacts: PlatformArtifacts,
+    scan_config: ScanConfig | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    scan_config = scan_config or load_scan_config(config_path)
+    definitions = load_watchlist_preset_definitions(config_path, scan_config)
+    builder = WatchlistViewModelBuilder(scan_config)
+    return build_watchlist_preset_hit_exports(
+        definitions,
+        artifacts,
+        builder,
+        trade_date=_latest_trade_date_for_export(artifacts),
+        output_date=datetime.now().strftime("%Y-%m-%d"),
+    )
 
 
 def load_user_preference_store(config_path: str) -> UserPreferenceStore:
@@ -629,11 +903,13 @@ def _build_watchlist_control_values(
     duplicate_rule: dict[str, object] | None = None,
     required_scan_names: list[str] | None = None,
     optional_scan_names: list[str] | None = None,
+    optional_scan_groups: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     return {
         "selected_scan_names": list(selected_scan_names),
         "required_scan_names": list(required_scan_names or []),
         "optional_scan_names": list(optional_scan_names or []),
+        "optional_scan_groups": list(optional_scan_groups or []),
         "selected_annotation_filters": list(selected_annotation_filters),
         "selected_duplicate_subfilters": list(selected_duplicate_subfilters),
         "duplicate_threshold": int(duplicate_threshold),
@@ -658,6 +934,47 @@ def _merge_scan_role_names(required_scan_names: list[str], optional_scan_names: 
     return list(dict.fromkeys([*required_scan_names, *optional_scan_names]))
 
 
+def _normalize_optional_scan_groups(raw_groups: object, available_scan_names: list[str]) -> list[dict[str, object]]:
+    if not isinstance(raw_groups, (list, tuple)):
+        return []
+    normalized_groups: list[dict[str, object]] = []
+    used_names: set[str] = set()
+    for index, raw_group in enumerate(raw_groups, start=1):
+        if not isinstance(raw_group, dict):
+            continue
+        group_name = str(raw_group.get("group_name", raw_group.get("name", f"Optional Condition {index}"))).strip()
+        if not group_name:
+            group_name = f"Optional Condition {index}"
+        scans = [
+            name
+            for name in _filter_available_scan_names(raw_group.get("scans", []), available_scan_names)
+            if name not in used_names
+        ]
+        if not scans:
+            continue
+        used_names.update(scans)
+        try:
+            min_hits = int(raw_group.get("min_hits", 1))
+        except (TypeError, ValueError):
+            min_hits = 1
+        min_hits = max(1, min(min_hits, len(scans)))
+        normalized_groups.append(
+            {
+                "group_name": group_name,
+                "scans": scans,
+                "min_hits": min_hits,
+            }
+        )
+    return normalized_groups
+
+
+def _flatten_optional_scan_groups(optional_scan_groups: list[dict[str, object]]) -> list[str]:
+    names: list[str] = []
+    for group in optional_scan_groups:
+        names.extend(str(name) for name in group.get("scans", []) if str(name).strip())
+    return list(dict.fromkeys(names))
+
+
 def _resolve_duplicate_role_controls(
     selected_scan_names: object,
     duplicate_rule: object,
@@ -665,7 +982,19 @@ def _resolve_duplicate_role_controls(
     available_scan_names: list[str],
     required_scan_names: object = None,
     optional_scan_names: object = None,
-) -> tuple[list[str], list[str], int]:
+    optional_scan_groups: object = None,
+    *,
+    return_groups: bool = False,
+) -> tuple[list[str], list[object], int]:
+    def result(
+        required_names: list[str],
+        groups: list[dict[str, object]],
+        threshold: int,
+    ) -> tuple[list[str], list[object], int]:
+        if return_groups:
+            return required_names, groups, threshold
+        return required_names, _flatten_optional_scan_groups(groups), threshold
+
     selected_names = _filter_available_scan_names(selected_scan_names, available_scan_names)
     try:
         rule = DuplicateRuleConfig.from_dict(
@@ -676,34 +1005,68 @@ def _resolve_duplicate_role_controls(
         rule = DuplicateRuleConfig(min_count=int(duplicate_threshold))
 
     explicit_required_scan_names = _filter_available_scan_names(required_scan_names, available_scan_names)
-    explicit_optional_scan_names = [
-        name
-        for name in _filter_available_scan_names(optional_scan_names, available_scan_names)
-        if name not in explicit_required_scan_names
-    ]
-    if explicit_required_scan_names or explicit_optional_scan_names:
+    explicit_optional_groups = _normalize_optional_scan_groups(optional_scan_groups, available_scan_names)
+    if not explicit_optional_groups:
+        explicit_optional_scan_names = [
+            name
+            for name in _filter_available_scan_names(optional_scan_names, available_scan_names)
+            if name not in explicit_required_scan_names
+        ]
+        if explicit_optional_scan_names:
+            explicit_optional_groups = [
+                {
+                    "group_name": "Optional Condition 1",
+                    "scans": explicit_optional_scan_names,
+                    "min_hits": max(1, min(int(rule.optional_min_hits), len(explicit_optional_scan_names)))
+                    if rule.mode == "required_plus_optional_min"
+                    else max(1, min(int(duplicate_threshold), len(explicit_optional_scan_names))),
+                }
+            ]
+    if explicit_required_scan_names or explicit_optional_groups:
         selected_name_set = set(selected_names)
         if selected_name_set:
             explicit_required_scan_names = [
                 name for name in explicit_required_scan_names if name in selected_name_set
             ]
-            explicit_optional_scan_names = [
-                name for name in explicit_optional_scan_names if name in selected_name_set
+            explicit_optional_groups = [
+                {
+                    **group,
+                    "scans": [name for name in group.get("scans", []) if name in selected_name_set],
+                }
+                for group in explicit_optional_groups
             ]
-        if not explicit_required_scan_names and not explicit_optional_scan_names:
+            explicit_optional_groups = [
+                {**group, "min_hits": max(1, min(int(group.get("min_hits", 1)), len(group.get("scans", []))))}
+                for group in explicit_optional_groups
+                if group.get("scans")
+            ]
+        if not explicit_required_scan_names and not explicit_optional_groups:
             optional_threshold = max(1, min(int(rule.min_count), len(selected_names))) if selected_names else 1
-            return [], selected_names, optional_threshold
-        optional_threshold_source = (
-            int(rule.optional_min_hits)
-            if rule.mode == "required_plus_optional_min"
-            else int(duplicate_threshold)
-        )
-        optional_threshold = (
-            max(1, min(optional_threshold_source, len(explicit_optional_scan_names)))
-            if explicit_optional_scan_names
-            else 1
-        )
-        return explicit_required_scan_names, explicit_optional_scan_names, optional_threshold
+            return result([], [{"group_name": "Optional Condition 1", "scans": selected_names, "min_hits": optional_threshold}], optional_threshold)
+        optional_threshold = int(explicit_optional_groups[0].get("min_hits", 1)) if explicit_optional_groups else 1
+        return result(explicit_required_scan_names, explicit_optional_groups, optional_threshold)
+
+    if rule.mode == "grouped_threshold":
+        required_scan_names = _filter_available_scan_names(rule.required_scans, available_scan_names)
+        optional_groups = [
+            {
+                "group_name": group.group_name,
+                "scans": [
+                    name for name in _filter_available_scan_names(group.scans, available_scan_names)
+                    if name not in required_scan_names
+                ],
+                "min_hits": int(group.min_hits),
+            }
+            for group in rule.optional_groups
+        ]
+        optional_groups = [
+            {**group, "min_hits": max(1, min(int(group["min_hits"]), len(group["scans"])))}
+            for group in optional_groups
+            if group["scans"]
+        ]
+        if required_scan_names or optional_groups:
+            optional_threshold = int(optional_groups[0].get("min_hits", 1)) if optional_groups else 1
+            return result(required_scan_names, optional_groups, optional_threshold)
 
     if rule.mode == "required_plus_optional_min":
         required_scan_names = _filter_available_scan_names(rule.required_scans, available_scan_names)
@@ -714,32 +1077,44 @@ def _resolve_duplicate_role_controls(
         ]
         if required_scan_names and optional_scan_names:
             optional_threshold = max(1, min(int(rule.optional_min_hits), len(optional_scan_names)))
-            return required_scan_names, optional_scan_names, optional_threshold
+            return result(required_scan_names, [{"group_name": "Optional Condition 1", "scans": optional_scan_names, "min_hits": optional_threshold}], optional_threshold)
 
     optional_threshold = max(1, min(int(rule.min_count), len(selected_names))) if selected_names else 1
-    return [], selected_names, optional_threshold
+    return result([], [{"group_name": "Optional Condition 1", "scans": selected_names, "min_hits": optional_threshold}] if selected_names else [], optional_threshold)
 
 
 def _build_duplicate_role_state(
     required_scan_names: list[str],
     optional_scan_names: list[str],
     optional_threshold: int,
+    optional_scan_groups: list[dict[str, object]] | None = None,
 ) -> tuple[list[str], int, dict[str, object]]:
-    selected_scan_names = _merge_scan_role_names(required_scan_names, optional_scan_names)
-    if required_scan_names and optional_scan_names:
+    if optional_scan_groups is None and not required_scan_names and optional_scan_names:
         threshold = max(1, min(int(optional_threshold), len(optional_scan_names)))
-        rule = DuplicateRuleConfig(
-            mode="required_plus_optional_min",
-            min_count=threshold,
-            required_scans=tuple(required_scan_names),
-            optional_scans=tuple(optional_scan_names),
-            optional_min_hits=threshold,
+        rule = DuplicateRuleConfig(min_count=threshold)
+        return list(dict.fromkeys(optional_scan_names)), threshold, rule.to_dict()
+    normalized_groups = _normalize_optional_scan_groups(optional_scan_groups, [*required_scan_names, *optional_scan_names])
+    if not normalized_groups and optional_scan_names:
+        threshold = max(1, min(int(optional_threshold), len(optional_scan_names)))
+        normalized_groups = [{"group_name": "Optional Condition 1", "scans": list(optional_scan_names), "min_hits": threshold}]
+    grouped_optional_scan_names = _flatten_optional_scan_groups(normalized_groups)
+    selected_scan_names = _merge_scan_role_names(required_scan_names, grouped_optional_scan_names)
+    if normalized_groups:
+        threshold = int(normalized_groups[0].get("min_hits", 1))
+        rule = DuplicateRuleConfig.from_dict(
+            {
+                "mode": "grouped_threshold",
+                "min_count": threshold,
+                "required_scans": list(required_scan_names),
+                "optional_scans": list(grouped_optional_scan_names),
+                "optional_min_hits": threshold,
+                "optional_groups": normalized_groups,
+            },
+            default_min_count=threshold,
         )
         return selected_scan_names, threshold, rule.to_dict()
 
     threshold = max(1, len(required_scan_names)) if required_scan_names else max(1, int(optional_threshold))
-    if optional_scan_names:
-        threshold = min(threshold, len(optional_scan_names))
     rule = DuplicateRuleConfig(min_count=threshold)
     return selected_scan_names, threshold, rule.to_dict()
 
@@ -755,6 +1130,7 @@ def _watchlist_controls_equal(left: dict[str, object] | None, right: dict[str, o
         left.get("duplicate_rule"),
         list(left.get("required_scan_names", [])),
         list(left.get("optional_scan_names", [])),
+        list(left.get("optional_scan_groups", [])),
     ) == _build_watchlist_control_values(
         list(right.get("selected_scan_names", [])),
         list(right.get("selected_annotation_filters", [])),
@@ -763,6 +1139,7 @@ def _watchlist_controls_equal(left: dict[str, object] | None, right: dict[str, o
         right.get("duplicate_rule"),
         list(right.get("required_scan_names", [])),
         list(right.get("optional_scan_names", [])),
+        list(right.get("optional_scan_groups", [])),
     )
 
 
@@ -784,12 +1161,14 @@ def _build_builtin_watchlist_presets(scan_config: ScanConfig) -> dict[str, dict[
         if not preset_name:
             continue
         values = preset.to_control_values()
-        required_scan_names, optional_scan_names, _ = _resolve_duplicate_role_controls(
+        required_scan_names, optional_scan_groups, _ = _resolve_duplicate_role_controls(
             values.get("selected_scan_names", []),
             values.get("duplicate_rule"),
             int(values.get("duplicate_threshold", 1)),
             available_scan_names,
+            return_groups=True,
         )
+        optional_scan_names = _flatten_optional_scan_groups(optional_scan_groups)
         presets[preset_name] = _build_watchlist_control_values(
             list(values.get("selected_scan_names", [])),
             list(values.get("selected_annotation_filters", [])),
@@ -798,6 +1177,7 @@ def _build_builtin_watchlist_presets(scan_config: ScanConfig) -> dict[str, dict[
             values.get("duplicate_rule"),
             required_scan_names,
             optional_scan_names,
+            optional_scan_groups,
         )
     return presets
 
@@ -855,14 +1235,17 @@ def _read_watchlist_preset_values(
     except ValueError:
         return None
 
-    required_scan_names, optional_scan_names, _ = _resolve_duplicate_role_controls(
+    required_scan_names, optional_scan_groups, _ = _resolve_duplicate_role_controls(
         selected_scan_names,
         parsed_duplicate_rule,
         duplicate_threshold,
         available_scan_names,
         values.get("required_scan_names"),
         values.get("optional_scan_names"),
+        values.get("optional_scan_groups"),
+        return_groups=True,
     )
+    optional_scan_names = _flatten_optional_scan_groups(optional_scan_groups)
     return _build_watchlist_control_values(
         selected_scan_names,
         selected_annotation_filters,
@@ -871,6 +1254,7 @@ def _read_watchlist_preset_values(
         parsed_duplicate_rule,
         required_scan_names,
         optional_scan_names,
+        optional_scan_groups,
     )
 
 
@@ -882,12 +1266,14 @@ def _apply_watchlist_preset_to_session_state(
     duplicate_subfilter_key: str,
     threshold_key: str,
     duplicate_rule_key: str,
+    optional_groups_key: str,
 ) -> None:
     st.session_state[selection_key] = list(values.get("selected_scan_names", []))
     st.session_state[annotation_key] = list(values.get("selected_annotation_filters", []))
     st.session_state[duplicate_subfilter_key] = list(values.get("selected_duplicate_subfilters", []))
     st.session_state[threshold_key] = int(values.get("duplicate_threshold", 1))
     st.session_state[duplicate_rule_key] = values.get("duplicate_rule")
+    st.session_state[optional_groups_key] = list(values.get("optional_scan_groups", []))
 
 
 def _build_watchlist_preset_export_filename(preset_name: str) -> str:
@@ -900,7 +1286,7 @@ def _dataframe_to_csv_bytes(frame: pd.DataFrame) -> bytes:
     return frame.to_csv(index=False).encode("utf-8-sig")
 
 
-def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState:
+def render_watchlist_controls(config_path: str) -> WatchlistControlState:
     watchlist_scan_config = load_scan_config(config_path)
     watchlist_preference_store = load_user_preference_store(config_path)
     watchlist_preferences_namespace = watchlist_preference_namespace(config_path)
@@ -925,6 +1311,7 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
     selection_defaults_key = "watchlist_selected_scan_names_defaults"
     required_scan_key = "watchlist_required_scan_names"
     optional_scan_key = "watchlist_optional_scan_names"
+    optional_groups_key = "watchlist_optional_scan_groups"
     annotation_key = "watchlist_selected_annotation_filters"
     annotation_defaults_key = "watchlist_selected_annotation_filters_defaults"
     duplicate_subfilter_key = "watchlist_selected_duplicate_subfilters"
@@ -1001,7 +1388,7 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
     ).to_dict()
     (
         persisted_required_scan_names,
-        persisted_optional_scan_names,
+        persisted_optional_scan_groups,
         persisted_optional_threshold,
     ) = _resolve_duplicate_role_controls(
         persisted_selected_scan_names,
@@ -1010,7 +1397,10 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
         available_scan_names,
         watchlist_preferences.get("required_scan_names"),
         watchlist_preferences.get("optional_scan_names"),
+        watchlist_preferences.get("optional_scan_groups"),
+        return_groups=True,
     )
+    persisted_optional_scan_names = _flatten_optional_scan_groups(persisted_optional_scan_groups)
 
     saved_watchlist_presets: dict[str, dict[str, object]] = {}
     for raw_name, raw_record in raw_watchlist_presets.items():
@@ -1040,12 +1430,14 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
         st.session_state[preset_name_key] = st.session_state.pop(preset_name_pending_key)
 
     preset_options = [""] + list(watchlist_presets)
-    selected_preset_name = st.selectbox(
-        "Saved preset",
-        options=preset_options,
-        key=preset_select_key,
-        format_func=lambda name: name if name else "Select a preset",
-    )
+    preset_columns = st.columns([2.4, 0.9, 0.9])
+    with preset_columns[0]:
+        selected_preset_name = st.selectbox(
+            "Saved preset",
+            options=preset_options,
+            key=preset_select_key,
+            format_func=lambda name: name if name else "Select a preset",
+        )
     selected_preset_name = _resolve_selected_watchlist_preset_name(
         st.session_state.get(preset_select_key, selected_preset_name),
         watchlist_presets,
@@ -1053,17 +1445,20 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
     selected_preset_is_builtin = bool(selected_preset_name and selected_preset_name in builtin_watchlist_presets)
     selected_preset_export_name = selected_preset_name or None
     selected_preset_export_values = watchlist_presets.get(selected_preset_name) if selected_preset_name else None
-    preset_action_columns = st.columns(2)
-    load_preset = preset_action_columns[0].button(
-        "Load Preset",
-        use_container_width=True,
-        disabled=not bool(watchlist_presets),
-    )
-    delete_preset = preset_action_columns[1].button(
-        "Delete Preset",
-        use_container_width=True,
-        disabled=not selected_preset_name or selected_preset_is_builtin,
-    )
+    with preset_columns[1]:
+        st.caption(" ")
+        load_preset = st.button(
+            "Load Preset",
+            use_container_width=True,
+            disabled=not bool(watchlist_presets),
+        )
+    with preset_columns[2]:
+        st.caption(" ")
+        delete_preset = st.button(
+            "Delete Preset",
+            use_container_width=True,
+            disabled=not selected_preset_name or selected_preset_is_builtin,
+        )
 
     if load_preset:
         selected_preset_name = _resolve_selected_watchlist_preset_name(
@@ -1081,6 +1476,7 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
                 duplicate_subfilter_key=duplicate_subfilter_key,
                 threshold_key=threshold_key,
                 duplicate_rule_key=duplicate_rule_key,
+                optional_groups_key=optional_groups_key,
             )
             st.session_state[selection_defaults_key] = selection_defaults_signature
             st.session_state[annotation_defaults_key] = annotation_defaults_signature
@@ -1089,16 +1485,21 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
                 watchlist_preferences_namespace,
                 max(1, len(loaded_values["selected_scan_names"])) if loaded_values["selected_scan_names"] else 1,
             )
-            loaded_required_scan_names, loaded_optional_scan_names, loaded_optional_threshold = _resolve_duplicate_role_controls(
+            loaded_required_scan_names, loaded_optional_scan_groups, loaded_optional_threshold = _resolve_duplicate_role_controls(
                 loaded_values.get("selected_scan_names", []),
                 loaded_values.get("duplicate_rule"),
                 int(loaded_values.get("duplicate_threshold", 1)),
                 available_scan_names,
                 loaded_values.get("required_scan_names"),
                 loaded_values.get("optional_scan_names"),
+                loaded_values.get("optional_scan_groups"),
+                return_groups=True,
             )
+            loaded_optional_scan_names = _flatten_optional_scan_groups(loaded_optional_scan_groups)
             st.session_state[required_scan_key] = loaded_required_scan_names
             st.session_state[optional_scan_key] = loaded_optional_scan_names
+            st.session_state[optional_groups_key] = loaded_optional_scan_groups
+            st.session_state["watchlist_condition_group_count"] = max(1, len(loaded_optional_scan_groups) or 1)
             st.session_state[threshold_key] = loaded_optional_threshold
             st.session_state[preset_name_key] = selected_preset_name
             st.success(f"Loaded preset '{selected_preset_name}'.")
@@ -1126,6 +1527,7 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
     if st.session_state.get(selection_defaults_key) != selection_defaults_signature:
         st.session_state[required_scan_key] = persisted_required_scan_names
         st.session_state[optional_scan_key] = persisted_optional_scan_names
+        st.session_state[optional_groups_key] = persisted_optional_scan_groups
         st.session_state[selection_key] = _merge_scan_role_names(
             persisted_required_scan_names,
             persisted_optional_scan_names,
@@ -1143,37 +1545,155 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
             for name in st.session_state.get(optional_scan_key, current_selected_scan_names)
             if name in available_scan_names and name not in st.session_state[required_scan_key]
         ]
+        st.session_state[optional_groups_key] = _normalize_optional_scan_groups(
+            st.session_state.get(optional_groups_key, []),
+            available_scan_names,
+        )
+        if not st.session_state[optional_groups_key] and st.session_state[optional_scan_key]:
+            st.session_state[optional_groups_key] = [
+                {
+                    "group_name": "Optional Condition 1",
+                    "scans": list(st.session_state[optional_scan_key]),
+                    "min_hits": max(1, min(int(st.session_state.get(threshold_key, 1)), len(st.session_state[optional_scan_key]))),
+                }
+            ]
         st.session_state[selection_key] = _merge_scan_role_names(
             st.session_state[required_scan_key],
             st.session_state[optional_scan_key],
         )
 
+    st.caption("Required scans must all hit. Each optional condition must meet its own minimum hit count.")
     selected_required_scans = st.multiselect(
-        "Required cards",
+        "Required scans",
         options=available_scan_names,
         format_func=lambda name: display_names.get(name, name),
         key=required_scan_key,
     )
-    optional_scan_options = [
-        name
-        for name in available_scan_names
-        if name not in selected_required_scans
+    available_group_scan_names = [
+        name for name in available_scan_names if name not in selected_required_scans
     ]
-    st.session_state[optional_scan_key] = [
-        name
-        for name in st.session_state.get(optional_scan_key, [])
-        if name in optional_scan_options
-    ]
-    selected_optional_scans = st.multiselect(
-        "Optional cards",
-        options=optional_scan_options,
-        format_func=lambda name: display_names.get(name, name),
-        key=optional_scan_key,
+    existing_groups = _normalize_optional_scan_groups(
+        st.session_state.get(optional_groups_key, persisted_optional_scan_groups),
+        available_group_scan_names,
     )
+    group_count_key = "watchlist_condition_group_count"
+    max_condition_groups = 5
+    if group_count_key not in st.session_state:
+        st.session_state[group_count_key] = max(1, len(existing_groups) or 1)
+    try:
+        condition_group_count = int(st.session_state.get(group_count_key, 1))
+    except (TypeError, ValueError):
+        condition_group_count = 1
+    condition_group_count = max(1, min(condition_group_count, max_condition_groups))
+    st.session_state[group_count_key] = condition_group_count
+    group_count_columns = st.columns([1.15, 1.15, 2.7])
+    with group_count_columns[0]:
+        add_condition_group = st.button(
+            "Add optional condition",
+            key="watchlist_add_condition_group",
+            use_container_width=True,
+            disabled=condition_group_count >= max_condition_groups,
+        )
+    with group_count_columns[1]:
+        remove_condition_group = st.button(
+            "Remove last condition",
+            key="watchlist_remove_condition_group",
+            use_container_width=True,
+            disabled=condition_group_count <= 1,
+        )
+    if add_condition_group:
+        condition_group_count = min(max_condition_groups, condition_group_count + 1)
+        st.session_state[group_count_key] = condition_group_count
+    if remove_condition_group:
+        removed_index = condition_group_count
+        condition_group_count = max(1, condition_group_count - 1)
+        st.session_state[group_count_key] = condition_group_count
+        for suffix in ("name", "scans", "min"):
+            st.session_state.pop(f"watchlist_condition_group_{removed_index}_{suffix}", None)
+    with group_count_columns[2]:
+        st.caption(
+            f"{condition_group_count} optional condition group(s). Each group is required, and each group can accept N hits from its own scan set."
+        )
+    while len(existing_groups) < condition_group_count:
+        existing_groups.append(
+            {
+                "group_name": f"Optional Condition {len(existing_groups) + 1}",
+                "scans": [],
+                "min_hits": 1,
+            }
+        )
+    existing_groups = existing_groups[:condition_group_count]
+
+    selected_optional_groups: list[dict[str, object]] = []
+    used_group_scans: set[str] = set()
+    for index, group in enumerate(existing_groups, start=1):
+        group_label_key = f"watchlist_condition_group_{index}_name"
+        group_scans_key = f"watchlist_condition_group_{index}_scans"
+        group_min_key = f"watchlist_condition_group_{index}_min"
+        if group_label_key not in st.session_state:
+            st.session_state[group_label_key] = str(group.get("group_name", f"Optional Condition {index}"))
+        group_scan_options = [
+            name
+            for name in available_group_scan_names
+            if name not in used_group_scans or name in group.get("scans", [])
+        ]
+        if group_scans_key not in st.session_state:
+            st.session_state[group_scans_key] = [
+                name for name in group.get("scans", []) if name in group_scan_options
+            ]
+        else:
+            st.session_state[group_scans_key] = [
+                name for name in st.session_state.get(group_scans_key, []) if name in group_scan_options
+            ]
+        with st.container(border=True):
+            st.markdown(f"**Optional condition {index}**")
+            group_name_columns = st.columns([2.4, 0.8])
+            with group_name_columns[0]:
+                group_name = st.text_input(
+                    f"Optional condition {index} name",
+                    key=group_label_key,
+                ).strip() or f"Optional Condition {index}"
+            group_scans = st.multiselect(
+                f"{group_name} scans",
+                options=group_scan_options,
+                format_func=lambda name: display_names.get(name, name),
+                key=group_scans_key,
+            )
+            used_group_scans.update(group_scans)
+            max_group_hits = max(1, len(group_scans)) if group_scans else 1
+            if group_min_key not in st.session_state:
+                st.session_state[group_min_key] = max(1, min(int(group.get("min_hits", 1)), max_group_hits))
+            else:
+                st.session_state[group_min_key] = max(1, min(int(st.session_state[group_min_key]), max_group_hits))
+            with group_name_columns[1]:
+                group_min_hits = int(
+                    st.number_input(
+                        "Required hits",
+                        min_value=1,
+                        max_value=max_group_hits,
+                        step=1,
+                        key=group_min_key,
+                        disabled=not group_scans,
+                        help=f"Minimum hits required inside {group_name}.",
+                    )
+                )
+            if group_scans:
+                selected_optional_groups.append(
+                    {
+                        "group_name": group_name,
+                        "scans": list(group_scans),
+                        "min_hits": max(1, min(group_min_hits, len(group_scans))),
+                    }
+                )
+
+    selected_optional_scans = _flatten_optional_scan_groups(selected_optional_groups)
+    st.session_state[optional_scan_key] = selected_optional_scans
+    st.session_state[optional_groups_key] = selected_optional_groups
     selected_watchlist_scans, duplicate_threshold, current_duplicate_rule = _build_duplicate_role_state(
         selected_required_scans,
         selected_optional_scans,
         int(st.session_state.get(threshold_key, persisted_optional_threshold)),
+        selected_optional_groups,
     )
     st.session_state[selection_key] = selected_watchlist_scans
     st.session_state[duplicate_rule_key] = current_duplicate_rule
@@ -1208,31 +1728,12 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
     selected_duplicate_subfilters: list[str] = []
     st.session_state[duplicate_subfilter_key] = selected_duplicate_subfilters
 
-    max_threshold = max(1, len(selected_optional_scans)) if selected_optional_scans else 1
-    threshold_defaults_signature = (watchlist_preferences_namespace, max_threshold)
-    if st.session_state.get(threshold_defaults_key) != threshold_defaults_signature:
-        st.session_state[threshold_key] = min(duplicate_threshold, max_threshold)
-        st.session_state[threshold_defaults_key] = threshold_defaults_signature
-    else:
-        st.session_state[threshold_key] = max(
-            1,
-            min(int(st.session_state.get(threshold_key, persisted_optional_threshold)), max_threshold),
-        )
-
-    optional_threshold = int(
-        st.number_input(
-            "Optional threshold",
-            min_value=1,
-            max_value=max_threshold,
-            step=1,
-            key=threshold_key,
-            disabled=not selected_optional_scans,
-        )
-    )
+    st.session_state[threshold_key] = int(duplicate_threshold)
     selected_watchlist_scans, duplicate_threshold, current_duplicate_rule = _build_duplicate_role_state(
         selected_required_scans,
         selected_optional_scans,
-        optional_threshold,
+        duplicate_threshold,
+        selected_optional_groups,
     )
     st.session_state[selection_key] = selected_watchlist_scans
     st.session_state[duplicate_rule_key] = current_duplicate_rule
@@ -1245,6 +1746,7 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
         st.session_state.get(duplicate_rule_key),
         selected_required_scans,
         selected_optional_scans,
+        selected_optional_groups,
     )
     selected_saved_preset_values = (
         saved_watchlist_presets.get(selected_preset_name)
@@ -1257,22 +1759,27 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
     )
 
     st.markdown("**Preset Editor**")
-    st.text_input(
-        "Preset name",
-        key=preset_name_key,
-        placeholder="e.g. Momentum Core",
-    )
-    preset_editor_columns = st.columns(2)
-    save_preset = preset_editor_columns[0].button("Save Preset", use_container_width=True)
-    update_preset = preset_editor_columns[1].button(
-        "Update Preset",
-        use_container_width=True,
-        disabled=(
-            not selected_preset_name
-            or selected_preset_is_builtin
-            or not preset_has_unsaved_changes
-        ),
-    )
+    preset_editor_columns = st.columns([2.4, 0.9, 0.9])
+    with preset_editor_columns[0]:
+        st.text_input(
+            "Preset name",
+            key=preset_name_key,
+            placeholder="e.g. Momentum Core",
+        )
+    with preset_editor_columns[1]:
+        st.caption(" ")
+        save_preset = st.button("Save Preset", use_container_width=True)
+    with preset_editor_columns[2]:
+        st.caption(" ")
+        update_preset = st.button(
+            "Update Preset",
+            use_container_width=True,
+            disabled=(
+                not selected_preset_name
+                or selected_preset_is_builtin
+                or not preset_has_unsaved_changes
+            ),
+        )
 
     if save_preset:
         preset_name = _normalize_watchlist_preset_name(st.session_state.get(preset_name_key, ""))
@@ -1311,11 +1818,12 @@ def render_watchlist_sidebar_controls(config_path: str) -> WatchlistSidebarState
         current_watchlist_controls,
     )
 
-    return WatchlistSidebarState(
+    return WatchlistControlState(
         scan_config=watchlist_scan_config,
         selected_scan_names=selected_watchlist_scans,
         required_scan_names=selected_required_scans,
         optional_scan_names=selected_optional_scans,
+        optional_scan_groups=selected_optional_groups,
         selected_annotation_filters=selected_annotation_filters,
         selected_duplicate_subfilters=selected_duplicate_subfilters,
         duplicate_threshold=duplicate_threshold,
@@ -1352,6 +1860,7 @@ def _format_trade_date(artifacts: PlatformArtifacts) -> str:
 
 
 def render_watchlist(
+    config_path: str,
     artifacts: PlatformArtifacts,
     scan_config: ScanConfig | None = None,
     selected_scan_names: list[str] | None = None,
@@ -1400,6 +1909,8 @@ def render_watchlist(
     st.markdown("<div class='oratek-page-title'>Today's Watchlist</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='oratek-page-subtitle'>{html.escape(_format_trade_date(artifacts))}</div>", unsafe_allow_html=True)
 
+    render_preset_hits_panel(config_path, artifacts, scan_config)
+
     cards: list[tuple[str, list[str], str, str | None]] = [
         (
             card.display_name,
@@ -1423,7 +1934,14 @@ def render_watchlist(
         duplicate_note = f"Counted from {len(effective_selected_scan_names)} selected cards"
         if effective_selected_annotation_filters:
             duplicate_note += f" after {len(effective_selected_annotation_filters)} post-scan filter(s)"
-        if parsed_duplicate_rule.mode == "required_plus_optional_min":
+        if parsed_duplicate_rule.mode == "grouped_threshold":
+            duplicate_note += f". Required scans: {', '.join(parsed_duplicate_rule.required_scans) or 'none'}."
+            for group in parsed_duplicate_rule.optional_groups:
+                duplicate_note += (
+                    f" {group.group_name}: {group.min_hits}+ of "
+                    f"{', '.join(group.scans)}."
+                )
+        elif parsed_duplicate_rule.mode == "required_plus_optional_min":
             duplicate_note += (
                 f". Required scans: {', '.join(parsed_duplicate_rule.required_scans)}."
                 f" Optional scans: {', '.join(parsed_duplicate_rule.optional_scans)} with "
@@ -1435,7 +1953,7 @@ def render_watchlist(
             duplicate_note += f" Duplicate subfilters: {', '.join(effective_selected_duplicate_subfilters)}."
         duplicate_empty_text = "No duplicate tickers in the current watchlist for the selected cards."
     else:
-        duplicate_note = "No cards are selected. Choose one or more watchlist cards in the sidebar to enable duplicate counting."
+        duplicate_note = "No cards are selected. Choose one or more watchlist cards in the watchlist controls to enable duplicate counting."
         duplicate_empty_text = "No cards selected."
 
     render_priority_band_from_frame(
@@ -1445,7 +1963,22 @@ def render_watchlist(
         duplicate_empty_text,
     )
 
-    earnings_frame = artifacts.earnings_today.sort_values("Hybrid-RS", ascending=False) if not artifacts.earnings_today.empty and "Hybrid-RS" in artifacts.earnings_today.columns else artifacts.earnings_today
+    with st.expander("Current duplicate rule", expanded=False):
+        required_text = ", ".join(required_scan_names or []) if required_scan_names else "None"
+        st.caption(f"Required: {required_text}")
+        if parsed_duplicate_rule.mode == "grouped_threshold":
+            for group in parsed_duplicate_rule.optional_groups:
+                st.caption(
+                    f"{group.group_name}: {group.min_hits} of {len(group.scans)} required - "
+                    + ", ".join(group.scans)
+                )
+        elif parsed_duplicate_rule.mode == "required_plus_optional_min":
+            st.caption(
+                f"Optional: {parsed_duplicate_rule.optional_min_hits} of {len(parsed_duplicate_rule.optional_scans)} required - "
+                + ", ".join(parsed_duplicate_rule.optional_scans)
+            )
+        else:
+            st.caption(f"Duplicate threshold: {duplicate_threshold} selected scan hit(s).")
 
     if not effective_selected_scan_names:
         st.caption("No watchlist cards are selected.")
@@ -1461,18 +1994,92 @@ def render_watchlist(
                 with column:
                     render_ticker_card(title, tickers, empty_text, role=role)
 
-    st.markdown("<div style='margin-top:.2rem;'></div>", unsafe_allow_html=True)
-    render_ticker_card(
-        "Earnings for today (liquid)",
-        _to_ticker_list(earnings_frame),
-        "No same-day earnings names in the current eligible universe.",
-    )
     render_data_health_table(artifacts)
+
+
+def render_preset_hits_panel(
+    config_path: str,
+    artifacts: PlatformArtifacts,
+    scan_config: ScanConfig,
+) -> None:
+    with st.expander("Preset Hits", expanded=True):
+        try:
+            summary_frame, hits_frame = build_watchlist_preset_hit_frames(config_path, artifacts, scan_config)
+        except Exception as exc:
+            st.error(f"Preset hit list could not be built: {exc}")
+            return
+
+        trade_date = _latest_trade_date_for_export(artifacts)
+        preset_count = len(load_watchlist_preset_definitions(config_path, scan_config))
+        hit_count = len(summary_frame)
+        st.caption(
+            f"{hit_count:,} ticker(s) matched preset duplicate rules on {trade_date}. "
+            f"Evaluated {preset_count:,} built-in/custom preset(s)."
+        )
+
+        if summary_frame.empty:
+            st.caption("No preset hits for the current watchlist run.")
+        else:
+            display = summary_frame.rename(
+                columns={
+                    "ticker": "Ticker",
+                    "hit_presets": "Hit Presets",
+                    "hit_preset_count": "Preset Count",
+                    "builtin_presets": "Built-in Presets",
+                    "custom_presets": "Custom Presets",
+                    "matched_scans": "Matched Scans",
+                    "duplicate_rule_modes": "Rule Modes",
+                }
+            )
+            display_columns = [
+                "Ticker",
+                "Preset Count",
+                "Hit Presets",
+                "Built-in Presets",
+                "Custom Presets",
+                "Matched Scans",
+                "Rule Modes",
+            ]
+            st.dataframe(
+                display[[column for column in display_columns if column in display.columns]],
+                width="stretch",
+                hide_index=True,
+            )
+
+        download_col, write_col = st.columns([1, 1])
+        with download_col:
+            st.download_button(
+                "Download preset hits CSV",
+                data=_dataframe_to_csv_bytes(hits_frame),
+                file_name=f"preset_hits_{trade_date.replace('-', '')}.csv",
+                mime="text/csv",
+                use_container_width=True,
+                disabled=hits_frame.empty,
+            )
+        with write_col:
+            if st.button("Write preset CSV files", type="secondary", use_container_width=True):
+                try:
+                    export_dir = export_watchlist_preset_csvs(config_path, artifacts, respect_config=False)
+                except Exception as exc:
+                    st.error(f"Preset CSV export failed: {exc}")
+                else:
+                    if export_dir is None:
+                        st.warning("No preset definitions were available for export.")
+                    else:
+                        st.session_state["preset_export_directory"] = str(export_dir)
+                        st.success(f"Preset CSV files written to: {export_dir}")
+
+        export_dir = st.session_state.get("preset_export_directory")
+        if export_dir:
+            st.caption(f"Latest preset CSV output: {export_dir}")
+        export_error = st.session_state.get("preset_export_error")
+        if export_error:
+            st.caption(f"Automatic preset CSV output failed: {export_error}")
 
 
 def render_entry_signals(
     artifacts: PlatformArtifacts,
-    watchlist_state: WatchlistSidebarState,
+    watchlist_state: WatchlistControlState,
     signal_state: EntrySignalPageState,
 ) -> None:
     render_page_header(
@@ -1811,6 +2418,30 @@ def _tracking_health_value(payload: dict[str, object], key: str) -> int:
         return 0
 
 
+def render_setting() -> None:
+    render_page_header(
+        "Setting",
+        subtitle="Tracking diagnostics now. Global app settings can be added here.",
+    )
+    tracking_health = st.session_state.get("tracking_health")
+    if not isinstance(tracking_health, dict) or not tracking_health:
+        st.caption("Tracking health is available after loading screening artifacts.")
+        return
+    rows = [
+        ("Active detections", _tracking_health_value(tracking_health, "active_detection_count")),
+        ("Missing hit close", _tracking_health_value(tracking_health, "missing_hit_close_count")),
+        ("Missing 1D close", _tracking_health_value(tracking_health, "missing_close_1d_count")),
+        ("Missing 5D close", _tracking_health_value(tracking_health, "missing_close_5d_count")),
+        ("Filled 1D returns", _tracking_health_value(tracking_health, "filled_return_1d_count")),
+        ("Filled 5D returns", _tracking_health_value(tracking_health, "filled_return_5d_count")),
+    ]
+    st.dataframe(
+        pd.DataFrame(rows, columns=["Metric", "Count"]),
+        width="stretch",
+        hide_index=True,
+    )
+
+
 @st.cache_data(ttl=1800, show_spinner=False)
 def _load_benchmark_price_history(config_path: str, benchmark_ticker: str) -> pd.DataFrame:
     settings = load_settings(config_path)
@@ -1990,9 +2621,130 @@ def _build_tracking_analysis_export_frames(
     return observations, detection_scans
 
 
-def render_tracking_analytics() -> None:
+def _format_tracking_percent(value: object, *, signed: bool = True) -> str:
+    number = _coerce_number(value)
+    if number is None:
+        return "-"
+    sign = "+" if signed else ""
+    return f"{number:{sign}.2f}%"
+
+
+def _format_tracking_price(value: object) -> str:
+    number = _coerce_number(value)
+    if number is None:
+        return "-"
+    return f"{number:,.2f}"
+
+
+def _format_tracking_count(value: object) -> str:
+    number = _coerce_number(value)
+    if number is None:
+        return "-"
+    return f"{int(number):,}"
+
+
+def _format_tracking_metric(value: object) -> str:
+    number = _coerce_number(value)
+    if number is None:
+        return "-"
+    return f"{number:.1f}"
+
+
+def _format_tracking_win_rate(value: object) -> str:
+    number = _coerce_number(value)
+    if number is None:
+        return "-"
+    return f"{number * 100.0:.1f}%"
+
+
+def _tracking_value_until_horizon(row: pd.Series, column_name: str, horizon: int, selected_horizon: int, formatter) -> str:
+    if horizon > selected_horizon:
+        return "-"
+    return formatter(row.get(column_name))
+
+
+def _build_tracking_ranking_display(ranking: pd.DataFrame) -> pd.DataFrame:
+    if ranking.empty:
+        return pd.DataFrame()
+    return pd.DataFrame(
+        {
+            "Preset": ranking["preset_name"].astype(str),
+            "Market": ranking["market_env"].astype(str),
+            "Avg Return (%)": ranking["avg_return_pct"].map(_format_tracking_percent),
+            "Excess vs Benchmark (%)": ranking["excess_avg_pct"].map(_format_tracking_percent),
+            "Max Return (%)": ranking["max_return_pct"].map(_format_tracking_percent),
+            "Min Return (%)": ranking["min_return_pct"].map(_format_tracking_percent),
+            "Win Rate (%)": ranking["win_rate"].map(_format_tracking_win_rate),
+            "Detections": ranking["detection_count"].map(_format_tracking_count),
+        }
+    )
+
+
+def _build_tracking_detail_display(
+    detail: pd.DataFrame,
+    *,
+    selected_horizon: int,
+    benchmark_ticker: str,
+) -> pd.DataFrame:
+    if detail.empty:
+        return pd.DataFrame()
+    rows: list[dict[str, object]] = []
+    for _, row in detail.iterrows():
+        display_row: dict[str, object] = {
+            "Hit Date": row.get("hit_date"),
+            "Preset": row.get("preset_name"),
+            "Market": row.get("market_env"),
+            "Ticker": row.get("ticker"),
+            "Status": row.get("status"),
+            "Hit Close": _format_tracking_price(row.get("close_at_hit")),
+            "RS21": _format_tracking_metric(row.get("rs21_at_hit")),
+            "VCS": _format_tracking_metric(row.get("vcs_at_hit")),
+            "Hybrid": _format_tracking_metric(row.get("hybrid_score_at_hit")),
+            "Duplicate Hits": _format_tracking_count(row.get("duplicate_hit_count")),
+        }
+        for horizon in TRACKING_HORIZON_OPTIONS:
+            label = f"{horizon}D"
+            display_row[f"{label} Close"] = _tracking_value_until_horizon(
+                row,
+                f"close_at_{horizon}d",
+                horizon,
+                selected_horizon,
+                _format_tracking_price,
+            )
+            display_row[f"{label} Return (%)"] = _tracking_value_until_horizon(
+                row,
+                f"return_{horizon}d",
+                horizon,
+                selected_horizon,
+                _format_tracking_percent,
+            )
+        display_row[f"Excess vs {benchmark_ticker} (%)"] = _format_tracking_percent(row.get("excess_return_pct"))
+        display_row["Hit Scans"] = row.get("hit_scans")
+        display_row["Matched Filters"] = row.get("matched_filters")
+        rows.append(display_row)
+    return pd.DataFrame(rows)
+
+
+def _style_tracking_excess_rows(frame: pd.DataFrame, excess_column: str):
+    if frame.empty or excess_column not in frame.columns:
+        return frame
+
+    def row_style(row: pd.Series) -> list[str]:
+        number = _coerce_number(row.get(excess_column))
+        if number is None:
+            return ["" for _ in row]
+        if number > 0:
+            return ["background-color:rgba(33,164,111,.11);" for _ in row]
+        if number < 0:
+            return ["background-color:rgba(223,91,91,.11);" for _ in row]
+        return ["" for _ in row]
+
+    return frame.style.apply(row_style, axis=1)
+
+
+def render_analysis() -> None:
     render_page_header(
-        "Tracking Analytics",
+        "Analysis",
         subtitle="Preset-level performance summary with unified filters.",
     )
     detail_frame = read_detection_detail()
@@ -2132,7 +2884,6 @@ def render_tracking_analytics() -> None:
         else:
             selected_date_range = st.date_input(
                 "Hit Date Range",
-                value=st.session_state[selected_date_range_widget_key],
                 key=selected_date_range_widget_key,
             )
     with e_col:
@@ -2219,31 +2970,21 @@ def render_tracking_analytics() -> None:
         ranking["max_return_pct"] = ranking["max_return_pct"].round(2)
         ranking["min_return_pct"] = ranking["min_return_pct"].round(2)
         ranking["win_rate"] = ranking["win_rate"].round(3)
-        ranking["benchmark_avg_pct"] = ranking["benchmark_avg_pct"].round(2)
         ranking["excess_avg_pct"] = ranking["excess_avg_pct"].round(2)
         ranking = ranking.sort_values(["avg_return_pct", "detection_count"], ascending=[False, False]).reset_index(drop=True)
         st.caption(f"{len(ranking):,} rows")
-        ranking_display = ranking.rename(
-            columns={
-                "preset_name": "preset",
-                "market_env": "env",
-                "avg_return_pct": "avg%",
-                "benchmark_avg_pct": "bench%",
-                "excess_avg_pct": "excess%",
-                "max_return_pct": "max%",
-                "min_return_pct": "min%",
-                "win_rate": "win",
-                "detection_count": "n",
-            }
-        )
+        ranking_display = _build_tracking_ranking_display(ranking)
         st.dataframe(
-            ranking_display[["preset", "env", "avg%", "bench%", "excess%", "max%", "min%", "win", "n"]],
+            _style_tracking_excess_rows(ranking_display, "Excess vs Benchmark (%)"),
             width="stretch",
             hide_index=True,
             height=min(620, 110 + max(1, len(ranking)) * 32),
         )
 
-    render_section_heading("Detail", "Scope-matched rows with selected horizon return.")
+    render_section_heading(
+        "Detail",
+        f"Scope-matched rows with returns through the selected {selected_horizon}D horizon. Later horizons are shown as '-'.",
+    )
     filtered_detail["selected_return_pct"] = filtered_detail[return_column]
     filtered_detail["selected_close_at_target"] = filtered_detail[close_column]
     filtered_detail["benchmark_return_pct"] = filtered_detail["hit_date"].map(
@@ -2259,22 +3000,13 @@ def render_tracking_analytics() -> None:
     filtered_detail = filtered_detail.sort_values(["hit_date", "preset_name", "ticker"], ascending=[False, True, True])
     filtered_detail["hit_date"] = filtered_detail["hit_date"].dt.strftime("%Y-%m-%d")
     st.caption(f"{len(filtered_detail):,} rows")
+    detail_display = _build_tracking_detail_display(
+        filtered_detail,
+        selected_horizon=selected_horizon,
+        benchmark_ticker=selected_benchmark,
+    )
     st.dataframe(
-        filtered_detail[
-            [
-                "hit_date",
-                "preset_name",
-                "market_env",
-                "ticker",
-                "status",
-                "close_at_hit",
-                "selected_close_at_target",
-                "selected_return_pct",
-                "benchmark_return_pct",
-                "excess_return_pct",
-                "hit_scans",
-            ]
-        ],
+        _style_tracking_excess_rows(detail_display, f"Excess vs {selected_benchmark} (%)"),
         width="stretch",
         hide_index=True,
         height=min(760, 110 + max(1, len(filtered_detail)) * 30),
@@ -2303,27 +3035,11 @@ def render_tracking_analytics() -> None:
         st.caption("No scoped observations were available for export.")
     else:
         st.caption(f"observations: {len(observations_export):,} rows / detection_scans: {len(detection_scans_export):,} rows")
-    tracking_health = st.session_state.get("tracking_health")
-    tracking_health_payload = tracking_health if isinstance(tracking_health, dict) else {}
-    with st.expander("Tracking Health (Ops)", expanded=False):
-        st.caption(
-            " / ".join(
-                [
-                    f"active {_tracking_health_value(tracking_health_payload, 'active_detection_count')}",
-                    f"missing hit close {_tracking_health_value(tracking_health_payload, 'missing_hit_close_count')}",
-                    f"missing 1D close {_tracking_health_value(tracking_health_payload, 'missing_close_1d_count')}",
-                    f"missing 5D close {_tracking_health_value(tracking_health_payload, 'missing_close_5d_count')}",
-                    f"filled 1D return {_tracking_health_value(tracking_health_payload, 'filled_return_1d_count')}",
-                    f"filled 5D return {_tracking_health_value(tracking_health_payload, 'filled_return_5d_count')}",
-                ]
-            )
-        )
-
-
 def render_active_page(
     page_key: str,
+    config_path: str,
     artifacts: PlatformArtifacts,
-    watchlist_state: WatchlistSidebarState | None,
+    watchlist_state: WatchlistControlState | None,
     signal_state: EntrySignalPageState | None,
 ) -> None:
     if page_key == "watchlist":
@@ -2331,6 +3047,7 @@ def render_active_page(
             st.error("Watchlist controls could not be initialized.")
             return
         render_watchlist(
+            config_path,
             artifacts,
             scan_config=watchlist_state.scan_config,
             selected_scan_names=watchlist_state.selected_scan_names,
@@ -2351,8 +3068,11 @@ def render_active_page(
     if page_key == "rs_radar":
         render_rs_radar(artifacts)
         return
-    if page_key == "tracking_analytics":
-        render_tracking_analytics()
+    if page_key == "analysis":
+        render_analysis()
+        return
+    if page_key == "setting":
+        render_setting()
         return
     render_market_dashboard(artifacts)
 
@@ -2361,27 +3081,20 @@ def main() -> None:
     inject_global_styles()
     default_config = ROOT / "config" / "default.yaml"
     page_key = current_page_key()
-    watchlist_state: WatchlistSidebarState | None = None
+    watchlist_state: WatchlistControlState | None = None
     signal_state: EntrySignalPageState | None = None
 
-    with st.sidebar:
-        st.markdown("<div class='oratek-sidebar-title'>Growth Trading Screener</div>", unsafe_allow_html=True)
-        st.markdown("**Controls**")
-        config_path = str(default_config)
-        symbols_raw = st.text_area("Manual Symbols (optional)", value="", height=120, placeholder="Leave blank to use weekly universe snapshot")
-        force_universe_refresh = st.checkbox("Force Weekly Universe Refresh", value=False)
+    config_path = str(default_config)
+    symbols: list[str] = []
+    with st.expander("Run options", expanded=False):
+        force_universe_refresh = st.checkbox("Force weekly universe refresh", value=False)
         force_price_refresh = st.checkbox(
-            "Force Price Data Refresh",
+            "Force price data refresh",
             value=False,
             help="Bypass the price-cache TTL and fetch the latest OHLCV data while keeping cached rows as fallback.",
         )
+        refresh = st.button("Refresh data", type="secondary")
 
-        if page_key in {"watchlist", "entry_signals"}:
-            watchlist_state = render_watchlist_sidebar_controls(config_path)
-
-        refresh = st.button("Refresh", type="primary")
-
-    symbols = parse_symbols(symbols_raw)
     cache_key = (config_path, tuple(symbols), force_universe_refresh, force_price_refresh)
     if refresh or st.session_state.get("artifacts_key") != cache_key:
         with st.spinner("Loading screening artifacts..."):
@@ -2394,7 +3107,14 @@ def main() -> None:
             )
             st.session_state["artifacts"] = artifacts
             if artifacts.artifact_origin == "pipeline_recomputed":
-                st.session_state["preset_export_directory"] = ""
+                try:
+                    preset_export_dir = export_watchlist_preset_csvs(config_path, artifacts)
+                except Exception as exc:
+                    preset_export_dir = None
+                    st.session_state["preset_export_error"] = str(exc)
+                else:
+                    st.session_state["preset_export_error"] = ""
+                st.session_state["preset_export_directory"] = str(preset_export_dir) if preset_export_dir is not None else ""
                 effectiveness_sync = sync_preset_effectiveness_logs(
                     config_path,
                     artifacts,
@@ -2402,6 +3122,7 @@ def main() -> None:
                 )
             else:
                 st.session_state["preset_export_directory"] = ""
+                st.session_state["preset_export_error"] = ""
                 effectiveness_sync = sync_preset_effectiveness_logs(
                     config_path,
                     artifacts,
@@ -2429,8 +3150,8 @@ def main() -> None:
     render_context_strip([f"Data source: {artifacts.data_source_label}"])
     render_data_health_banner(artifacts)
     if page_key in {"watchlist", "entry_signals"} and watchlist_state is None:
-        with st.sidebar:
-            watchlist_state = render_watchlist_sidebar_controls(config_path)
+        with st.expander("Watchlist presets and controls", expanded=False):
+            watchlist_state = render_watchlist_controls(config_path)
 
     if (
         page_key == "watchlist"
@@ -2453,7 +3174,7 @@ def main() -> None:
                 ),
             ),
         )
-        with st.sidebar:
+        with st.expander("Preset export", expanded=False):
             st.markdown("**Preset Export**")
             st.download_button(
                 "Export Preset CSV",
@@ -2472,41 +3193,19 @@ def main() -> None:
     if page_key == "entry_signals" and watchlist_state is None:
         scan_config = load_scan_config(config_path)
         startup_scan_names = list(scan_config.startup_selected_scan_names())
-        watchlist_state = WatchlistSidebarState(
+        watchlist_state = WatchlistControlState(
             scan_config=scan_config,
             selected_scan_names=startup_scan_names,
             required_scan_names=[],
             optional_scan_names=startup_scan_names,
+            optional_scan_groups=[{"group_name": "Optional Condition 1", "scans": startup_scan_names, "min_hits": scan_config.duplicate_min_count}],
             selected_annotation_filters=list(scan_config.enabled_annotation_filters),
             selected_duplicate_subfilters=[],
             duplicate_threshold=scan_config.duplicate_min_count,
             duplicate_rule=DuplicateRuleConfig(min_count=scan_config.duplicate_min_count).to_dict(),
         )
 
-    render_active_page(page_key, artifacts, watchlist_state, signal_state)
-
-    tracking_health = st.session_state.get("tracking_health")
-    if isinstance(tracking_health, dict):
-        with st.sidebar:
-            st.markdown("**Tracking Health**")
-            st.caption(
-                " / ".join(
-                    [
-                        f"active {tracking_health.get('active_detection_count', 0)}",
-                        f"missing hit close {tracking_health.get('missing_hit_close_count', 0)}",
-                        f"missing 1D close {tracking_health.get('missing_close_1d_count', 0)}",
-                        f"missing 5D close {tracking_health.get('missing_close_5d_count', 0)}",
-                    ]
-                )
-            )
-            st.caption(
-                " / ".join(
-                    [
-                        f"filled 1D return {tracking_health.get('filled_return_1d_count', 0)}",
-                        f"filled 5D return {tracking_health.get('filled_return_5d_count', 0)}",
-                    ]
-                )
-            )
+    render_active_page(page_key, config_path, artifacts, watchlist_state, signal_state)
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@
 - Treat implementation files and `config/default.yaml` as the source of truth for behavior.
 - Use `doc/SystemDocs/Specifications/00_INDEX.md` as the navigation entry for numbered design docs.
 - Use `doc/SystemDocs/Scan/` as the source of truth for per-scan definitions.
-- Keep architecture and behavior docs aligned when changing pipeline flow, scoring logic, scan rules, or UI outputs.
+- Keep architecture and behavior docs aligned under the Documentation Sync Rules below.
 
 ## Architecture Rules
 
@@ -90,6 +90,16 @@
 - If numbered specs are added, moved, or repurposed, update `doc/SystemDocs/Specifications/00_INDEX.md` in the same pass.
 - Prefer ASCII-safe file edits by default. Only use non-ASCII text when it is explicitly needed and the write path has been verified to preserve UTF-8 without lossy replacement.
 
+## Documentation Sync Rules
+
+- Treat implementation files and `config/default.yaml` as the behavior source of truth unless a task explicitly says a specification is authoritative.
+- At session start, do only a scoped drift check for the area being touched. Do not scan or resync all SystemDocs by default.
+- During implementation, avoid broad documentation sync for small edits, UI polish, internal refactors, or test-only work.
+- Update the minimum matching docs immediately when changing scan definitions or statuses, watchlist preset semantics, duplicate-rule behavior, config meaning, database schema, persisted artifacts, public module interfaces, app tab/page structure, or user-visible workflow contracts.
+- For other behavior changes, defer documentation sync until the end of the task and limit it to docs directly related to changed files.
+- At session end, compare changed implementation/config/tests to the related docs only. If they differ, update docs to match implementation or explicitly report the remaining mismatch.
+- Do not edit unrelated SystemDocs just for completeness.
+
 ## Edit Rules
 
 - Keep this file between 60 and 300 lines.
@@ -99,7 +109,7 @@
 - Keep the active product scope explicit.
 - Keep source-of-truth rules explicit.
 - Keep directory ownership explicit so new files are saved in the right place.
-- When behavior changes, update the matching docs in the same pass unless the current task explicitly forbids doc edits.
+- When behavior changes, follow the Documentation Sync Rules instead of broad automatic doc syncing.
 - When a scan definition changes, keep `doc/SystemDocs/Scan/` aligned with implementation or call out the mismatch immediately.
 - Do not add long narrative explanations here.
 

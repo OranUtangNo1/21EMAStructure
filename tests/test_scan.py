@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import pandas as pd
 
@@ -160,6 +160,80 @@ def test_reclaim_scan_rejects_rows_without_reclaim_cross() -> None:
     result = evaluate_scan_rules(row, config)
 
     assert result["Reclaim scan"] is False
+
+
+def test_21ema_pattern_h_requires_shallow_high_band_support_and_prev_high_break() -> None:
+    row = pd.Series(
+        {
+            "atr_50sma_zone": 1.0,
+            "atr_21ema_zone": 0.3,
+            "atr_low_to_ema21_high": -0.2,
+            "high": 101.0,
+            "prev_high": 100.0,
+            "weekly_return": 50.0,
+            "dcr_percent": 0.0,
+        }
+    )
+    config = ScanConfig(enabled_scan_rules=("21EMA Pattern H",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["21EMA Pattern H"] is True
+
+
+def test_21ema_pattern_h_rejects_rows_without_prev_high_break() -> None:
+    row = pd.Series(
+        {
+            "atr_50sma_zone": 1.0,
+            "atr_21ema_zone": 0.5,
+            "atr_low_to_ema21_high": 0.0,
+            "high": 100.0,
+            "prev_high": 100.0,
+        }
+    )
+    config = ScanConfig(enabled_scan_rules=("21EMA Pattern H",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["21EMA Pattern H"] is False
+
+
+def test_21ema_pattern_l_requires_low_band_pierce_reclaim_and_prev_high_break() -> None:
+    row = pd.Series(
+        {
+            "atr_50sma_zone": 1.0,
+            "atr_21ema_zone": -0.2,
+            "atr_low_to_ema21_low": -0.01,
+            "atr_21emaL_zone": 0.01,
+            "high": 101.0,
+            "prev_high": 100.0,
+            "weekly_return": 50.0,
+            "dcr_percent": 0.0,
+        }
+    )
+    config = ScanConfig(enabled_scan_rules=("21EMA Pattern L",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["21EMA Pattern L"] is True
+
+
+def test_21ema_pattern_l_rejects_rows_that_do_not_reclaim_low_band() -> None:
+    row = pd.Series(
+        {
+            "atr_50sma_zone": 1.0,
+            "atr_21ema_zone": -0.2,
+            "atr_low_to_ema21_low": -0.01,
+            "atr_21emaL_zone": 0.0,
+            "high": 101.0,
+            "prev_high": 100.0,
+        }
+    )
+    config = ScanConfig(enabled_scan_rules=("21EMA Pattern L",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["21EMA Pattern L"] is False
 
 
 def test_pp_count_annotation_triggers_at_two_pocket_pivots() -> None:
@@ -397,7 +471,7 @@ def test_watchlist_cards_follow_configured_card_sections() -> None:
     )
     hits = pd.DataFrame(
         [
-            {"ticker": "AAA", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "AAA", "name": "21EMA Pattern H", "kind": "scan"},
             {"ticker": "BBB", "name": "Vol Up", "kind": "scan"},
         ]
     )
@@ -423,7 +497,7 @@ def test_watchlist_cards_keep_selected_sections_visible_when_a_scan_has_no_hits(
     )
     hits = pd.DataFrame(
         [
-            {"ticker": "AAA", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "AAA", "name": "21EMA Pattern H", "kind": "scan"},
         ]
     )
     config = ScanConfig(
@@ -467,9 +541,14 @@ def test_watchlist_builder_surfaces_annotation_columns() -> None:
     display = WatchlistViewModelBuilder().build(raw_watchlist)
 
     assert bool(display.iloc[0]["duplicate_ticker"]) is True
+    assert bool(display.iloc[0]["backend_duplicate_ticker"]) is True
+    assert display.iloc[0]["backend_duplicate_rule"] == "scan_hit_count >= 3 across all enabled scans"
+    assert display.iloc[0]["watchlist_candidate_reason"] == "matched_enabled_scan"
+    assert display.iloc[0]["matched_scan_rules"] == "Vol Up, VCS, 97 Club"
     assert int(display.iloc[0]["scan_hit_count"]) == 3
     assert int(display.iloc[0]["annotation_hit_count"]) == 2
     assert "RS 21 >= 63" in display.iloc[0]["annotation_hits"]
+    assert "RS 21 >= 63" in display.iloc[0]["matched_annotation_filters"]
     assert bool(display.iloc[0]["annotation_rs21_gte_63"]) is True
     assert bool(display.iloc[0]["annotation_high_eps_growth"]) is True
 
@@ -605,10 +684,10 @@ def test_duplicate_ticker_builder_uses_scan_hits_only() -> None:
     )
     hits = pd.DataFrame(
         [
-            {"ticker": "AAA", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "AAA", "name": "21EMA Pattern H", "kind": "scan"},
             {"ticker": "AAA", "name": "Vol Up", "kind": "scan"},
             {"ticker": "AAA", "name": "VCS", "kind": "scan"},
-            {"ticker": "BBB", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "BBB", "name": "21EMA Pattern H", "kind": "scan"},
         ]
     )
 
@@ -632,21 +711,21 @@ def test_watchlist_cards_can_be_filtered_by_selected_scan_names() -> None:
     )
     hits = pd.DataFrame(
         [
-            {"ticker": "AAA", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "AAA", "name": "21EMA Pattern H", "kind": "scan"},
             {"ticker": "BBB", "name": "Vol Up", "kind": "scan"},
         ]
     )
     config = ScanConfig(
         card_sections=(
-            ScanCardConfig(scan_name="21EMA scan", display_name="21EMA"),
+            ScanCardConfig(scan_name="21EMA Pattern H", display_name="21EMA"),
             ScanCardConfig(scan_name="Vol Up", display_name="Vol Up"),
         )
     )
 
-    cards = WatchlistViewModelBuilder(config).build_scan_cards(raw_watchlist, hits, selected_scan_names=["21EMA scan"])
+    cards = WatchlistViewModelBuilder(config).build_scan_cards(raw_watchlist, hits, selected_scan_names=["21EMA Pattern H"])
 
     assert len(cards) == 1
-    assert cards[0].scan_name == "21EMA scan"
+    assert cards[0].scan_name == "21EMA Pattern H"
     assert list(cards[0].rows["Ticker"]) == ["AAA"]
 
 
@@ -661,10 +740,10 @@ def test_duplicate_ticker_builder_respects_selected_scans_and_threshold() -> Non
     )
     hits = pd.DataFrame(
         [
-            {"ticker": "AAA", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "AAA", "name": "21EMA Pattern H", "kind": "scan"},
             {"ticker": "AAA", "name": "Vol Up", "kind": "scan"},
             {"ticker": "AAA", "name": "VCS", "kind": "scan"},
-            {"ticker": "BBB", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "BBB", "name": "21EMA Pattern H", "kind": "scan"},
             {"ticker": "BBB", "name": "97 Club", "kind": "scan"},
         ]
     )
@@ -673,7 +752,7 @@ def test_duplicate_ticker_builder_respects_selected_scans_and_threshold() -> Non
         watchlist,
         hits,
         min_count=2,
-        selected_scan_names=["21EMA scan", "VCS"],
+        selected_scan_names=["21EMA Pattern H", "VCS"],
     )
 
     assert list(duplicate["Ticker"]) == ["AAA"]
@@ -692,10 +771,10 @@ def test_duplicate_ticker_builder_can_use_required_plus_optional_rule() -> None:
     )
     hits = pd.DataFrame(
         [
-            {"ticker": "AAA", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "AAA", "name": "21EMA Pattern H", "kind": "scan"},
             {"ticker": "AAA", "name": "VCS", "kind": "scan"},
             {"ticker": "AAA", "name": "Vol Up", "kind": "scan"},
-            {"ticker": "BBB", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "BBB", "name": "21EMA Pattern H", "kind": "scan"},
             {"ticker": "BBB", "name": "VCS", "kind": "scan"},
             {"ticker": "CCC", "name": "VCS", "kind": "scan"},
             {"ticker": "CCC", "name": "Vol Up", "kind": "scan"},
@@ -703,7 +782,7 @@ def test_duplicate_ticker_builder_can_use_required_plus_optional_rule() -> None:
     )
     config = ScanConfig(
         card_sections=(
-            ScanCardConfig(scan_name="21EMA scan", display_name="21EMA"),
+            ScanCardConfig(scan_name="21EMA Pattern H", display_name="21EMA"),
             ScanCardConfig(scan_name="VCS", display_name="VCS"),
             ScanCardConfig(scan_name="Vol Up", display_name="Vol Up"),
             ScanCardConfig(scan_name="97 Club", display_name="97 Club"),
@@ -713,13 +792,79 @@ def test_duplicate_ticker_builder_can_use_required_plus_optional_rule() -> None:
         watchlist,
         hits,
         min_count=2,
-        selected_scan_names=["21EMA scan", "VCS", "Vol Up", "97 Club"],
+        selected_scan_names=["21EMA Pattern H", "VCS", "Vol Up", "97 Club"],
         duplicate_rule=DuplicateRuleConfig(
             mode="required_plus_optional_min",
-            required_scans=("21EMA scan",),
+            required_scans=("21EMA Pattern H",),
             optional_scans=("VCS", "Vol Up", "97 Club"),
             optional_min_hits=2,
         ),
+    )
+
+    assert list(duplicate["Ticker"]) == ["AAA"]
+    assert int(duplicate.iloc[0]["Scan Hits"]) == 3
+
+
+def test_duplicate_ticker_builder_can_use_grouped_threshold_rule() -> None:
+    watchlist = pd.DataFrame(
+        {
+            "hybrid_score": [95.0, 80.0, 70.0],
+            "overlap_count": [4, 3, 3],
+            "vcs": [70.0, 60.0, 50.0],
+        },
+        index=["AAA", "BBB", "CCC"],
+    )
+    hits = pd.DataFrame(
+        [
+            {"ticker": "AAA", "name": "Pullback Quality scan", "kind": "scan"},
+            {"ticker": "AAA", "name": "21EMA Pattern H", "kind": "scan"},
+            {"ticker": "AAA", "name": "RS Acceleration", "kind": "scan"},
+            {"ticker": "BBB", "name": "Pullback Quality scan", "kind": "scan"},
+            {"ticker": "BBB", "name": "21EMA Pattern L", "kind": "scan"},
+            {"ticker": "CCC", "name": "21EMA Pattern H", "kind": "scan"},
+            {"ticker": "CCC", "name": "RS Acceleration", "kind": "scan"},
+        ]
+    )
+    config = ScanConfig(
+        card_sections=(
+            ScanCardConfig(scan_name="Pullback Quality scan", display_name="PB Quality"),
+            ScanCardConfig(scan_name="21EMA Pattern H", display_name="21EMA PH"),
+            ScanCardConfig(scan_name="21EMA Pattern L", display_name="21EMA PL"),
+            ScanCardConfig(scan_name="RS Acceleration", display_name="RS Accel"),
+            ScanCardConfig(scan_name="Volume Accumulation", display_name="Volume Accumulation"),
+        )
+    )
+    rule = DuplicateRuleConfig.from_dict(
+        {
+            "mode": "grouped_threshold",
+            "required_scans": ["Pullback Quality scan"],
+            "optional_groups": [
+                {
+                    "group_name": "21EMA Trigger",
+                    "scans": ["21EMA Pattern H", "21EMA Pattern L"],
+                    "min_hits": 1,
+                },
+                {
+                    "group_name": "Strength Confirmation",
+                    "scans": ["RS Acceleration", "Volume Accumulation"],
+                    "min_hits": 1,
+                },
+            ],
+        }
+    )
+
+    duplicate = WatchlistViewModelBuilder(config).build_duplicate_tickers(
+        watchlist,
+        hits,
+        min_count=1,
+        selected_scan_names=[
+            "Pullback Quality scan",
+            "21EMA Pattern H",
+            "21EMA Pattern L",
+            "RS Acceleration",
+            "Volume Accumulation",
+        ],
+        duplicate_rule=rule,
     )
 
     assert list(duplicate["Ticker"]) == ["AAA"]
@@ -737,13 +882,13 @@ def test_duplicate_ticker_builder_can_apply_top3_hybridrs_subfilter() -> None:
     )
     hits = pd.DataFrame(
         [
-            {"ticker": "AAA", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "AAA", "name": "21EMA Pattern H", "kind": "scan"},
             {"ticker": "AAA", "name": "VCS", "kind": "scan"},
-            {"ticker": "BBB", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "BBB", "name": "21EMA Pattern H", "kind": "scan"},
             {"ticker": "BBB", "name": "VCS", "kind": "scan"},
-            {"ticker": "CCC", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "CCC", "name": "21EMA Pattern H", "kind": "scan"},
             {"ticker": "CCC", "name": "VCS", "kind": "scan"},
-            {"ticker": "DDD", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "DDD", "name": "21EMA Pattern H", "kind": "scan"},
             {"ticker": "DDD", "name": "VCS", "kind": "scan"},
         ]
     )
@@ -752,7 +897,7 @@ def test_duplicate_ticker_builder_can_apply_top3_hybridrs_subfilter() -> None:
         watchlist,
         hits,
         min_count=2,
-        selected_scan_names=["21EMA scan", "VCS"],
+        selected_scan_names=["21EMA Pattern H", "VCS"],
         selected_duplicate_subfilters=["Top3 HybridRS"],
     )
 
@@ -781,6 +926,8 @@ def test_default_scan_config_includes_new_scan_names_and_cards() -> None:
     config = ScanConfig()
 
     assert {
+        "21EMA Pattern H",
+        "21EMA Pattern L",
         "Pullback Quality scan",
         "Reclaim scan",
         "Volume Accumulation",
@@ -793,6 +940,8 @@ def test_default_scan_config_includes_new_scan_names_and_cards() -> None:
     assert "21EMA scan V2" not in set(config.enabled_scan_rules)
     assert "PP Count" in set(config.enabled_scan_rules)
     assert {
+        "21EMA Pattern H",
+        "21EMA Pattern L",
         "Pullback Quality scan",
         "Reclaim scan",
         "Volume Accumulation",
@@ -893,7 +1042,7 @@ def test_apply_selected_scan_metrics_zeroes_duplicate_state_when_no_scans_select
     )
     hits = pd.DataFrame(
         [
-            {"ticker": "AAA", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "AAA", "name": "21EMA Pattern H", "kind": "scan"},
             {"ticker": "AAA", "name": "VCS", "kind": "scan"},
         ]
     )
@@ -1025,16 +1174,16 @@ def test_scan_config_rejects_preset_duplicate_rule_scans_outside_selected_scans(
         ScanConfig.from_dict(
             {
                 "card_sections": [
-                    {"scan_name": "21EMA scan", "display_name": "21EMA"},
+                    {"scan_name": "21EMA Pattern H", "display_name": "21EMA"},
                     {"scan_name": "VCS", "display_name": "VCS"},
                 ],
                 "watchlist_presets": [
                     {
                         "preset_name": "Rule Preset",
-                        "selected_scan_names": ["21EMA scan"],
+                        "selected_scan_names": ["21EMA Pattern H"],
                         "duplicate_rule": {
                             "mode": "required_plus_optional_min",
-                            "required_scans": ["21EMA scan"],
+                            "required_scans": ["21EMA Pattern H"],
                             "optional_scans": ["VCS"],
                             "optional_min_hits": 1,
                         },
@@ -1092,15 +1241,15 @@ def test_watchlist_preset_export_includes_duplicate_and_card_hit_tickers() -> No
     )
     hits = pd.DataFrame(
         [
-            {"ticker": "AAA", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "AAA", "name": "21EMA Pattern H", "kind": "scan"},
             {"ticker": "AAA", "name": "VCS", "kind": "scan"},
-            {"ticker": "BBB", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "BBB", "name": "21EMA Pattern H", "kind": "scan"},
             {"ticker": "CCC", "name": "VCS", "kind": "scan"},
         ]
     )
     config = ScanConfig(
         card_sections=(
-            ScanCardConfig(scan_name="21EMA scan", display_name="21EMA"),
+            ScanCardConfig(scan_name="21EMA Pattern H", display_name="21EMA"),
             ScanCardConfig(scan_name="VCS", display_name="VCS"),
         )
     )
@@ -1109,7 +1258,7 @@ def test_watchlist_preset_export_includes_duplicate_and_card_hit_tickers() -> No
         "Momentum Core",
         watchlist,
         hits,
-        selected_scan_names=["21EMA scan", "VCS"],
+        selected_scan_names=["21EMA Pattern H", "VCS"],
         min_count=2,
         selected_annotation_filters=["RS 21 >= 63"],
     )
@@ -1142,34 +1291,34 @@ def test_watchlist_preset_summary_export_groups_hit_presets_by_ticker() -> None:
     )
     hits = pd.DataFrame(
         [
-            {"ticker": "AAA", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "AAA", "name": "21EMA Pattern H", "kind": "scan"},
             {"ticker": "AAA", "name": "VCS", "kind": "scan"},
-            {"ticker": "BBB", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "BBB", "name": "21EMA Pattern H", "kind": "scan"},
             {"ticker": "CCC", "name": "VCS", "kind": "scan"},
         ]
     )
     config = ScanConfig(
         card_sections=(
-            ScanCardConfig(scan_name="21EMA scan", display_name="21EMA"),
+            ScanCardConfig(scan_name="21EMA Pattern H", display_name="21EMA"),
             ScanCardConfig(scan_name="VCS", display_name="VCS"),
         )
     )
     custom_presets = ScanConfig.from_dict(
         {
             "card_sections": [
-                {"scan_name": "21EMA scan", "display_name": "21EMA"},
+                {"scan_name": "21EMA Pattern H", "display_name": "21EMA"},
                 {"scan_name": "VCS", "display_name": "VCS"},
             ],
             "watchlist_presets": [
                 {
                     "preset_name": "Momentum Core",
-                    "selected_scan_names": ["21EMA scan", "VCS"],
+                    "selected_scan_names": ["21EMA Pattern H", "VCS"],
                     "selected_annotation_filters": ["RS 21 >= 63"],
                     "duplicate_threshold": 2,
                 },
                 {
                     "preset_name": "EMA Follow Through",
-                    "selected_scan_names": ["21EMA scan"],
+                    "selected_scan_names": ["21EMA Pattern H"],
                     "selected_annotation_filters": [],
                     "duplicate_threshold": 1,
                 },
@@ -1194,7 +1343,7 @@ def test_watchlist_preset_summary_export_groups_hit_presets_by_ticker() -> None:
         "ticker": "AAA",
         "hit_presets": "Momentum Core, EMA Follow Through",
         "hit_preset_count": 2,
-        "selected_scan_names": "21EMA scan, VCS",
+        "selected_scan_names": "21EMA Pattern H, VCS",
         "selected_annotation_filters": "RS 21 >= 63",
         "duplicate_thresholds": "2, 1",
         "duplicate_rule_modes": "min_count",
@@ -1206,7 +1355,7 @@ def test_watchlist_preset_summary_export_groups_hit_presets_by_ticker() -> None:
         "ticker": "BBB",
         "hit_presets": "EMA Follow Through",
         "hit_preset_count": 1,
-        "selected_scan_names": "21EMA scan",
+        "selected_scan_names": "21EMA Pattern H",
         "selected_annotation_filters": "",
         "duplicate_thresholds": "1",
         "duplicate_rule_modes": "min_count",

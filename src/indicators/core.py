@@ -144,8 +144,13 @@ class IndicatorCalculator:
 
         atr = df["atr"].replace(0, np.nan)
         df["atr_21ema_zone"] = (df["close"] - df["ema21_close"]) / atr
+        df["atr_21emaH_zone"] = (df["close"] - df["ema21_high"]) / atr
+        df["atr_21emaL_zone"] = (df["close"] - df["ema21_low"]) / atr
+        df["atr_low_to_ema21_high"] = (df["low"] - df["ema21_high"]) / atr
+        df["atr_low_to_ema21_low"] = (df["low"] - df["ema21_low"]) / atr
         df["atr_10wma_zone"] = (df["close"] - df["wma10_weekly"]) / atr
         df["atr_50sma_zone"] = (df["close"] - df["sma50"]) / atr
+        df["prev_high"] = df["high"].shift(1)
         df["min_atr_21ema_zone_5d"] = df["atr_21ema_zone"].rolling(5).min()
         df["close_crossed_above_ema21"] = (df["close"] > df["ema21_close"]) & (
             df["close"].shift(1) <= df["ema21_close"].shift(1)

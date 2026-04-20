@@ -31,7 +31,7 @@ preset_status: disabled_legacy_reference
 
 | Scan name | Card display | Scan reference | Direct threshold summary |
 |---|---|---|---|
-| `21EMA scan` | `21EMA` | [../Scan/scan_01_21ema.md](../Scan/scan_01_21ema.md) | no config keys; hard-coded rule uses `weekly_return`, `dcr_percent`, `atr_21ema_zone`, and `atr_50sma_zone` |
+| `21EMA scan` | `21EMA` | [../../Scan/scan_01_21ema.md](../../Scan/scan_01_21ema.md) | no config keys; retained legacy rule uses `weekly_return`, `dcr_percent`, `atr_21ema_zone`, and `atr_50sma_zone`; disabled by default |
 | `PP Count` | `PP Count` | [../Scan/scan_08_pp_count.md](../Scan/scan_08_pp_count.md) | `pp_count_scan_min=3` |
 | `Volume Accumulation` | `Volume Accumulation` | [../Scan/scan_15_volume_accumulation.md](../Scan/scan_15_volume_accumulation.md) | `vol_accum_ud_ratio_min=1.5`, `vol_accum_rel_vol_min=1.0`, plus hard-coded `daily_change_pct > 0.0` |
 

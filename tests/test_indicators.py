@@ -34,6 +34,11 @@ def test_indicator_formulas_match_docs() -> None:
     latest = result.iloc[-1]
 
     assert round(float(latest["atr_21ema_zone"]), 6) == 0.0
+    assert round(float(latest["atr_21emaH_zone"]), 6) == 0.0
+    assert round(float(latest["atr_21emaL_zone"]), 6) == 1.0
+    assert round(float(latest["atr_low_to_ema21_high"]), 6) == -1.0
+    assert round(float(latest["atr_low_to_ema21_low"]), 6) == 0.0
+    assert round(float(latest["prev_high"]), 6) == 11.0
     assert round(float(latest["ema21_low_pct"]), 6) == 20.0
     assert round(float(latest["adr_percent"]), 6) == round((((11.0 / 9.0) + (12.0 / 10.0)) / 2.0 - 1.0) * 100.0, 6)
     assert round(float(latest["atr_pct_from_50sma"]), 6) == round((((12.0 / 11.0) - 1.0) / (2.0 / 12.0)), 6)

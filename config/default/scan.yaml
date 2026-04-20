@@ -36,7 +36,9 @@
   earnings_warning_days: 7
   watchlist_sort_mode: hybrid_score
   scan_status_map:
-    21EMA scan: enabled
+    21EMA scan: disabled
+    21EMA Pattern H: enabled
+    21EMA Pattern L: enabled
     Pullback Quality scan: enabled
     Reclaim scan: enabled
     4% bullish: enabled
@@ -57,7 +59,8 @@
     Trend Reversal Setup: enabled
     Structure Pivot: enabled
   default_selected_scan_names:
-  - 21EMA scan
+  - 21EMA Pattern H
+  - 21EMA Pattern L
   - Pullback Quality scan
   - Reclaim scan
   - 4% bullish
@@ -105,15 +108,20 @@
       optional_min_hits: 1
     preset_status: enabled
   - preset_name: Orderly Pullback
-    selected_scan_names: [Pullback Quality scan, 21EMA scan, RS Acceleration, Volume Accumulation]
+    selected_scan_names: [Pullback Quality scan, 21EMA Pattern H, 21EMA Pattern L, RS Acceleration, Volume Accumulation]
     selected_annotation_filters: [Trend Base]
     selected_duplicate_subfilters: []
     duplicate_threshold: 1
     duplicate_rule:
-      mode: required_plus_optional_min
-      required_scans: [Pullback Quality scan, 21EMA scan]
-      optional_scans: [RS Acceleration, Volume Accumulation]
-      optional_min_hits: 1
+      mode: grouped_threshold
+      required_scans: [Pullback Quality scan]
+      optional_groups:
+      - group_name: 21EMA Trigger
+        scans: [21EMA Pattern H, 21EMA Pattern L]
+        min_hits: 1
+      - group_name: Strength Confirmation
+        scans: [RS Acceleration, Volume Accumulation]
+        min_hits: 1
     preset_status: enabled
   - preset_name: Reclaim Trigger
     selected_scan_names: [Reclaim scan, Pocket Pivot]
@@ -191,8 +199,10 @@
       optional_min_hits: 1
     preset_status: enabled
   card_sections:
-  - scan_name: 21EMA scan
-    display_name: 21EMA
+  - scan_name: 21EMA Pattern H
+    display_name: 21EMA PH
+  - scan_name: 21EMA Pattern L
+    display_name: 21EMA PL
   - scan_name: Pullback Quality scan
     display_name: PB Quality
   - scan_name: Reclaim scan

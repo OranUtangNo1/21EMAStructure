@@ -93,7 +93,6 @@ def test_default_watchlist_presets_use_required_plus_optional_rules() -> None:
     scan_config = ScanConfig.from_dict(settings["scan"])
     expected_rules = {
         "Leader Breakout": (("97 Club", "VCS 52 High"), ("RS Acceleration", "Three Weeks Tight")),
-        "Orderly Pullback": (("Pullback Quality scan", "21EMA scan"), ("RS Acceleration", "Volume Accumulation")),
         "Reclaim Trigger": (("Reclaim scan",), ("Pocket Pivot",)),
         "Momentum Surge": (("4% bullish", "Momentum 97"), ("PP Count", "Sustained Leadership")),
         "Early Cycle Recovery": (("Trend Reversal Setup", "Pocket Pivot"), ("VCS 52 Low", "Volume Accumulation")),
@@ -104,7 +103,7 @@ def test_default_watchlist_presets_use_required_plus_optional_rules() -> None:
 
     presets = {preset.preset_name: preset for preset in scan_config.watchlist_presets}
 
-    assert set(presets) == {*expected_rules, "Resilient Leader"}
+    assert set(presets) == {*expected_rules, "Orderly Pullback", "Resilient Leader"}
     for preset_name, (required_scans, optional_scans) in expected_rules.items():
         preset = presets[preset_name]
         assert preset.duplicate_threshold == 1
@@ -118,6 +117,14 @@ def test_default_watchlist_presets_use_required_plus_optional_rules() -> None:
     assert resilient.duplicate_rule.mode == "min_count"
     assert resilient.duplicate_rule.min_count == 2
     assert resilient.selected_scan_names == ("Sustained Leadership", "Near 52W High")
+    orderly = presets["Orderly Pullback"]
+    assert orderly.duplicate_threshold == 1
+    assert orderly.duplicate_rule.mode == "grouped_threshold"
+    assert orderly.duplicate_rule.required_scans == ("Pullback Quality scan",)
+    assert [(group.group_name, group.scans, group.min_hits) for group in orderly.duplicate_rule.optional_groups] == [
+        ("21EMA Trigger", ("21EMA Pattern H", "21EMA Pattern L"), 1),
+        ("Strength Confirmation", ("RS Acceleration", "Volume Accumulation"), 1),
+    ]
 
 
 def test_default_watchlist_presets_do_not_reference_disabled_scans() -> None:

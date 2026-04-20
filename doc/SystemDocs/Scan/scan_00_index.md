@@ -40,11 +40,10 @@ Each file in this folder must allow a developer to reproduce the scan boolean lo
 
 ## Active Scan Specs
 
-The default config currently enables `18` scan families.
+The default config currently enables `19` scan families.
 
 | File | Canonical scan name | Implementation owner |
 |---|---|---|
-| [scan_01_21ema.md](scan_01_21ema.md) | `21EMA scan` | `src/scan/rules.py::_scan_21ema` |
 | [scan_02_4pct_bullish.md](scan_02_4pct_bullish.md) | `4% bullish` | `src/scan/rules.py::_scan_bullish_4pct` |
 | [scan_04_momentum97.md](scan_04_momentum97.md) | `Momentum 97` | `src/scan/rules.py::_scan_momentum_97` |
 | [scan_05_97club.md](scan_05_97club.md) | `97 Club` | `src/scan/rules.py::_scan_97_club` |
@@ -62,6 +61,8 @@ The default config currently enables `18` scan families.
 | [scan_19_sustained_leadership.md](scan_19_sustained_leadership.md) | `Sustained Leadership` | `src/scan/rules.py::_scan_sustained_leadership` |
 | [scan_20_trend_reversal_setup.md](scan_20_trend_reversal_setup.md) | `Trend Reversal Setup` | `src/scan/rules.py::_scan_trend_reversal_setup` |
 | [scan_21_structure_pivot.md](scan_21_structure_pivot.md) | `Structure Pivot` | `src/scan/rules.py::_scan_structure_pivot` |
+| [scan_22_21ema_pattern_h.md](scan_22_21ema_pattern_h.md) | `21EMA Pattern H` | `src/scan/rules.py::_scan_21ema_pattern_h` |
+| [scan_23_21ema_pattern_l.md](scan_23_21ema_pattern_l.md) | `21EMA Pattern L` | `src/scan/rules.py::_scan_21ema_pattern_l` |
 
 ## Disabled Default Scan Specs
 
@@ -69,6 +70,7 @@ These scan definitions remain documented and implemented, but `config/default/sc
 
 | File | Canonical scan name | Implementation owner |
 |---|---|---|
+| [scan_01_21ema.md](scan_01_21ema.md) | `21EMA scan` | `src/scan/rules.py::_scan_21ema` |
 | [scan_03_vol_up.md](scan_03_vol_up.md) | `Vol Up` | `src/scan/rules.py::_scan_vol_up` |
 | [scan_06_vcs.md](scan_06_vcs.md) | `VCS` | `src/scan/rules.py::_scan_vcs` |
 

@@ -151,8 +151,13 @@ Implemented fields:
 Implemented fields:
 
 - `atr_21ema_zone = (close - ema21_close) / atr`
+- `atr_21emaH_zone = (close - ema21_high) / atr`
+- `atr_21emaL_zone = (close - ema21_low) / atr`
+- `atr_low_to_ema21_high = (low - ema21_high) / atr`
+- `atr_low_to_ema21_low = (low - ema21_low) / atr`
 - `atr_10wma_zone = (close - wma10_weekly) / atr`
 - `atr_50sma_zone = (close - sma50) / atr`
+- `prev_high = high.shift(1)`
 
 Derived labels:
 

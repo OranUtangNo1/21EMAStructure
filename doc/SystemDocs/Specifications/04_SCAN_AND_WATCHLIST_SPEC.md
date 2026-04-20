@@ -143,18 +143,19 @@ Current preset behavior:
 
 - record shape: `schema_version`, `kind`, `values`
 - `kind` is currently `watchlist_controls`
-- `values` stores the sidebar control fields plus an editable `duplicate_rule` payload
+- `values` stores the watchlist control fields plus an editable `duplicate_rule` payload
 - the active UI supports save, load, update, and delete
 - built-in presets use `preset_status` to control UI visibility and automatic export participation
 - only built-in presets with `preset_status: enabled` appear in the preset picker
-- built-in presets with `preset_status: enabled` or `preset_status: hidden_enabled` are included in automatic preset CSV export
-- built-in presets with `preset_status: disabled` are skipped by both the preset picker and automatic preset CSV export
+- built-in presets with `preset_status: enabled` or `preset_status: hidden_enabled` are included in automatic preset CSV export and preset-hit listing
+- saved custom presets are included in preset-hit listing and preset CSV export
+- built-in presets with `preset_status: disabled` are skipped by the preset picker, preset-hit listing, and automatic preset CSV export
 - built-in presets can be loaded and exported but not deleted or updated from the UI
 - at most 10 presets are stored per config namespace
 - preset load drops any saved preset that references scan names no longer available in the current config
 - invalid annotation filters are ignored during preset load
 - optional threshold is clamped to the optional-card count
-- `selected_scan_names` remains the persisted union of required and optional cards for compatibility
+- `selected_scan_names` remains the persisted union of required scans and condition-group scans for compatibility
 
 ### 3.2 Annotation-filter projection
 
@@ -186,8 +187,12 @@ Current implemented behavior:
 - supported duplicate-rule modes:
   - `min_count`
   - `required_plus_optional_min`
-- the UI uses `required_plus_optional_min` when both required and optional cards are selected
-- the UI uses `min_count` when only required cards or only optional cards are selected
+  - `grouped_threshold`
+- `grouped_threshold` requires every scan in `required_scans` and every configured `optional_groups` threshold
+- each `optional_groups` item has `group_name`, `scans`, and `min_hits`
+- the UI builds `grouped_threshold` when condition groups are configured
+- legacy `required_plus_optional_min` remains accepted and maps to one condition group in the UI
+- the UI uses `min_count` for simple optional-only legacy selections
 - `overlap_count` is overwritten with the selected-scan overlap count
 - if no scan cards are selected, the projection forces:
   - `selected_scan_hit_count = 0`
@@ -218,9 +223,17 @@ Current implemented behavior:
 
 and keeps the top three rows.
 
-Preset export behavior uses the preset's own duplicate rule when one is defined in config.
+Preset-hit behavior uses each preset's own annotation filters and duplicate rule.
 
-`preset_summary.csv` uses one row per output ticker. The `hit_presets` column lists the built-in presets that emitted that ticker, and the selected scan, annotation, duplicate-threshold, and duplicate-rule columns summarize the unique settings across those hit presets.
+The Watchlist page exposes a `Preset Hits` panel that lists tickers that satisfy any active built-in or saved custom preset.
+
+`preset_summary.csv` uses one row per output ticker. The `hit_presets` column lists the built-in and custom presets that emitted that ticker, and the selected scan, annotation, duplicate-threshold, and duplicate-rule columns summarize the unique settings across those hit presets.
+
+`preset_hits.csv` uses one row per `preset_name x ticker` hit and includes `preset_source`, matched scans, selected scans, annotation filters, duplicate threshold, duplicate-rule mode, and score columns when available.
+
+`preset_details.csv` uses one row per preset and preserves the legacy wide format with `Duplicate Tickers` and `<display_name> Hit Tickers` columns.
+
+Automatic preset CSV export runs after a full pipeline recompute and writes under `scan.preset_csv_export.output_dir` using the trade-date folder. Saved-run restore does not create new preset CSV files. The Watchlist page also has a manual `Write preset CSV files` action that writes the same files.
 
 ### 3.5 Preset tracking database
 
@@ -291,6 +304,16 @@ The raw watchlist produced by `ScanRunner.run()` currently carries these backend
 - `annotation_hit_count`
 - one boolean column per configured annotation filter
 
+Raw `duplicate_ticker` is the backend/global duplicate flag:
+
+```text
+scan_hit_count >= scan.duplicate_min_count
+```
+
+It is calculated across all enabled scan hits, not from the current Watchlist UI preset or selected-card state.
+
+`annotation_hits` lists only annotation filters that matched that ticker. The boolean annotation columns contain the full per-filter true/false state.
+
 ### 5.2 Display watchlist table fields
 
 `WatchlistViewModelBuilder.build()` currently exposes these columns when present:
@@ -298,14 +321,19 @@ The raw watchlist produced by `ScanRunner.run()` currently carries these backend
 - `name`
 - `sector`
 - `industry`
+- `watchlist_candidate_reason`
 - `H`, `F`, `I`, `21`, `63`, `126`
 - `rs5`
 - `overlap_count`
 - `scan_hit_count`
 - `annotation_hit_count`
+- `backend_duplicate_ticker`
+- `backend_duplicate_rule`
 - `duplicate_ticker`
 - `hit_scans`
+- `matched_scan_rules`
 - `annotation_hits`
+- `matched_annotation_filters`
 - `vcs`
 - `dist_from_52w_high`
 - `dist_from_52w_low`
@@ -323,6 +351,10 @@ The raw watchlist produced by `ScanRunner.run()` currently carries these backend
 - `data_quality_score`
 - `data_warning`
 - one boolean column per configured annotation filter
+
+`backend_duplicate_ticker` and `backend_duplicate_rule` are explicit persistence aliases for the raw/global duplicate calculation. `duplicate_ticker` remains for backward compatibility and is still overwritten by UI projection when current controls are applied.
+
+`matched_scan_rules` is an explicit alias of `hit_scans`. `matched_annotation_filters` is an explicit alias of `annotation_hits`; it intentionally differs by ticker because it lists only the annotation filters that evaluated true for that ticker.
 
 ## 6. Watchlist Generation Sequence
 

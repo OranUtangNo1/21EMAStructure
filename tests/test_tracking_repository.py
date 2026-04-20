@@ -40,7 +40,7 @@ def test_tracking_repository_reads_detections_and_scan_hits(tmp_path: Path) -> N
         )
         conn.execute(
             "INSERT INTO scan_hits (hit_date, ticker, scan_name, kind) VALUES (?, ?, ?, ?)",
-            ("2026-04-17", "AAA", "21EMA scan", "scan"),
+            ("2026-04-17", "AAA", "21EMA Pattern H", "scan"),
         )
         conn.commit()
     finally:
@@ -52,9 +52,9 @@ def test_tracking_repository_reads_detections_and_scan_hits(tmp_path: Path) -> N
 
     assert list(detections["ticker"]) == ["AAA"]
     assert detections.loc[0, "return_1d"] == 3.0
-    assert list(scan_hits["scan_name"]) == ["21EMA scan"]
+    assert list(scan_hits["scan_name"]) == ["21EMA Pattern H"]
     assert list(watchlist_hits.columns) == ["ticker", "kind", "name"]
-    assert list(watchlist_hits["name"]) == ["21EMA scan"]
+    assert list(watchlist_hits["name"]) == ["21EMA Pattern H"]
 
 
 def test_tracking_repository_reads_tracking_views(tmp_path: Path) -> None:
@@ -93,10 +93,10 @@ def test_tracking_repository_reads_tracking_views(tmp_path: Path) -> None:
         conn.executemany(
             "INSERT INTO detection_scans (detection_id, scan_name) VALUES (?, ?)",
             [
-                (int(cur1.lastrowid), "21EMA scan"),
+                (int(cur1.lastrowid), "21EMA Pattern H"),
                 (int(cur1.lastrowid), "VCS"),
                 (int(cur2.lastrowid), "Reclaim"),
-                (int(cur3.lastrowid), "21EMA scan"),
+                (int(cur3.lastrowid), "21EMA Pattern H"),
             ],
         )
         conn.execute(
@@ -124,7 +124,7 @@ def test_tracking_repository_reads_tracking_views(tmp_path: Path) -> None:
         & (scan_performance["horizon_days"] == 20)
     ].iloc[0]
 
-    assert momentum_detail["hit_scans"] == "21EMA scan, VCS"
+    assert momentum_detail["hit_scans"] == "21EMA Pattern H, VCS"
     assert momentum_detail["matched_filters"] == "Above EMA21"
     assert int(momentum_1d["detection_count"]) == 2
     assert int(momentum_1d["active_count"]) == 1
@@ -133,6 +133,6 @@ def test_tracking_repository_reads_tracking_views(tmp_path: Path) -> None:
     assert int(vcs_20d["detection_count"]) == 1
     assert float(vcs_20d["avg_max_gain_20d"]) == 20.0
     assert set(summary["preset_name"]) == {"Momentum Core", "Pullback"}
-    assert "21EMA scan, VCS" in set(combo["scan_combo"])
+    assert "21EMA Pattern H, VCS" in set(combo["scan_combo"])
     assert list(overlap["ticker"]) == ["AAA"]
     assert int(overlap.loc[0, "preset_count"]) == 2

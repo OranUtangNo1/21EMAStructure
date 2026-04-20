@@ -35,7 +35,7 @@ def _build_artifacts(
     )
     hits = pd.DataFrame(
         [
-            {"ticker": "AAA", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "AAA", "name": "21EMA Pattern H", "kind": "scan"},
             {"ticker": "AAA", "name": "VCS", "kind": "scan"},
         ]
     )
@@ -77,13 +77,13 @@ def test_sync_preset_effectiveness_logs_creates_db_detection_records(tmp_path: P
             [
                 "scan:",
                 "  card_sections:",
-                "  - scan_name: 21EMA scan",
+                "  - scan_name: 21EMA Pattern H",
                 "    display_name: 21EMA",
                 "  - scan_name: VCS",
                 "    display_name: VCS",
                 "  watchlist_presets:",
                 "  - preset_name: Momentum Core",
-                "    selected_scan_names: [21EMA scan, VCS]",
+                "    selected_scan_names: [21EMA Pattern H, VCS]",
                 "    selected_annotation_filters: []",
                 "    selected_duplicate_subfilters: []",
                 "    duplicate_threshold: 2",
@@ -123,7 +123,7 @@ def test_sync_preset_effectiveness_logs_creates_db_detection_records(tmp_path: P
     assert detections[0]["ticker"] == "AAA"
     assert detections[0]["close_at_hit"] == 100.0
     assert len(scan_hits) == 2
-    assert {row["scan_name"] for row in detection_scans} == {"21EMA scan", "VCS"}
+    assert {row["scan_name"] for row in detection_scans} == {"21EMA Pattern H", "VCS"}
 
 
 def test_sync_preset_effectiveness_logs_updates_db_returns_from_target_date_history(tmp_path: Path, monkeypatch) -> None:
@@ -133,13 +133,13 @@ def test_sync_preset_effectiveness_logs_updates_db_returns_from_target_date_hist
             [
                 "scan:",
                 "  card_sections:",
-                "  - scan_name: 21EMA scan",
+                "  - scan_name: 21EMA Pattern H",
                 "    display_name: 21EMA",
                 "  - scan_name: VCS",
                 "    display_name: VCS",
                 "  watchlist_presets:",
                 "  - preset_name: Momentum Core",
-                "    selected_scan_names: [21EMA scan, VCS]",
+                "    selected_scan_names: [21EMA Pattern H, VCS]",
                 "    selected_annotation_filters: []",
                 "    selected_duplicate_subfilters: []",
                 "    duplicate_threshold: 2",
@@ -274,13 +274,13 @@ def test_sync_preset_effectiveness_logs_updates_twenty_day_tracking_metrics(tmp_
             [
                 "scan:",
                 "  card_sections:",
-                "  - scan_name: 21EMA scan",
+                "  - scan_name: 21EMA Pattern H",
                 "    display_name: 21EMA",
                 "  - scan_name: VCS",
                 "    display_name: VCS",
                 "  watchlist_presets:",
                 "  - preset_name: Momentum Core",
-                "    selected_scan_names: [21EMA scan, VCS]",
+                "    selected_scan_names: [21EMA Pattern H, VCS]",
                 "    selected_annotation_filters: []",
                 "    selected_duplicate_subfilters: []",
                 "    duplicate_threshold: 2",

@@ -16,8 +16,8 @@
 * Reads only precomputed indicator fields.
 * All conditions are combined with `AND`.
 * Intended as a **reclaim / restart trigger scan** after a valid pullback.
-* This scan is responsible for the **restart / reclaim judgment that was separated from the stricter draft of 21EMA scan**.
-* This scan should generally be used **after or alongside** `21EMA scan` and `Pullback Quality scan`.
+* This scan is responsible for the **restart / reclaim judgment that was separated from the older 21EMA pullback draft**.
+* This scan should generally be used **after or alongside** `Pullback Quality scan` or the trigger-oriented 21EMA pattern scans.
 * This scan is not intended to represent a broad pullback candidate list; it is intended to identify **the reclaim event itself**.
 
 ## Canonical Boolean Definition

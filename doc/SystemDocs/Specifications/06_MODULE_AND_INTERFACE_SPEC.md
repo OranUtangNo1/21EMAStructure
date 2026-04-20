@@ -131,18 +131,18 @@ This keeps settings, reusable calculations, and display-ready outputs separate.
   - active artifact assembly
 - `src/ui_preferences.py`
   - config-namespaced preference persistence
-  - group persistence for current sidebar state
+  - group persistence for current watchlist control state
   - named collection persistence for watchlist preset records
 - `src/utils/run_tracking_refresh.py`
   - command-line refresh of tracking target closes and returns
 - `app/main.py`
   - Streamlit entrypoint
   - page rendering
-  - artifact reload by sidebar cache key and `Refresh`
+  - artifact reload by run-option cache key and `Refresh data`
   - same-day saved-run reuse before full recompute when refresh controls are not forced
-  - watchlist sidebar control state
+  - watchlist control state
   - watchlist preset save/load/update/delete UI with a 10-preset cap
-  - Tracking Analytics filtering, benchmark comparison, and CSV export
+  - Analysis filtering, benchmark comparison, and CSV export
 
 ### 2.8 Archived And Out-Of-Scope Modules
 
@@ -228,9 +228,14 @@ The scan layer contract is:
 - `build_scan_cards(watchlist, hits, selected_scan_names)`
 - `build_duplicate_tickers(watchlist, hits, min_count, selected_scan_names, selected_duplicate_subfilters, duplicate_rule=None)`
 - `build_preset_export(preset_name, watchlist, hits, export_target, selected_scan_names, min_count, selected_annotation_filters, selected_duplicate_subfilters, duplicate_rule=None)`
+- `build_preset_summary_exports(presets, watchlist, hits, trade_date, output_date, export_target, top_ticker_limit)`
+- `build_preset_detail_exports(presets, watchlist, hits, export_target)`
 - `build_earnings_today(snapshot)`
 
-The active app uses raw `watchlist` plus `scan_hits` to rebuild cards and duplicate output from current sidebar selections.
+The active app uses raw `watchlist` plus `scan_hits` to rebuild cards and duplicate output from current watchlist selections.
+The persisted watchlist table keeps backward-compatible columns such as `duplicate_ticker`, `hit_scans`, and `annotation_hits`, and also exposes clearer aliases such as `backend_duplicate_ticker`, `backend_duplicate_rule`, `matched_scan_rules`, and `matched_annotation_filters`.
+The active app also builds preset-hit exports from built-in and saved custom preset definitions, then writes `preset_summary.csv`, `preset_hits.csv`, and `preset_details.csv` under `data_runs/preset_exports/<trade_date>/` when preset CSV export is enabled.
+`earnings_today` remains part of `PlatformArtifacts`, but the active Watchlist UI currently hides the same-day earnings card.
 
 ### 3.6 Radar Interface
 
@@ -279,7 +284,7 @@ Current database helper functions in `src/data/tracking_db.py`:
 - `connect_tracking_db(...)`
 - `initialize_tracking_db(conn)`
 
-The app uses `read_detection_detail()` for Tracking Analytics and uses benchmark price history from the active price provider for benchmark and excess-return calculations.
+The app uses `read_detection_detail()` for Analysis and uses benchmark price history from the active price provider for benchmark and excess-return calculations.
 
 ### 3.9 Market Interface
 
@@ -318,7 +323,7 @@ The active pipeline bundle includes:
 - `universe_snapshot_path`
 - `artifact_origin`
 
-`watchlist_cards` is still produced by the pipeline, but the active UI rebuilds cards from raw watchlist data so current sidebar selections can be applied.
+`watchlist_cards` is still produced by the pipeline, but the active UI rebuilds cards from raw watchlist data so current watchlist selections can be applied.
 
 ### 4.2 ScanRunResult
 
