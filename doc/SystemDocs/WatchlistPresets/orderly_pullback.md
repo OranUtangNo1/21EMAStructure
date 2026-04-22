@@ -19,13 +19,13 @@ selected_duplicate_subfilters: []
 duplicate_threshold: 1
 duplicate_rule:
   mode: grouped_threshold
-  required_scans: [Pullback Quality scan]
+  required_scans: []
   optional_groups:
   - group_name: 21EMA Trigger
     scans: [21EMA Pattern H, 21EMA Pattern L]
     min_hits: 1
-  - group_name: Strength Confirmation
-    scans: [RS Acceleration, Volume Accumulation]
+  - group_name: Quality / Strength Confirmation
+    scans: [Pullback Quality scan, RS Acceleration, Volume Accumulation]
     min_hits: 1
 preset_status: enabled
 ```
@@ -52,11 +52,11 @@ preset_status: enabled
 - selected duplicate subfilters: none
 - UI optional threshold after preset load: `1`
 - preset status: `enabled`
-- duplicate rule: `grouped_threshold`; requires `Pullback Quality scan`, at least `1` hit from the `21EMA Trigger` group, and at least `1` hit from the `Strength Confirmation` group
+- duplicate rule: `grouped_threshold`; no direct required scans, requires at least `1` hit from the `21EMA Trigger` group, and at least `1` hit from the `Quality / Strength Confirmation` group
 
 ## Consolidation Notes
 
-This preset now replaces the retired broad `21EMA scan` with the two trigger-based 21EMA pattern scans. The grouped duplicate rule keeps `Pullback Quality scan` required, accepts either 21EMA pattern as the trigger-side confirmation, and separately requires one strength confirmation scan.
+This preset now replaces the retired broad `21EMA scan` with the two trigger-based 21EMA pattern scans. The grouped duplicate rule accepts either 21EMA pattern as the trigger-side confirmation and requires one hit from the quality/strength group (`Pullback Quality scan`, `RS Acceleration`, `Volume Accumulation`).
 
 ## Scope Notes
 

@@ -39,6 +39,9 @@ class IndicatorConfig:
     structure_pivot_min_length: int = 2
     structure_pivot_max_length: int = 10
     structure_pivot_priority_mode: str = "tightest"
+    resistance_test_lookback: int = 20
+    resistance_zone_width_atr: float = 0.5
+    resistance_test_count_window: int = 20
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> "IndicatorConfig":
@@ -141,6 +144,16 @@ class IndicatorCalculator:
         df["drawdown_from_20d_high_pct"] = (
             (df["rolling_20d_close_high"] - df["close"]) / df["rolling_20d_close_high"].replace(0, np.nan) * 100.0
         )
+        df["resistance_level_lookback"] = df["high"].rolling(self.config.resistance_test_lookback).max().shift(1)
+        resistance_zone_threshold = df["atr"] * self.config.resistance_zone_width_atr
+        tested_resistance = (df["high"] >= (df["resistance_level_lookback"] - resistance_zone_threshold)) & (
+            df["close"] < df["resistance_level_lookback"]
+        )
+        df["resistance_test_count"] = tested_resistance.rolling(
+            self.config.resistance_test_count_window,
+            min_periods=self.config.resistance_test_count_window,
+        ).sum()
+        df["breakout_body_ratio"] = (df["close"] - df["open"]) / range_width
 
         atr = df["atr"].replace(0, np.nan)
         df["atr_21ema_zone"] = (df["close"] - df["ema21_close"]) / atr

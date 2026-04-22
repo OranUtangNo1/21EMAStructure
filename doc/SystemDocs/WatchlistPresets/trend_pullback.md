@@ -19,10 +19,15 @@ selected_annotation_filters: [Trend Base]
 selected_duplicate_subfilters: []
 duplicate_threshold: 1
 duplicate_rule:
-  mode: required_plus_optional_min
+  mode: grouped_threshold
   required_scans: [Reclaim scan]
-  optional_scans: [Pullback Quality scan, RS Acceleration, Volume Accumulation]
-  optional_min_hits: 1
+  optional_groups:
+  - group_name: Pullback Evidence
+    scans: [Pullback Quality scan]
+    min_hits: 1
+  - group_name: Strength Confirmation
+    scans: [RS Acceleration, Volume Accumulation]
+    min_hits: 1
 preset_status: enabled
 ```
 
@@ -47,7 +52,7 @@ preset_status: enabled
 - selected duplicate subfilters: none
 - UI optional threshold after preset load: `1`
 - preset status: `enabled`
-- duplicate rule: `required_plus_optional_min`; requires every scan in `Reclaim scan` plus at least `1` hit from optional scans `Pullback Quality scan, RS Acceleration, Volume Accumulation`
+- duplicate rule: `grouped_threshold`; requires `Reclaim scan`, at least `1` hit from `Pullback Evidence`, and at least `1` hit from `Strength Confirmation`
 
 ## Scan Role Mapping
 
@@ -61,27 +66,31 @@ preset_status: enabled
 ## Logic Structure
 
 ```
-duplicate_rule.mode: required_plus_optional_min
+duplicate_rule.mode: grouped_threshold
 required_scans: [Reclaim scan]
-optional_scans: [Pullback Quality scan, RS Acceleration, Volume Accumulation]
-optional_min_hits: 1
-→ ticker must hit every required scan and 1+ optional scan
+optional_groups:
+- group_name: Pullback Evidence
+  scans: [Pullback Quality scan]
+  min_hits: 1
+- group_name: Strength Confirmation
+  scans: [RS Acceleration, Volume Accumulation]
+  min_hits: 1
+ticker must hit Reclaim scan + Pullback Quality scan + one strength confirmation scan
 ```
 
 Representative hit patterns:
 
-- `Reclaim scan` + `Pullback Quality scan` → reclaim following orderly pullback
-- `Reclaim scan` + `RS Acceleration` → reclaim event with RS acceleration
-- `Reclaim scan` + `Volume Accumulation` → reclaim confirmed by demand
+- `Reclaim scan` + `Pullback Quality scan` + `RS Acceleration` -> reclaim with pullback evidence and RS acceleration
+- `Reclaim scan` + `Pullback Quality scan` + `Volume Accumulation` -> reclaim with pullback evidence and demand confirmation
 
 ## Setup Interpretation
 
-- **Target phase**: pullback → reclaim two-stage process
-- **Why effective in Confirmed Uptrend**: healthy pullbacks to 21EMA occur naturally in uptrends; reclaim entries from this zone offer the most reliable swing re-entries with market tailwind supporting follow-through
+- **Target phase**: pullback -> reclaim two-stage process
+- **Why effective in Confirmed Uptrend**: healthy pullbacks to 21EMA occur naturally in uptrends; reclaim entries from this zone offer reliable swing re-entries with market tailwind supporting follow-through
 
 ## Design Rationale
 
-Pullback Quality and Reclaim are temporally sequential (in-pullback → reclaim event), so Reclaim is required while Pullback Quality remains an optional confirmation with RS Acceleration and Volume Accumulation. This avoids requiring same-day overlap between the pullback and reclaim phases while still targeting MA-area pullback reentry rather than high-zone contraction breakout.
+The rule keeps `Reclaim scan` as required and enforces `Pullback Quality scan` through a dedicated `Pullback Evidence` group. Strength confirmation remains flexible with `RS Acceleration` or `Volume Accumulation` in the second group.
 
 ## Scope Notes
 

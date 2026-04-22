@@ -204,6 +204,15 @@ Archived final chart-structure execution, sizing, and trade-management parameter
 ### indicators.structure_pivot_priority_mode
 - current default: `tightest`
 
+### indicators.resistance_test_lookback
+- current default: `20`
+
+### indicators.resistance_zone_width_atr
+- current default: `0.5`
+
+### indicators.resistance_test_count_window
+- current default: `20`
+
 ## 6. Scoring
 
 ### scoring.rs
@@ -294,6 +303,13 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 - `enabled_list_rules`: legacy alias still accepted for annotation rules
 - misplaced scan names inside `enabled_annotation_filters` are coerced into the enabled scan rule set during config loading
 - `annotation_filters`: available annotation-filter definitions and display names
+- built-in annotation filter names include:
+  - `RS 21 >= 63`
+  - `High Est. EPS Growth`
+  - `PP Count (20d)`
+  - `Trend Base`
+  - `Fund Score > 70`
+  - `Resistance Tests >= 2`
 - `watchlist_presets`: built-in watchlist preset definitions loaded into the watchlist preset picker
   - each preset supports `preset_name`, `selected_scan_names`, `selected_annotation_filters`, `selected_duplicate_subfilters`, `duplicate_threshold`, optional `duplicate_rule`, and `preset_status`
   - `duplicate_rule.mode: min_count` uses `min_count` scan hits
@@ -329,6 +345,7 @@ Current built-in entry signal names:
 - `Structure Pivot Breakout Entry`
 - `Pullback Low-Risk Zone`
 - `Volume Reclaim Entry`
+- `Resistance Breakout Entry`
 
 ## 9. Market Dashboard
 

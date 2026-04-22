@@ -88,23 +88,22 @@ def test_default_settings_include_builtin_watchlist_presets() -> None:
         "Resilient Leader",
         "Early Recovery",
     ]
-def test_default_watchlist_presets_use_required_plus_optional_rules() -> None:
+def test_default_watchlist_presets_use_expected_duplicate_rules() -> None:
     settings = load_settings()
     scan_config = ScanConfig.from_dict(settings["scan"])
-    expected_rules = {
+    required_plus_optional_rules = {
         "Leader Breakout": (("97 Club", "VCS 52 High"), ("RS Acceleration", "Three Weeks Tight")),
         "Reclaim Trigger": (("Reclaim scan",), ("Pocket Pivot",)),
         "Momentum Surge": (("4% bullish", "Momentum 97"), ("PP Count", "Sustained Leadership")),
-        "Early Cycle Recovery": (("Trend Reversal Setup", "Pocket Pivot"), ("VCS 52 Low", "Volume Accumulation")),
+        "Early Cycle Recovery": (("Trend Reversal Setup",), ("Pocket Pivot", "VCS 52 Low", "Volume Accumulation")),
         "Base Breakout": (("VCS 52 High", "Pocket Pivot"), ("97 Club", "Three Weeks Tight")),
-        "Trend Pullback": (("Reclaim scan",), ("Pullback Quality scan", "RS Acceleration", "Volume Accumulation")),
         "Early Recovery": (("Trend Reversal Setup", "Structure Pivot"), ("VCS 52 Low", "Volume Accumulation")),
     }
 
     presets = {preset.preset_name: preset for preset in scan_config.watchlist_presets}
 
-    assert set(presets) == {*expected_rules, "Orderly Pullback", "Resilient Leader"}
-    for preset_name, (required_scans, optional_scans) in expected_rules.items():
+    assert set(presets) == {*required_plus_optional_rules, "Orderly Pullback", "Trend Pullback", "Resilient Leader"}
+    for preset_name, (required_scans, optional_scans) in required_plus_optional_rules.items():
         preset = presets[preset_name]
         assert preset.duplicate_threshold == 1
         assert preset.duplicate_rule.mode == "required_plus_optional_min"
@@ -120,9 +119,18 @@ def test_default_watchlist_presets_use_required_plus_optional_rules() -> None:
     orderly = presets["Orderly Pullback"]
     assert orderly.duplicate_threshold == 1
     assert orderly.duplicate_rule.mode == "grouped_threshold"
-    assert orderly.duplicate_rule.required_scans == ("Pullback Quality scan",)
+    assert orderly.duplicate_rule.required_scans == ()
     assert [(group.group_name, group.scans, group.min_hits) for group in orderly.duplicate_rule.optional_groups] == [
         ("21EMA Trigger", ("21EMA Pattern H", "21EMA Pattern L"), 1),
+        ("Quality / Strength Confirmation", ("Pullback Quality scan", "RS Acceleration", "Volume Accumulation"), 1),
+    ]
+
+    trend_pullback = presets["Trend Pullback"]
+    assert trend_pullback.duplicate_threshold == 1
+    assert trend_pullback.duplicate_rule.mode == "grouped_threshold"
+    assert trend_pullback.duplicate_rule.required_scans == ("Reclaim scan",)
+    assert [(group.group_name, group.scans, group.min_hits) for group in trend_pullback.duplicate_rule.optional_groups] == [
+        ("Pullback Evidence", ("Pullback Quality scan",), 1),
         ("Strength Confirmation", ("RS Acceleration", "Volume Accumulation"), 1),
     ]
 

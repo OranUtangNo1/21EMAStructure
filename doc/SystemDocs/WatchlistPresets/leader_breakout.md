@@ -14,7 +14,7 @@
 ```yaml
 preset_name: Leader Breakout
 selected_scan_names: [97 Club, VCS 52 High, RS Acceleration, Three Weeks Tight]
-selected_annotation_filters: [Trend Base]
+selected_annotation_filters: [Trend Base, Resistance Tests >= 2]
 selected_duplicate_subfilters: []
 duplicate_threshold: 1
 duplicate_rule:
@@ -42,7 +42,7 @@ preset_status: enabled
 
 ## Post-Scan And Duplicate Settings
 
-- selected annotation filters: `Trend Base`
+- selected annotation filters: `Trend Base`, `Resistance Tests >= 2`
 - selected duplicate subfilters: none
 - UI optional threshold after preset load: `1`
 - preset status: `enabled`

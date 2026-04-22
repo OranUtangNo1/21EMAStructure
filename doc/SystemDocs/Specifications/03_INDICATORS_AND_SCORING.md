@@ -144,6 +144,32 @@ Implemented fields:
 - `monthly_return = close.pct_change(21) * 100`
 - `quarterly_return = close.pct_change(63) * 100`
 
+### 2.11 Breakout Quality Fields
+
+Implemented fields:
+
+- `resistance_level_lookback = rolling_max(high, resistance_test_lookback).shift(1)`
+- `resistance_test_count`
+- `breakout_body_ratio = (close - open) / (high - low)`
+
+`resistance_test_count` formula:
+
+- `resistance_zone_threshold = atr * resistance_zone_width_atr`
+- `tested = (high >= resistance_level_lookback - resistance_zone_threshold) and (close < resistance_level_lookback)`
+- `resistance_test_count = rolling_sum(tested, resistance_test_count_window, min_periods=resistance_test_count_window)`
+
+Edge handling:
+
+- `resistance_level_lookback` uses `shift(1)` to avoid same-day self-reference
+- `breakout_body_ratio` uses directional body; bearish bars are negative
+- when `high == low`, `breakout_body_ratio` is `NaN`
+
+Default parameters:
+
+- `resistance_test_lookback = 20`
+- `resistance_zone_width_atr = 0.5`
+- `resistance_test_count_window = 20`
+
 ## 3. Zone And Structure Metrics
 
 ### 3.1 ATR Distance Zones

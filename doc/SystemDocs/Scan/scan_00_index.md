@@ -87,3 +87,4 @@ The active annotation set includes:
 | `PP Count (20d)` | `pp_count_window >= pp_count_annotation_min` |
 | `Trend Base` | `trend_base == True` |
 | `Fund Score > 70` | `fundamental_score >= 70.0` |
+| `Resistance Tests >= 2` | `resistance_test_count >= 2` |

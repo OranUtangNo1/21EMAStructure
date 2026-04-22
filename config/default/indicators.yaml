@@ -26,3 +26,6 @@ indicators:
   structure_pivot_min_length: 2
   structure_pivot_max_length: 10
   structure_pivot_priority_mode: tightest
+  resistance_test_lookback: 20
+  resistance_zone_width_atr: 0.5
+  resistance_test_count_window: 20

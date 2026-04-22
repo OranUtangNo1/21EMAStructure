@@ -90,6 +90,8 @@
     display_name: Trend Base
   - filter_name: Fund Score > 70
     display_name: Fund Score > 70
+  - filter_name: Resistance Tests >= 2
+    display_name: Resistance Tests >= 2
   preset_csv_export:
     enabled: true
     output_dir: data_runs/preset_exports
@@ -98,7 +100,7 @@
   watchlist_presets:
   - preset_name: Leader Breakout
     selected_scan_names: [97 Club, VCS 52 High, RS Acceleration, Three Weeks Tight]
-    selected_annotation_filters: [Trend Base]
+    selected_annotation_filters: [Trend Base, Resistance Tests >= 2]
     selected_duplicate_subfilters: []
     duplicate_threshold: 1
     duplicate_rule:
@@ -114,18 +116,18 @@
     duplicate_threshold: 1
     duplicate_rule:
       mode: grouped_threshold
-      required_scans: [Pullback Quality scan]
+      required_scans: []
       optional_groups:
       - group_name: 21EMA Trigger
         scans: [21EMA Pattern H, 21EMA Pattern L]
         min_hits: 1
-      - group_name: Strength Confirmation
-        scans: [RS Acceleration, Volume Accumulation]
+      - group_name: Quality / Strength Confirmation
+        scans: [Pullback Quality scan, RS Acceleration, Volume Accumulation]
         min_hits: 1
     preset_status: enabled
   - preset_name: Reclaim Trigger
     selected_scan_names: [Reclaim scan, Pocket Pivot]
-    selected_annotation_filters: [Trend Base, Fund Score > 70, RS 21 >= 63]
+    selected_annotation_filters: [Trend Base]
     selected_duplicate_subfilters: []
     duplicate_threshold: 1
     duplicate_rule:
@@ -152,13 +154,13 @@
     duplicate_threshold: 1
     duplicate_rule:
       mode: required_plus_optional_min
-      required_scans: [Trend Reversal Setup, Pocket Pivot]
-      optional_scans: [VCS 52 Low, Volume Accumulation]
+      required_scans: [Trend Reversal Setup]
+      optional_scans: [Pocket Pivot, VCS 52 Low, Volume Accumulation]
       optional_min_hits: 1
     preset_status: enabled
   - preset_name: Base Breakout
     selected_scan_names: [VCS 52 High, Pocket Pivot, 97 Club, Three Weeks Tight]
-    selected_annotation_filters: [Trend Base]
+    selected_annotation_filters: [Trend Base, Resistance Tests >= 2]
     selected_duplicate_subfilters: []
     duplicate_threshold: 1
     duplicate_rule:
@@ -173,10 +175,15 @@
     selected_duplicate_subfilters: []
     duplicate_threshold: 1
     duplicate_rule:
-      mode: required_plus_optional_min
+      mode: grouped_threshold
       required_scans: [Reclaim scan]
-      optional_scans: [Pullback Quality scan, RS Acceleration, Volume Accumulation]
-      optional_min_hits: 1
+      optional_groups:
+      - group_name: Pullback Evidence
+        scans: [Pullback Quality scan]
+        min_hits: 1
+      - group_name: Strength Confirmation
+        scans: [RS Acceleration, Volume Accumulation]
+        min_hits: 1
     preset_status: enabled
   - preset_name: Resilient Leader
     selected_scan_names: [Sustained Leadership, Near 52W High]

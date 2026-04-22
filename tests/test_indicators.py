@@ -432,6 +432,42 @@ def test_indicator_calculator_adds_pullback_and_reclaim_fields() -> None:
     assert round(float(latest["min_atr_21ema_zone_5d"]), 6) == round(float(expected_min_atr_21ema_zone_5d), 6)
 
 
+def test_indicator_calculator_adds_resistance_breakout_quality_fields() -> None:
+    dates = pd.date_range("2025-01-01", periods=10, freq="D")
+    frame = pd.DataFrame(
+        {
+            "open": [9.8, 10.8, 11.8, 12.8, 13.8, 13.5, 13.6, 13.4, 13.9, 14.2],
+            "high": [10.0, 11.0, 12.0, 13.0, 14.0, 13.8, 13.9, 13.7, 14.8, 15.5],
+            "low": [9.5, 10.5, 11.5, 12.5, 13.5, 13.2, 13.3, 13.1, 13.5, 14.0],
+            "close": [9.8, 10.8, 11.8, 12.8, 13.8, 13.6, 13.7, 13.5, 14.0, 15.2],
+            "adjusted_close": [9.8, 10.8, 11.8, 12.8, 13.8, 13.6, 13.7, 13.5, 14.0, 15.2],
+            "volume": [1_000_000] * 10,
+        },
+        index=dates,
+    )
+    calculator = IndicatorCalculator(
+        IndicatorConfig(
+            ema_period=2,
+            sma_short_period=2,
+            sma_long_period=3,
+            atr_period=2,
+            adr_period=2,
+            relvol_period=2,
+            enable_3wt=False,
+            resistance_test_lookback=5,
+            resistance_zone_width_atr=0.5,
+            resistance_test_count_window=5,
+        )
+    )
+
+    result = calculator.calculate(frame)
+    latest = result.iloc[-1]
+
+    assert round(float(latest["resistance_level_lookback"]), 6) == 14.8
+    assert float(latest["resistance_test_count"]) >= 2.0
+    assert round(float(latest["breakout_body_ratio"]), 6) == round((15.2 - 14.2) / (15.5 - 14.0), 6)
+
+
 def test_indicator_calculator_adds_structure_pivot_fields_from_history() -> None:
     dates = pd.date_range("2025-01-01", periods=8, freq="D")
     frame = pd.DataFrame(

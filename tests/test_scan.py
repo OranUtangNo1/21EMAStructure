@@ -41,6 +41,15 @@ def test_fund_score_annotation_uses_fixed_threshold() -> None:
     assert result["Fund Score > 70"] is True
 
 
+def test_resistance_tests_annotation_uses_minimum_two_tests() -> None:
+    row = pd.Series({"resistance_test_count": 2.0})
+    config = ScanConfig()
+
+    result = evaluate_annotation_filters(row, config)
+
+    assert result["Resistance Tests >= 2"] is True
+
+
 def test_enabled_scan_rules_can_be_swapped_from_config() -> None:
     row = pd.Series({"rel_volume": 2.0, "daily_change_pct": 1.0})
     config = ScanConfig(enabled_scan_rules=("Vol Up",))

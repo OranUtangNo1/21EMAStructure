@@ -57,7 +57,7 @@ All 9 built-in presets currently share:
 - `preset_status: enabled`
 
 Most presets use `duplicate_threshold: 1`, `duplicate_rule.mode: required_plus_optional_min`, and `duplicate_rule.optional_min_hits: 1`.
-`Orderly Pullback` uses `duplicate_rule.mode: grouped_threshold` so the 21EMA trigger group and strength-confirmation group can have independent required-hit thresholds.
+`Orderly Pullback` and `Trend Pullback` use `duplicate_rule.mode: grouped_threshold` so scan groups can have independent required-hit thresholds.
 `Resilient Leader` uses `duplicate_threshold: 2` and `duplicate_rule.mode: min_count`.
 Preset-level `selected_annotation_filters` vary by preset and are documented in each preset file.
 

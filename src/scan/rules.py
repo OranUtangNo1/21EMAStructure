@@ -40,6 +40,7 @@ DEFAULT_ANNOTATION_FILTER_NAMES = (
     "PP Count (20d)",
     "Trend Base",
     "Fund Score > 70",
+    "Resistance Tests >= 2",
 )
 
 ANNOTATION_FILTER_NAME_ALIASES = {
@@ -79,6 +80,7 @@ DEFAULT_ANNOTATION_FILTER_PAYLOADS = (
     {"filter_name": "PP Count (20d)", "display_name": "PP Count (20d)"},
     {"filter_name": "Trend Base", "display_name": "Trend Base"},
     {"filter_name": "Fund Score > 70", "display_name": "Fund Score > 70"},
+    {"filter_name": "Resistance Tests >= 2", "display_name": "Resistance Tests >= 2"},
 )
 ANNOTATION_FILTER_COLUMN_NAMES = {
     "RS 21 >= 63": "annotation_rs21_gte_63",
@@ -87,6 +89,7 @@ ANNOTATION_FILTER_COLUMN_NAMES = {
     "3+ Pocket Pivots (20d)": "annotation_pp_count_20d",
     "Trend Base": "annotation_trend_base",
     "Fund Score > 70": "annotation_fund_score_gt_70",
+    "Resistance Tests >= 2": "annotation_resistance_tests_gte_2",
 }
 SCAN_STATUS_VALUES = ("enabled", "disabled")
 WATCHLIST_PRESET_STATUS_VALUES = ("enabled", "hidden_enabled", "disabled")
@@ -924,6 +927,10 @@ def _annotation_fund_score_gt_70(row: pd.Series, config: ScanConfig) -> bool:
     return bool(row.get("fundamental_score", 0.0) >= 70.0)
 
 
+def _annotation_resistance_tests_gte_2(row: pd.Series, config: ScanConfig) -> bool:
+    return bool(row.get("resistance_test_count", 0.0) >= 2.0)
+
+
 SCAN_RULE_REGISTRY: dict[str, RuleEvaluator] = {
     "21EMA scan": _scan_21ema,
     "21EMA Pattern H": _scan_21ema_pattern_h,
@@ -956,6 +963,7 @@ ANNOTATION_FILTER_REGISTRY: dict[str, RuleEvaluator] = {
     "3+ Pocket Pivots (20d)": _annotation_pp_count_20d,
     "Trend Base": _annotation_trend_base,
     "Fund Score > 70": _annotation_fund_score_gt_70,
+    "Resistance Tests >= 2": _annotation_resistance_tests_gte_2,
 }
 
 
