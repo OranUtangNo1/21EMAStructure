@@ -6,7 +6,7 @@ The active implementation keeps thresholds, weights, universes, and modes rooted
 That entry file is a manifest which includes section-level files under `config/default/`.
 This catalog lists the parameters that are active in the current codebase and calls out shipped keys that are currently inactive.
 
-Archived final chart-structure execution, sizing, and trade-management parameters are out of scope for this file. The implemented `entry_signals` timing layer and Tracking Analytics database behavior are documented because they are present in the active config and UI.
+Archived final chart-structure execution, sizing, and trade-management parameters are out of scope for this file. The implemented `entry_signals` timing layer and Analysis database behavior are documented because they are present in the active config and UI.
 
 ## 2. App and persistence
 
@@ -30,7 +30,7 @@ Archived final chart-structure execution, sizing, and trade-management parameter
 
 ### app.user_preferences_path
 - current default: `data_cache/user_preferences.yaml`
-- stores persisted watchlist sidebar selections and config-namespaced watchlist preset records
+- stores persisted watchlist control selections and config-namespaced watchlist preset records
 
 ### app.use_sample_data_if_fetch_fails
 - current default: `false`
@@ -44,7 +44,7 @@ Archived final chart-structure execution, sizing, and trade-management parameter
 
 ### data.technical_cache_ttl_hours
 - current default: `12`
-- bypassed for price histories when the app's `Force Price Data Refresh` control passes `force_price_refresh=True`; this does not clear cache files
+- bypassed for price histories when the app's `Force price data refresh` run option passes `force_price_refresh=True`; this does not clear cache files
 
 ### data.profile_cache_ttl_hours
 - current default: `168`
@@ -204,6 +204,15 @@ Archived final chart-structure execution, sizing, and trade-management parameter
 ### indicators.structure_pivot_priority_mode
 - current default: `tightest`
 
+### indicators.resistance_test_lookback
+- current default: `20`
+
+### indicators.resistance_zone_width_atr
+- current default: `0.5`
+
+### indicators.resistance_test_count_window
+- current default: `20`
+
 ## 6. Scoring
 
 ### scoring.rs
@@ -289,15 +298,24 @@ When `rs_normalization_method = percentile`, the current implementation uses the
   - `enabled`: evaluate the scan and keep it available to watchlist card selection and preset composition
   - `disabled`: skip scan evaluation and remove it from watchlist card selection and preset composition
 - `enabled_scan_rules`: legacy enabled scan family list still accepted for backward compatibility
-- `default_selected_scan_names`: startup-selected watchlist cards for the sidebar multiselect
+- `default_selected_scan_names`: startup-selected watchlist cards for the watchlist controls
 - `enabled_annotation_filters`: startup-enabled post-scan filters; current default is empty
 - `enabled_list_rules`: legacy alias still accepted for annotation rules
 - misplaced scan names inside `enabled_annotation_filters` are coerced into the enabled scan rule set during config loading
 - `annotation_filters`: available annotation-filter definitions and display names
-- `watchlist_presets`: built-in watchlist preset definitions loaded into the sidebar preset picker
+- built-in annotation filter names include:
+  - `RS 21 >= 63`
+  - `High Est. EPS Growth`
+  - `PP Count (20d)`
+  - `Trend Base`
+  - `Fund Score > 70`
+  - `Resistance Tests >= 2`
+- `watchlist_presets`: built-in watchlist preset definitions loaded into the watchlist preset picker
   - each preset supports `preset_name`, `selected_scan_names`, `selected_annotation_filters`, `selected_duplicate_subfilters`, `duplicate_threshold`, optional `duplicate_rule`, and `preset_status`
   - `duplicate_rule.mode: min_count` uses `min_count` scan hits
   - `duplicate_rule.mode: required_plus_optional_min` requires every scan in `required_scans` plus at least `optional_min_hits` hits from `optional_scans`
+  - `duplicate_rule.mode: grouped_threshold` requires every scan in `required_scans` plus every group threshold in `optional_groups`
+  - each grouped threshold item supports `group_name`, `scans`, and `min_hits`
   - duplicate-rule scan references must stay within the preset's `selected_scan_names`
   - `preset_status: enabled` shows the preset in the UI and includes it in automatic preset exports
   - `preset_status: hidden_enabled` hides the preset from the UI and still includes it in automatic preset exports
@@ -305,10 +323,11 @@ When `rs_normalization_method = percentile`, the current implementation uses the
   - a built-in preset that references any non-enabled scan is forced to `preset_status: disabled`
   - legacy `export_enabled: false` is still accepted and maps to `preset_status: disabled`
 - `preset_csv_export`: automatic preset CSV export settings
-  - `enabled`: turn automatic batch export on or off
+  - `enabled`: turn automatic batch export on or off after full pipeline recompute
   - `output_dir`: root output directory for day-based export folders
-  - `write_details`: whether to also write `preset_details.csv`
-  - `top_ticker_limit`: legacy setting retained for compatibility; `preset_summary.csv` now writes one row per output ticker and lists matching presets in `hit_presets`
+  - automatic export writes `preset_summary.csv` and `preset_hits.csv` for active built-in presets and saved custom presets
+  - `write_details`: whether to also write the legacy wide `preset_details.csv`
+  - `top_ticker_limit`: legacy setting retained for compatibility; `preset_summary.csv` writes one row per output ticker and lists matching presets in `hit_presets`
 - `card_sections`: scan-based card definitions, display names, and optional `sort_columns`
 
 ## 8. Entry signals
@@ -326,6 +345,7 @@ Current built-in entry signal names:
 - `Structure Pivot Breakout Entry`
 - `Pullback Low-Risk Zone`
 - `Volume Reclaim Entry`
+- `Resistance Breakout Entry`
 
 ## 9. Market Dashboard
 
@@ -401,9 +421,9 @@ The current implementation also maintains preset-hit tracking data in `data_runs
 - detection-to-scan bridge rows
 - detection-to-filter bridge rows
 - horizon closes and returns for 1D, 5D, 10D, and 20D
-- SQLite views used by Tracking Analytics and repository read APIs
+- SQLite views used by Analysis and repository read APIs
 
-Tracking Analytics UI constants currently live in `app/main.py`, not in YAML:
+Analysis UI constants currently live in `app/main.py`, not in YAML:
 
 - horizons: `1`, `5`, `10`, `20`
 - market environments: `bull`, `neutral`, `weak`, `bear`

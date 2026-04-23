@@ -11,7 +11,8 @@ from src.utils import percent_rank
 RuleEvaluator = Callable[[pd.Series, "ScanConfig"], bool]
 
 DEFAULT_SCAN_RULE_NAMES = (
-    "21EMA scan",
+    "21EMA Pattern H",
+    "21EMA Pattern L",
     "Pullback Quality scan",
     "Reclaim scan",
     "4% bullish",
@@ -31,6 +32,9 @@ DEFAULT_SCAN_RULE_NAMES = (
     "Sustained Leadership",
     "Trend Reversal Setup",
     "Structure Pivot",
+    "LL-HL Structure 1st Pivot",
+    "LL-HL Structure 2nd Pivot",
+    "LL-HL Structure Trend Line Break",
 )
 
 DEFAULT_ANNOTATION_FILTER_NAMES = (
@@ -39,6 +43,7 @@ DEFAULT_ANNOTATION_FILTER_NAMES = (
     "PP Count (20d)",
     "Trend Base",
     "Fund Score > 70",
+    "Resistance Tests >= 2",
 )
 
 ANNOTATION_FILTER_NAME_ALIASES = {
@@ -50,7 +55,8 @@ ANNOTATION_FILTER_NAME_ALIASES = {
 
 DEFAULT_CARD_SORT_COLUMNS = ("hybrid_score", "overlap_count", "vcs")
 DEFAULT_CARD_SECTION_PAYLOADS = (
-    {"scan_name": "21EMA scan", "display_name": "21EMA"},
+    {"scan_name": "21EMA Pattern H", "display_name": "21EMA PH"},
+    {"scan_name": "21EMA Pattern L", "display_name": "21EMA PL"},
     {"scan_name": "Pullback Quality scan", "display_name": "PB Quality"},
     {"scan_name": "Reclaim scan", "display_name": "Reclaim"},
     {"scan_name": "4% bullish", "display_name": "4% bullish"},
@@ -70,6 +76,9 @@ DEFAULT_CARD_SECTION_PAYLOADS = (
     {"scan_name": "Sustained Leadership", "display_name": "RS Leader"},
     {"scan_name": "Trend Reversal Setup", "display_name": "Reversal Setup"},
     {"scan_name": "Structure Pivot", "display_name": "Structure Pivot"},
+    {"scan_name": "LL-HL Structure 1st Pivot", "display_name": "LL-HL 1st"},
+    {"scan_name": "LL-HL Structure 2nd Pivot", "display_name": "LL-HL 2nd"},
+    {"scan_name": "LL-HL Structure Trend Line Break", "display_name": "CT Break"},
 )
 DEFAULT_ANNOTATION_FILTER_PAYLOADS = (
     {"filter_name": "RS 21 >= 63", "display_name": "RS 21 >= 63"},
@@ -77,6 +86,7 @@ DEFAULT_ANNOTATION_FILTER_PAYLOADS = (
     {"filter_name": "PP Count (20d)", "display_name": "PP Count (20d)"},
     {"filter_name": "Trend Base", "display_name": "Trend Base"},
     {"filter_name": "Fund Score > 70", "display_name": "Fund Score > 70"},
+    {"filter_name": "Resistance Tests >= 2", "display_name": "Resistance Tests >= 2"},
 )
 ANNOTATION_FILTER_COLUMN_NAMES = {
     "RS 21 >= 63": "annotation_rs21_gte_63",
@@ -85,6 +95,7 @@ ANNOTATION_FILTER_COLUMN_NAMES = {
     "3+ Pocket Pivots (20d)": "annotation_pp_count_20d",
     "Trend Base": "annotation_trend_base",
     "Fund Score > 70": "annotation_fund_score_gt_70",
+    "Resistance Tests >= 2": "annotation_resistance_tests_gte_2",
 }
 SCAN_STATUS_VALUES = ("enabled", "disabled")
 WATCHLIST_PRESET_STATUS_VALUES = ("enabled", "hidden_enabled", "disabled")
@@ -143,6 +154,38 @@ class AnnotationFilterConfig:
 
 
 @dataclass(slots=True)
+class DuplicateRuleGroupConfig:
+    """A named scan group with its own hit threshold."""
+
+    group_name: str
+    scans: tuple[str, ...]
+    min_hits: int = 1
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, object]) -> "DuplicateRuleGroupConfig":
+        group_name = str(payload.get("group_name", payload.get("name", "Optional Condition"))).strip() or "Optional Condition"
+        scans = _normalize_name_tuple(payload.get("scans", ()))
+        try:
+            min_hits = int(payload.get("min_hits", 1))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("duplicate_rule optional_groups min_hits must be an integer") from exc
+        if not scans:
+            raise ValueError("duplicate_rule optional_groups requires scans")
+        if min_hits < 1:
+            raise ValueError("duplicate_rule optional_groups min_hits must be >= 1")
+        if min_hits > len(scans):
+            raise ValueError("duplicate_rule optional_groups min_hits cannot exceed scans count")
+        return cls(group_name=group_name, scans=scans, min_hits=min_hits)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "group_name": self.group_name,
+            "scans": list(self.scans),
+            "min_hits": int(self.min_hits),
+        }
+
+
+@dataclass(slots=True)
 class DuplicateRuleConfig:
     """Configurable duplicate-ticker rule."""
 
@@ -151,6 +194,7 @@ class DuplicateRuleConfig:
     required_scans: tuple[str, ...] = field(default_factory=tuple)
     optional_scans: tuple[str, ...] = field(default_factory=tuple)
     optional_min_hits: int = 1
+    optional_groups: tuple[DuplicateRuleGroupConfig, ...] = field(default_factory=tuple)
 
     @classmethod
     def from_dict(
@@ -161,8 +205,8 @@ class DuplicateRuleConfig:
     ) -> "DuplicateRuleConfig":
         data = payload if isinstance(payload, dict) else {}
         mode = str(data.get("mode", "min_count")).strip().lower().replace("-", "_").replace(" ", "_")
-        if mode not in {"min_count", "required_plus_optional_min"}:
-            raise ValueError("duplicate_rule mode must be one of: min_count, required_plus_optional_min")
+        if mode not in {"min_count", "required_plus_optional_min", "grouped_threshold"}:
+            raise ValueError("duplicate_rule mode must be one of: min_count, required_plus_optional_min, grouped_threshold")
         try:
             min_count = int(data.get("min_count", default_min_count))
         except (TypeError, ValueError) as exc:
@@ -171,6 +215,18 @@ class DuplicateRuleConfig:
             raise ValueError("duplicate_rule min_count must be >= 1")
         required_scans = _normalize_name_tuple(data.get("required_scans", ()))
         optional_scans = _normalize_name_tuple(data.get("optional_scans", ()))
+        raw_optional_groups = data.get("optional_groups", ())
+        if raw_optional_groups is None:
+            raw_optional_groups = ()
+        if not isinstance(raw_optional_groups, (list, tuple)):
+            raise ValueError("duplicate_rule optional_groups must be a list")
+        optional_groups = tuple(
+            DuplicateRuleGroupConfig.from_dict(item)
+            for item in raw_optional_groups
+            if isinstance(item, dict)
+        )
+        if len(optional_groups) != len(raw_optional_groups):
+            raise ValueError("duplicate_rule optional_groups items must be mappings")
         try:
             optional_min_hits = int(data.get("optional_min_hits", 1))
         except (TypeError, ValueError) as exc:
@@ -184,12 +240,16 @@ class DuplicateRuleConfig:
                 raise ValueError("duplicate_rule required_plus_optional_min requires optional_scans")
             if optional_min_hits > len(optional_scans):
                 raise ValueError("duplicate_rule optional_min_hits cannot exceed optional_scans count")
+        if mode == "grouped_threshold":
+            if not required_scans and not optional_groups:
+                raise ValueError("duplicate_rule grouped_threshold requires required_scans or optional_groups")
         return cls(
             mode=mode,
             min_count=min_count,
             required_scans=required_scans,
             optional_scans=optional_scans,
             optional_min_hits=optional_min_hits,
+            optional_groups=optional_groups,
         )
 
     def to_dict(self) -> dict[str, object]:
@@ -199,6 +259,7 @@ class DuplicateRuleConfig:
             "required_scans": list(self.required_scans),
             "optional_scans": list(self.optional_scans),
             "optional_min_hits": int(self.optional_min_hits),
+            "optional_groups": [group.to_dict() for group in self.optional_groups],
         }
 
 
@@ -329,7 +390,10 @@ class ScanConfig:
     duplicate_min_count: int = 3
     high_eps_growth_rank_threshold: float = 90.0
     pp_count_scan_min: int = 3
+    pocket_pivot_pp_count_min: int = 1
     pp_count_annotation_min: int = 2
+    llhl_1st_rs21_min: float = 60.0
+    llhl_2nd_rs21_min: float = 60.0
     earnings_warning_days: int = 7
     watchlist_sort_mode: str = "hybrid_score"
     scan_status_map: dict[str, str] = field(default_factory=dict)
@@ -581,17 +645,15 @@ def _validate_watchlist_presets(
             raise ValueError(
                 f"watchlist preset '{preset.preset_name}' references unknown annotation filter(s): {', '.join(sorted(unknown_filters))}"
             )
-        if preset.duplicate_rule.mode == "required_plus_optional_min":
-            unknown_required = [name for name in preset.duplicate_rule.required_scans if name not in preset.selected_scan_names]
-            if unknown_required:
-                raise ValueError(
-                    f"watchlist preset '{preset.preset_name}' duplicate_rule references required_scans outside selected_scan_names: {', '.join(sorted(unknown_required))}"
-                )
-            unknown_optional = [name for name in preset.duplicate_rule.optional_scans if name not in preset.selected_scan_names]
-            if unknown_optional:
-                raise ValueError(
-                    f"watchlist preset '{preset.preset_name}' duplicate_rule references optional_scans outside selected_scan_names: {', '.join(sorted(unknown_optional))}"
-                )
+        rule_scan_names = list(preset.duplicate_rule.required_scans)
+        rule_scan_names.extend(preset.duplicate_rule.optional_scans)
+        for group in preset.duplicate_rule.optional_groups:
+            rule_scan_names.extend(group.scans)
+        unknown_rule_scans = [name for name in rule_scan_names if name not in preset.selected_scan_names]
+        if unknown_rule_scans:
+            raise ValueError(
+                f"watchlist preset '{preset.preset_name}' duplicate_rule references scans outside selected_scan_names: {', '.join(sorted(set(unknown_rule_scans)))}"
+            )
 
 
 def _normalize_scan_status_map(raw_map: object) -> dict[str, str]:
@@ -660,6 +722,25 @@ def _scan_21ema(row: pd.Series, config: ScanConfig) -> bool:
         and row.get("dcr_percent", 0.0) > 20.0
         and -0.5 <= row.get("atr_21ema_zone", float("nan")) <= 1.0
         and 0.0 <= row.get("atr_50sma_zone", float("nan")) <= 3.0
+    )
+
+
+def _scan_21ema_pattern_h(row: pd.Series, config: ScanConfig) -> bool:
+    return bool(
+        0.0 <= row.get("atr_50sma_zone", float("nan")) <= 3.0
+        and 0.3 <= row.get("atr_21ema_zone", float("nan")) <= 1.0
+        and row.get("atr_low_to_ema21_high", float("nan")) >= -0.2
+        and row.get("high", 0.0) > row.get("prev_high", float("inf"))
+    )
+
+
+def _scan_21ema_pattern_l(row: pd.Series, config: ScanConfig) -> bool:
+    return bool(
+        0.0 <= row.get("atr_50sma_zone", float("nan")) <= 3.0
+        and -0.5 <= row.get("atr_21ema_zone", float("nan")) <= -0.1
+        and row.get("atr_low_to_ema21_low", float("nan")) < 0.0
+        and row.get("atr_21emaL_zone", float("nan")) > 0.0
+        and row.get("high", 0.0) > row.get("prev_high", float("inf"))
     )
 
 
@@ -755,7 +836,7 @@ def _scan_vcs_52_low(row: pd.Series, config: ScanConfig) -> bool:
 
 
 def _scan_pocket_pivot(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(row.get("close", 0.0) > row.get("sma50", float("inf")) and row.get("pocket_pivot", False))
+    return bool(row.get("pp_count_window", 0) >= config.pocket_pivot_pp_count_min)
 
 
 def _scan_pp_count(row: pd.Series, config: ScanConfig) -> bool:
@@ -834,6 +915,26 @@ def _scan_structure_pivot(row: pd.Series, config: ScanConfig) -> bool:
     return True
 
 
+def _scan_llhl_1st_pivot(row: pd.Series, config: ScanConfig) -> bool:
+    raw_rs21 = _raw_rs(row, 21)
+    return bool(
+        raw_rs21 >= config.llhl_1st_rs21_min
+        and row.get("structure_pivot_1st_break", False)
+    )
+
+
+def _scan_llhl_2nd_pivot(row: pd.Series, config: ScanConfig) -> bool:
+    raw_rs21 = _raw_rs(row, 21)
+    return bool(
+        raw_rs21 >= config.llhl_2nd_rs21_min
+        and row.get("structure_pivot_2nd_break", False)
+    )
+
+
+def _scan_llhl_ct_break(row: pd.Series, config: ScanConfig) -> bool:
+    return bool(row.get("ct_trendline_break", False))
+
+
 def _annotation_rs21_gte_63(row: pd.Series, config: ScanConfig) -> bool:
     rs21 = _raw_rs(row, 21)
     return bool(pd.notna(rs21) and float(rs21) >= 63.0)
@@ -855,8 +956,14 @@ def _annotation_fund_score_gt_70(row: pd.Series, config: ScanConfig) -> bool:
     return bool(row.get("fundamental_score", 0.0) >= 70.0)
 
 
+def _annotation_resistance_tests_gte_2(row: pd.Series, config: ScanConfig) -> bool:
+    return bool(row.get("resistance_test_count", 0.0) >= 2.0)
+
+
 SCAN_RULE_REGISTRY: dict[str, RuleEvaluator] = {
     "21EMA scan": _scan_21ema,
+    "21EMA Pattern H": _scan_21ema_pattern_h,
+    "21EMA Pattern L": _scan_21ema_pattern_l,
     "Pullback Quality scan": _scan_pullback_quality,
     "Reclaim scan": _scan_reclaim,
     "4% bullish": _scan_bullish_4pct,
@@ -876,6 +983,9 @@ SCAN_RULE_REGISTRY: dict[str, RuleEvaluator] = {
     "Sustained Leadership": _scan_sustained_leadership,
     "Trend Reversal Setup": _scan_trend_reversal_setup,
     "Structure Pivot": _scan_structure_pivot,
+    "LL-HL Structure 1st Pivot": _scan_llhl_1st_pivot,
+    "LL-HL Structure 2nd Pivot": _scan_llhl_2nd_pivot,
+    "LL-HL Structure Trend Line Break": _scan_llhl_ct_break,
 }
 
 ANNOTATION_FILTER_REGISTRY: dict[str, RuleEvaluator] = {
@@ -885,6 +995,7 @@ ANNOTATION_FILTER_REGISTRY: dict[str, RuleEvaluator] = {
     "3+ Pocket Pivots (20d)": _annotation_pp_count_20d,
     "Trend Base": _annotation_trend_base,
     "Fund Score > 70": _annotation_fund_score_gt_70,
+    "Resistance Tests >= 2": _annotation_resistance_tests_gte_2,
 }
 
 

@@ -3,15 +3,16 @@
 ## Scope Definition
 
 This system is a screening and candidate extraction platform.
-Its active responsibility ends at five app outputs:
+Its active responsibility ends at six app outputs:
 
-1. Market Dashboard
-2. RS Radar
-3. Today's Watchlist
-4. Entry Signals
-5. Tracking Analytics
+1. Watchlist
+2. Entry Signal
+3. Market Dashboard
+4. RS
+5. Analysis
+6. Setting
 
-Entry Signals is an implemented downstream timing-review layer over selected candidate universes. Tracking Analytics is an implemented preset-hit performance analysis layer. Full chart-based structure review, position sizing, trade execution, and trade management remain out of scope and archived.
+Entry Signal is an implemented downstream timing-review layer over selected candidate universes. Analysis is an implemented preset-hit performance analysis layer. Setting currently exposes tracking-store diagnostics and is the future home for app-wide settings. Full chart-based structure review, position sizing, trade execution, and trade management remain out of scope and archived.
 
 ---
 
@@ -67,10 +68,11 @@ Related folders:
    - references to per-scan documents under `doc/SystemDocs/Scan/`
 
 5. `05_DASHBOARD_UI_SPEC.md`
+   - tab order: Watchlist, Entry Signal, Market Dashboard, RS, Analysis, Setting
    - Market Dashboard
-   - RS Radar
-   - Today's Watchlist
-   - Entry Signals
+   - RS
+   - Watchlist
+   - Entry Signal
    - active UI behavior
 
 6. `06_MODULE_AND_INTERFACE_SPEC.md`
@@ -82,7 +84,7 @@ Related folders:
    - SQLite tracking database
    - preset-hit detection grain
    - forward-return refresh model
-   - Tracking Analytics UI contract
+   - Analysis UI contract
 
 8. `08_PARAMETER_CATALOG.md`
    - active config parameters

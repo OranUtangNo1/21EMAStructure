@@ -32,32 +32,59 @@
   duplicate_min_count: 3
   high_eps_growth_rank_threshold: 90.0
   pp_count_scan_min: 3
+  pocket_pivot_pp_count_min: 1
   pp_count_annotation_min: 2
+  llhl_1st_rs21_min: 60.0
+  llhl_2nd_rs21_min: 60.0
   earnings_warning_days: 7
   watchlist_sort_mode: hybrid_score
   scan_status_map:
     21EMA scan: enabled
+    21EMA Pattern H: enabled
+    21EMA Pattern L: enabled
     Pullback Quality scan: enabled
     Reclaim scan: enabled
     4% bullish: enabled
     Vol Up: disabled
     Volume Accumulation: enabled
     Momentum 97: enabled
-    97 Club: enabled
+    97 Club: disabled
     VCS: disabled
     VCS 52 High: enabled
     VCS 52 Low: enabled
     Pocket Pivot: enabled
     PP Count: enabled
     Weekly 20% plus gainers: enabled
-    Near 52W High: enabled
-    Three Weeks Tight: enabled
-    RS Acceleration: enabled
-    Sustained Leadership: enabled
+    Near 52W High: disabled
+    Three Weeks Tight: disabled
+    RS Acceleration: disabled
+    Sustained Leadership: disabled
     Trend Reversal Setup: enabled
-    Structure Pivot: enabled
-  default_selected_scan_names:
+    Structure Pivot: disabled
+    LL-HL Structure 1st Pivot: enabled
+    LL-HL Structure 2nd Pivot: enabled
+    LL-HL Structure Trend Line Break: enabled
+  enabled_scan_rules:
   - 21EMA scan
+  - 21EMA Pattern H
+  - 21EMA Pattern L
+  - Pullback Quality scan
+  - Reclaim scan
+  - 4% bullish
+  - Volume Accumulation
+  - Momentum 97
+  - VCS 52 High
+  - VCS 52 Low
+  - Pocket Pivot
+  - PP Count
+  - Weekly 20% plus gainers
+  - Trend Reversal Setup
+  - LL-HL Structure 1st Pivot
+  - LL-HL Structure 2nd Pivot
+  - LL-HL Structure Trend Line Break
+  default_selected_scan_names:
+  - 21EMA Pattern H
+  - 21EMA Pattern L
   - Pullback Quality scan
   - Reclaim scan
   - 4% bullish
@@ -87,6 +114,8 @@
     display_name: Trend Base
   - filter_name: Fund Score > 70
     display_name: Fund Score > 70
+  - filter_name: Resistance Tests >= 2
+    display_name: Resistance Tests >= 2
   preset_csv_export:
     enabled: true
     output_dir: data_runs/preset_exports
@@ -95,7 +124,7 @@
   watchlist_presets:
   - preset_name: Leader Breakout
     selected_scan_names: [97 Club, VCS 52 High, RS Acceleration, Three Weeks Tight]
-    selected_annotation_filters: [Trend Base]
+    selected_annotation_filters: [Trend Base, Resistance Tests >= 2]
     selected_duplicate_subfilters: []
     duplicate_threshold: 1
     duplicate_rule:
@@ -103,21 +132,26 @@
       required_scans: [97 Club, VCS 52 High]
       optional_scans: [RS Acceleration, Three Weeks Tight]
       optional_min_hits: 1
-    preset_status: enabled
+    preset_status: disabled
   - preset_name: Orderly Pullback
-    selected_scan_names: [Pullback Quality scan, 21EMA scan, RS Acceleration, Volume Accumulation]
+    selected_scan_names: [Pullback Quality scan, 21EMA Pattern H, 21EMA Pattern L, RS Acceleration, Volume Accumulation]
     selected_annotation_filters: [Trend Base]
     selected_duplicate_subfilters: []
     duplicate_threshold: 1
     duplicate_rule:
-      mode: required_plus_optional_min
-      required_scans: [Pullback Quality scan, 21EMA scan]
-      optional_scans: [RS Acceleration, Volume Accumulation]
-      optional_min_hits: 1
-    preset_status: enabled
+      mode: grouped_threshold
+      required_scans: []
+      optional_groups:
+      - group_name: 21EMA Trigger
+        scans: [21EMA Pattern H, 21EMA Pattern L]
+        min_hits: 1
+      - group_name: Quality / Strength Confirmation
+        scans: [Pullback Quality scan, RS Acceleration, Volume Accumulation]
+        min_hits: 1
+    preset_status: disabled
   - preset_name: Reclaim Trigger
     selected_scan_names: [Reclaim scan, Pocket Pivot]
-    selected_annotation_filters: [Trend Base, Fund Score > 70, RS 21 >= 63]
+    selected_annotation_filters: [Trend Base]
     selected_duplicate_subfilters: []
     duplicate_threshold: 1
     duplicate_rule:
@@ -136,7 +170,7 @@
       required_scans: [4% bullish, Momentum 97]
       optional_scans: [PP Count, Sustained Leadership]
       optional_min_hits: 1
-    preset_status: enabled
+    preset_status: disabled
   - preset_name: Early Cycle Recovery
     selected_scan_names: [Trend Reversal Setup, Pocket Pivot, VCS 52 Low, Volume Accumulation]
     selected_annotation_filters: []
@@ -144,13 +178,13 @@
     duplicate_threshold: 1
     duplicate_rule:
       mode: required_plus_optional_min
-      required_scans: [Trend Reversal Setup, Pocket Pivot]
-      optional_scans: [VCS 52 Low, Volume Accumulation]
+      required_scans: [Trend Reversal Setup]
+      optional_scans: [Pocket Pivot, VCS 52 Low, Volume Accumulation]
       optional_min_hits: 1
     preset_status: enabled
   - preset_name: Base Breakout
     selected_scan_names: [VCS 52 High, Pocket Pivot, 97 Club, Three Weeks Tight]
-    selected_annotation_filters: [Trend Base]
+    selected_annotation_filters: [Trend Base, Resistance Tests >= 2]
     selected_duplicate_subfilters: []
     duplicate_threshold: 1
     duplicate_rule:
@@ -158,6 +192,22 @@
       required_scans: [VCS 52 High, Pocket Pivot]
       optional_scans: [97 Club, Three Weeks Tight]
       optional_min_hits: 1
+    preset_status: disabled
+  - preset_name: Accumulation Breakout
+    selected_scan_names: [VCS 52 High, PP Count, Volume Accumulation, Pocket Pivot, 4% bullish]
+    selected_annotation_filters: []
+    selected_duplicate_subfilters: []
+    duplicate_threshold: 1
+    duplicate_rule:
+      mode: grouped_threshold
+      required_scans: [VCS 52 High]
+      optional_groups:
+      - group_name: Accumulation Evidence
+        scans: [PP Count, Volume Accumulation]
+        min_hits: 1
+      - group_name: Breakout Trigger
+        scans: [Pocket Pivot, 4% bullish]
+        min_hits: 1
     preset_status: enabled
   - preset_name: Trend Pullback
     selected_scan_names: [Reclaim scan, Pullback Quality scan, RS Acceleration, Volume Accumulation]
@@ -165,11 +215,16 @@
     selected_duplicate_subfilters: []
     duplicate_threshold: 1
     duplicate_rule:
-      mode: required_plus_optional_min
+      mode: grouped_threshold
       required_scans: [Reclaim scan]
-      optional_scans: [Pullback Quality scan, RS Acceleration, Volume Accumulation]
-      optional_min_hits: 1
-    preset_status: enabled
+      optional_groups:
+      - group_name: Pullback Evidence
+        scans: [Pullback Quality scan]
+        min_hits: 1
+      - group_name: Strength Confirmation
+        scans: [RS Acceleration, Volume Accumulation]
+        min_hits: 1
+    preset_status: disabled
   - preset_name: Resilient Leader
     selected_scan_names: [Sustained Leadership, Near 52W High]
     selected_annotation_filters: [Trend Base, Fund Score > 70, RS 21 >= 63]
@@ -178,7 +233,7 @@
     duplicate_rule:
       mode: min_count
       min_count: 2
-    preset_status: enabled
+    preset_status: disabled
   - preset_name: Early Recovery
     selected_scan_names: [Trend Reversal Setup, Structure Pivot, VCS 52 Low, Volume Accumulation]
     selected_annotation_filters: []
@@ -189,10 +244,60 @@
       required_scans: [Trend Reversal Setup, Structure Pivot]
       optional_scans: [VCS 52 Low, Volume Accumulation]
       optional_min_hits: 1
+    preset_status: disabled
+  - preset_name: Screening Thesis
+    selected_scan_names: [Trend Reversal Setup, LL-HL Structure 1st Pivot, LL-HL Structure 2nd Pivot, LL-HL Structure Trend Line Break, Volume Accumulation, Pocket Pivot]
+    selected_annotation_filters: []
+    selected_duplicate_subfilters: []
+    duplicate_threshold: 1
+    duplicate_rule:
+      mode: grouped_threshold
+      required_scans: [Trend Reversal Setup]
+      optional_groups:
+      - group_name: Structure Break
+        scans: [LL-HL Structure 1st Pivot, LL-HL Structure 2nd Pivot, LL-HL Structure Trend Line Break]
+        min_hits: 1
+      - group_name: Demand Confirmation
+        scans: [Volume Accumulation, Pocket Pivot]
+        min_hits: 1
+    preset_status: enabled
+  - preset_name: Pullback Trigger
+    selected_scan_names: [Pullback Quality scan, 21EMA Pattern H, 21EMA Pattern L, Volume Accumulation, Pocket Pivot]
+    selected_annotation_filters: []
+    selected_duplicate_subfilters: []
+    duplicate_threshold: 1
+    duplicate_rule:
+      mode: grouped_threshold
+      required_scans: [Pullback Quality scan]
+      optional_groups:
+      - group_name: Pattern Trigger
+        scans: [21EMA Pattern H, 21EMA Pattern L]
+        min_hits: 1
+      - group_name: Demand Confirmation
+        scans: [Volume Accumulation, Pocket Pivot]
+        min_hits: 1
+    preset_status: enabled
+  - preset_name: Momentum Ignition
+    selected_scan_names: [Momentum 97, 4% bullish, PP Count, VCS 52 High, Volume Accumulation]
+    selected_annotation_filters: []
+    selected_duplicate_subfilters: []
+    duplicate_threshold: 1
+    duplicate_rule:
+      mode: grouped_threshold
+      required_scans: [Momentum 97]
+      optional_groups:
+      - group_name: Acceleration Event
+        scans: [4% bullish, PP Count]
+        min_hits: 1
+      - group_name: Quality Structure
+        scans: [VCS 52 High, Volume Accumulation]
+        min_hits: 1
     preset_status: enabled
   card_sections:
-  - scan_name: 21EMA scan
-    display_name: 21EMA
+  - scan_name: 21EMA Pattern H
+    display_name: 21EMA PH
+  - scan_name: 21EMA Pattern L
+    display_name: 21EMA PL
   - scan_name: Pullback Quality scan
     display_name: PB Quality
   - scan_name: Reclaim scan
@@ -231,3 +336,9 @@
     display_name: Reversal Setup
   - scan_name: Structure Pivot
     display_name: Structure Pivot
+  - scan_name: LL-HL Structure 1st Pivot
+    display_name: LL-HL 1st
+  - scan_name: LL-HL Structure 2nd Pivot
+    display_name: LL-HL 2nd
+  - scan_name: LL-HL Structure Trend Line Break
+    display_name: CT Break

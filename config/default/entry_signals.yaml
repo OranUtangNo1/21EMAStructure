@@ -4,8 +4,10 @@ entry_signals:
     Structure Pivot Breakout Entry: enabled
     Pullback Low-Risk Zone: enabled
     Volume Reclaim Entry: enabled
+    Resistance Breakout Entry: enabled
   default_selected_signal_names:
   - Pocket Pivot Entry
   - Structure Pivot Breakout Entry
   - Pullback Low-Risk Zone
   - Volume Reclaim Entry
+  - Resistance Breakout Entry

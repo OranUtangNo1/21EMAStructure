@@ -39,6 +39,9 @@ class IndicatorConfig:
     structure_pivot_min_length: int = 2
     structure_pivot_max_length: int = 10
     structure_pivot_priority_mode: str = "tightest"
+    resistance_test_lookback: int = 20
+    resistance_zone_width_atr: float = 0.5
+    resistance_test_count_window: int = 20
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> "IndicatorConfig":
@@ -141,11 +144,26 @@ class IndicatorCalculator:
         df["drawdown_from_20d_high_pct"] = (
             (df["rolling_20d_close_high"] - df["close"]) / df["rolling_20d_close_high"].replace(0, np.nan) * 100.0
         )
+        df["resistance_level_lookback"] = df["high"].rolling(self.config.resistance_test_lookback).max().shift(1)
+        resistance_zone_threshold = df["atr"] * self.config.resistance_zone_width_atr
+        tested_resistance = (df["high"] >= (df["resistance_level_lookback"] - resistance_zone_threshold)) & (
+            df["close"] < df["resistance_level_lookback"]
+        )
+        df["resistance_test_count"] = tested_resistance.rolling(
+            self.config.resistance_test_count_window,
+            min_periods=self.config.resistance_test_count_window,
+        ).sum()
+        df["breakout_body_ratio"] = (df["close"] - df["open"]) / range_width
 
         atr = df["atr"].replace(0, np.nan)
         df["atr_21ema_zone"] = (df["close"] - df["ema21_close"]) / atr
+        df["atr_21emaH_zone"] = (df["close"] - df["ema21_high"]) / atr
+        df["atr_21emaL_zone"] = (df["close"] - df["ema21_low"]) / atr
+        df["atr_low_to_ema21_high"] = (df["low"] - df["ema21_high"]) / atr
+        df["atr_low_to_ema21_low"] = (df["low"] - df["ema21_low"]) / atr
         df["atr_10wma_zone"] = (df["close"] - df["wma10_weekly"]) / atr
         df["atr_50sma_zone"] = (df["close"] - df["sma50"]) / atr
+        df["prev_high"] = df["high"].shift(1)
         df["min_atr_21ema_zone_5d"] = df["atr_21ema_zone"].rolling(5).min()
         df["close_crossed_above_ema21"] = (df["close"] > df["ema21_close"]) & (
             df["close"].shift(1) <= df["ema21_close"].shift(1)
@@ -212,6 +230,8 @@ class IndicatorCalculator:
     def _calculate_structure_pivot_snapshot(self, df: pd.DataFrame) -> dict[str, float | bool]:
         long_state = self._detect_structure_pivot_state(df, is_long=True)
         short_state = self._detect_structure_pivot_state(df, is_long=False)
+        llhl_extension = self._build_llhl_extension_fields(df, long_state)
+        ct_fields = self._build_ct_trendline_fields(df, long_state)
         return {
             "structure_pivot_long_active": bool(long_state["active"]),
             "structure_pivot_long_breakout": bool(long_state["breakout"]),
@@ -229,7 +249,120 @@ class IndicatorCalculator:
             "structure_pivot_short_length": short_state["length"],
             "structure_pivot_short_hh_price": short_state["prior_price"],
             "structure_pivot_short_lh_price": short_state["current_price"],
+            **llhl_extension,
+            **ct_fields,
         }
+
+    def _build_llhl_extension_fields(
+        self,
+        df: pd.DataFrame,
+        long_state: dict[str, float | bool],
+    ) -> dict[str, float | bool]:
+        base = {
+            "structure_pivot_hl_price": np.nan,
+            "structure_pivot_swing_high": np.nan,
+            "structure_pivot_1st_pivot": np.nan,
+            "structure_pivot_2nd_pivot": np.nan,
+            "structure_pivot_1st_break": False,
+            "structure_pivot_2nd_break": False,
+        }
+        if not bool(long_state["active"]):
+            return base
+
+        hl_price = float(long_state["current_price"])
+        swing_high = float(long_state["pivot_price"])
+        if pd.isna(hl_price) or pd.isna(swing_high):
+            return base
+
+        first_pivot = hl_price + (swing_high - hl_price) * 0.618
+        second_pivot = swing_high
+        latest_close = float(df["close"].iloc[-1])
+        previous_close = float(df["close"].iloc[-2]) if len(df) >= 2 and pd.notna(df["close"].iloc[-2]) else float("nan")
+        first_break = bool(
+            latest_close > first_pivot
+            and pd.notna(previous_close)
+            and previous_close <= first_pivot
+        )
+        second_break = bool(
+            latest_close > second_pivot
+            and pd.notna(previous_close)
+            and previous_close <= second_pivot
+        )
+        return {
+            "structure_pivot_hl_price": hl_price,
+            "structure_pivot_swing_high": swing_high,
+            "structure_pivot_1st_pivot": first_pivot,
+            "structure_pivot_2nd_pivot": second_pivot,
+            "structure_pivot_1st_break": first_break,
+            "structure_pivot_2nd_break": second_break,
+        }
+
+    def _build_ct_trendline_fields(
+        self,
+        df: pd.DataFrame,
+        long_state: dict[str, float | bool],
+    ) -> dict[str, float | bool]:
+        base = {
+            "ct_trendline_value": np.nan,
+            "ct_trendline_break": False,
+        }
+        if bool(long_state["active"]):
+            return base
+
+        pivot_highs = self._collect_confirmed_pivot_highs(df)
+        if len(pivot_highs) < 2:
+            return base
+
+        (pivot_high_1_idx, pivot_high_1), (pivot_high_2_idx, pivot_high_2) = pivot_highs[-2], pivot_highs[-1]
+        if pivot_high_2 >= pivot_high_1:
+            return base
+
+        bars_between = pivot_high_2_idx - pivot_high_1_idx
+        if bars_between <= 0:
+            return base
+
+        slope = (pivot_high_2 - pivot_high_1) / bars_between
+        current_bar = len(df) - 1
+        previous_bar = current_bar - 1
+        ct_trendline_value = pivot_high_1 + slope * (current_bar - pivot_high_1_idx)
+        previous_ct_trendline_value = (
+            pivot_high_1 + slope * (previous_bar - pivot_high_1_idx)
+            if previous_bar >= pivot_high_1_idx
+            else float("nan")
+        )
+        latest_close = float(df["close"].iloc[-1])
+        previous_close = float(df["close"].iloc[-2]) if len(df) >= 2 and pd.notna(df["close"].iloc[-2]) else float("nan")
+        ct_break = bool(
+            latest_close > ct_trendline_value
+            and pd.notna(previous_close)
+            and pd.notna(previous_ct_trendline_value)
+            and previous_close <= previous_ct_trendline_value
+        )
+        return {
+            "ct_trendline_value": float(ct_trendline_value),
+            "ct_trendline_break": ct_break,
+        }
+
+    def _collect_confirmed_pivot_highs(self, df: pd.DataFrame) -> list[tuple[int, float]]:
+        min_length = max(int(self.config.structure_pivot_min_length), 1)
+        max_length = max(int(self.config.structure_pivot_max_length), min_length)
+        lows = df["low"].reset_index(drop=True)
+        highs = df["high"].reset_index(drop=True)
+        pivots_by_index: dict[int, float] = {}
+
+        for current_bar in range(len(df)):
+            for length in range(min_length, max_length + 1):
+                center = current_bar - length
+                if center - length < 0 or center + length > current_bar:
+                    continue
+                pivot_high = self._pivot_price_at(lows, highs, center=center, length=length, is_long=False)
+                if pd.notna(pivot_high):
+                    existing = pivots_by_index.get(center)
+                    value = float(pivot_high)
+                    if existing is None or value > existing:
+                        pivots_by_index[center] = value
+
+        return sorted(pivots_by_index.items(), key=lambda item: item[0])
 
     def _detect_structure_pivot_state(self, df: pd.DataFrame, *, is_long: bool) -> dict[str, float | bool]:
         min_length = max(int(self.config.structure_pivot_min_length), 1)

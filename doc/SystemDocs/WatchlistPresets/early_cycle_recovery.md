@@ -19,8 +19,8 @@ selected_duplicate_subfilters: []
 duplicate_threshold: 1
 duplicate_rule:
   mode: required_plus_optional_min
-  required_scans: [Trend Reversal Setup, Pocket Pivot]
-  optional_scans: [VCS 52 Low, Volume Accumulation]
+  required_scans: [Trend Reversal Setup]
+  optional_scans: [Pocket Pivot, VCS 52 Low, Volume Accumulation]
   optional_min_hits: 1
 preset_status: enabled
 ```
@@ -46,7 +46,7 @@ preset_status: enabled
 - selected duplicate subfilters: none
 - UI optional threshold after preset load: `1`
 - preset status: `enabled`
-- duplicate rule: `required_plus_optional_min`; requires every scan in `Trend Reversal Setup, Pocket Pivot` plus at least `1` hit from optional scans `VCS 52 Low, Volume Accumulation`
+- duplicate rule: `required_plus_optional_min`; requires every scan in `Trend Reversal Setup` plus at least `1` hit from optional scans `Pocket Pivot, VCS 52 Low, Volume Accumulation`
 
 ## Consolidation Notes
 

@@ -67,7 +67,6 @@ This is intended to answer:
 - which names pass one or more active scan rules?
 - which names survive the currently selected post-scan filters?
 - which names satisfy the current required and optional scan-card rule?
-- which names have same-day earnings inside the current eligible universe?
 
 ### 2.5 Entry Signal Review
 
@@ -81,7 +80,7 @@ This is intended to answer:
 
 ### 2.6 Preset Performance Review
 
-The user can review the Tracking Analytics tab after preset detections have been recorded.
+The user can review the Analysis tab after preset detections have been recorded.
 
 This is intended to answer:
 
@@ -131,7 +130,7 @@ Available default definitions:
 - `Trend Base`
 - `Fund Score > 70`
 
-These rules do not determine raw watchlist eligibility. They narrow the displayed watchlist only when the user selects them in the sidebar.
+These rules do not determine raw watchlist eligibility. They narrow the displayed watchlist only when the user selects them in the watchlist controls.
 
 ## 4. Indicator Guide
 

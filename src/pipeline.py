@@ -66,6 +66,7 @@ class PlatformArtifacts:
     resolved_symbols: list[str]
     universe_snapshot_path: str | None
     artifact_origin: str
+    entry_signal_watchlist: pd.DataFrame | None = None
 
 
 class ResearchPlatform:
@@ -228,6 +229,7 @@ class ResearchPlatform:
             resolved_symbols=active_symbols,
             universe_snapshot_path=universe_snapshot_path,
             artifact_origin="pipeline_recomputed",
+            entry_signal_watchlist=scan_result.watchlist,
         )
 
     def load_latest_run_artifacts(self, symbols: list[str] | None = None, force_universe_refresh: bool = False) -> PlatformArtifacts | None:
@@ -300,6 +302,7 @@ class ResearchPlatform:
             resolved_symbols=resolved_symbols,
             universe_snapshot_path=str(loaded.metadata.get("universe_snapshot_path")) if loaded.metadata.get("universe_snapshot_path") else None,
             artifact_origin="same_day_saved_run",
+            entry_signal_watchlist=loaded.watchlist,
         )
 
     def _saved_run_matches_request(self, metadata: dict[str, object], manual_symbols: list[str]) -> bool:

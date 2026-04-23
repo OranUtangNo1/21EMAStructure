@@ -8,6 +8,7 @@ import pandas as pd
 from src.scan.rules import (
     AnnotationFilterConfig,
     DuplicateRuleConfig,
+    DuplicateRuleGroupConfig,
     ScanCardConfig,
     ScanConfig,
     WatchlistPresetConfig,
@@ -47,11 +48,20 @@ class WatchlistViewModelBuilder:
 
         table = watchlist.copy()
         table["earnings"] = table["earnings_in_7d"].fillna(False).map(lambda value: "Yes" if value else "No")
+        table["watchlist_candidate_reason"] = "matched_enabled_scan"
+        if "hit_scans" in table.columns:
+            table["matched_scan_rules"] = table["hit_scans"].fillna("")
+        if "annotation_hits" in table.columns:
+            table["matched_annotation_filters"] = table["annotation_hits"].fillna("")
+        if "duplicate_ticker" in table.columns:
+            table["backend_duplicate_ticker"] = table["duplicate_ticker"].fillna(False).astype(bool)
+            table["backend_duplicate_rule"] = f"scan_hit_count >= {int(self.config.duplicate_min_count)} across all enabled scans"
 
         columns = [
             "name",
             "sector",
             "industry",
+            "watchlist_candidate_reason",
             "H",
             "F",
             "I",
@@ -62,9 +72,13 @@ class WatchlistViewModelBuilder:
             "overlap_count",
             "scan_hit_count",
             "annotation_hit_count",
+            "backend_duplicate_ticker",
+            "backend_duplicate_rule",
             "duplicate_ticker",
             "hit_scans",
+            "matched_scan_rules",
             "annotation_hits",
+            "matched_annotation_filters",
             "vcs",
             "dist_from_52w_high",
             "dist_from_52w_low",
@@ -544,6 +558,15 @@ class WatchlistViewModelBuilder:
     ) -> pd.Series:
         if scan_hits.empty:
             return pd.Series(False, index=tickers, dtype=bool)
+        if rule.mode == "grouped_threshold":
+            result = pd.Series(True, index=tickers, dtype=bool)
+            if rule.required_scans:
+                required_hits = scan_hits.loc[scan_hits["name"].isin(rule.required_scans)].groupby("ticker")["name"].nunique()
+                result = result & (required_hits.reindex(tickers).fillna(0).astype(int) >= len(rule.required_scans))
+            for group in rule.optional_groups:
+                group_hits = scan_hits.loc[scan_hits["name"].isin(group.scans)].groupby("ticker")["name"].nunique()
+                result = result & (group_hits.reindex(tickers).fillna(0).astype(int) >= int(group.min_hits))
+            return result
         if rule.mode == "required_plus_optional_min":
             required_hits = scan_hits.loc[scan_hits["name"].isin(rule.required_scans)].groupby("ticker")["name"].nunique()
             optional_hits = scan_hits.loc[scan_hits["name"].isin(rule.optional_scans)].groupby("ticker")["name"].nunique()

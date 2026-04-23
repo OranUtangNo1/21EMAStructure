@@ -58,7 +58,7 @@ def test_backfill_tracking_db_keeps_oldest_detection_for_duplicate_preset_ticker
     assert momentum["return_20d"] == 22.0
     assert momentum["status"] == "closed"
     assert momentum["closed_at"] == "2026-05-08"
-    assert [row["scan_name"] for row in detection_scans] == ["21EMA scan", "VCS"]
+    assert [row["scan_name"] for row in detection_scans] == ["21EMA Pattern H", "VCS"]
     assert len(scan_hits) == 2
 
 
@@ -120,7 +120,7 @@ def _write_legacy_csvs(root: Path) -> None:
                 "preset_name": "Momentum Core",
                 "ticker": "AAA",
                 "market_label": "bull",
-                "hit_scans": "21EMA scan, VCS",
+                "hit_scans": "21EMA Pattern H, VCS",
                 "close_at_signal": 100.0,
                 "hybrid_score": 91.0,
                 "vcs": 68.0,
@@ -133,7 +133,7 @@ def _write_legacy_csvs(root: Path) -> None:
                 "preset_name": "Momentum Core",
                 "ticker": "AAA",
                 "market_label": "bull",
-                "hit_scans": "21EMA scan",
+                "hit_scans": "21EMA Pattern H",
                 "close_at_signal": 120.0,
                 "hybrid_score": 90.0,
                 "vcs": 60.0,
@@ -187,7 +187,7 @@ def _write_legacy_csvs(root: Path) -> None:
     ).to_csv(effectiveness_dir / "outcomes.csv", index=False)
     pd.DataFrame(
         [
-            {"ticker": "AAA", "name": "21EMA scan", "kind": "scan"},
+            {"ticker": "AAA", "name": "21EMA Pattern H", "kind": "scan"},
             {"ticker": "BBB", "name": "Reclaim", "kind": "scan"},
         ]
     ).to_csv(scan_hits_dir / "20260410.csv", index=False)

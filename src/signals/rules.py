@@ -69,6 +69,15 @@ def _volume_reclaim_entry(row: pd.Series) -> bool:
     return _gt(row.get("close"), row.get("sma50")) and _gte(row.get("rel_volume"), 1.4) and _gt(row.get("daily_change_pct"), 0.0)
 
 
+def _resistance_breakout_entry(row: pd.Series) -> bool:
+    return bool(
+        _gte(row.get("resistance_test_count"), 2.0)
+        and _gt(row.get("close"), row.get("resistance_level_lookback"))
+        and _gte(row.get("breakout_body_ratio"), 0.6)
+        and _gte(row.get("rel_volume"), 1.5)
+    )
+
+
 def _note(text: str) -> Callable[[pd.Series], str]:
     return lambda _row: text
 
@@ -79,6 +88,13 @@ def _risk_from_ema21_or_sma50(row: pd.Series) -> str:
         if _is_number(value):
             return f"{column}: {float(value):.2f}"
     return ""
+
+
+def _risk_from_resistance_level(row: pd.Series) -> str:
+    value = row.get("resistance_level_lookback")
+    if _is_number(value):
+        return f"resistance_level_lookback: {float(value):.2f}"
+    return _risk_from_ema21_or_sma50(row)
 
 
 ENTRY_SIGNAL_REGISTRY: dict[str, EntrySignalDefinition] = {
@@ -113,6 +129,14 @@ ENTRY_SIGNAL_REGISTRY: dict[str, EntrySignalDefinition] = {
         evaluator=_volume_reclaim_entry,
         note_builder=_note("Close above SMA50 with 1.4x+ relative volume."),
         risk_builder=_risk_from_ema21_or_sma50,
+    ),
+    "Resistance Breakout Entry": EntrySignalDefinition(
+        signal_name="Resistance Breakout Entry",
+        display_name="Resistance Breakout Entry",
+        description="Breakout above lookback resistance with body and volume confirmation.",
+        evaluator=_resistance_breakout_entry,
+        note_builder=_note("Breakout above lookback resistance with >=2 prior tests, body >=0.6, and rel volume >=1.5."),
+        risk_builder=_risk_from_resistance_level,
     ),
 }
 

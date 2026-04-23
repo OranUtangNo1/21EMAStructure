@@ -57,6 +57,7 @@ All 9 built-in presets currently share:
 - `preset_status: enabled`
 
 Most presets use `duplicate_threshold: 1`, `duplicate_rule.mode: required_plus_optional_min`, and `duplicate_rule.optional_min_hits: 1`.
+`Orderly Pullback` and `Trend Pullback` use `duplicate_rule.mode: grouped_threshold` so scan groups can have independent required-hit thresholds.
 `Resilient Leader` uses `duplicate_threshold: 2` and `duplicate_rule.mode: min_count`.
 Preset-level `selected_annotation_filters` vary by preset and are documented in each preset file.
 
@@ -81,7 +82,7 @@ The active built-in catalog contains these 9 presets:
 | Preset | Selected scans |
 |---|---|
 | `Leader Breakout` | `97 Club`, `VCS 52 High`, `RS Acceleration`, `Three Weeks Tight` |
-| `Orderly Pullback` | `Pullback Quality scan`, `21EMA scan`, `RS Acceleration`, `Volume Accumulation` |
+| `Orderly Pullback` | `Pullback Quality scan`, `21EMA Pattern H`, `21EMA Pattern L`, `RS Acceleration`, `Volume Accumulation` |
 | `Reclaim Trigger` | `Reclaim scan`, `Pocket Pivot` |
 | `Momentum Surge` | `4% bullish`, `Momentum 97`, `PP Count`, `Sustained Leadership` |
 | `Early Cycle Recovery` | `Trend Reversal Setup`, `Pocket Pivot`, `VCS 52 Low`, `Volume Accumulation` |
@@ -101,7 +102,7 @@ Scans currently unused by any built-in preset:
 | File | Preset name | Category | Selected scans |
 |---|---|---|---|
 | [leader_breakout.md](leader_breakout.md) | `Leader Breakout` | Legacy consolidated | `97 Club`, `VCS 52 High`, `RS Acceleration`, `Three Weeks Tight` |
-| [orderly_pullback.md](orderly_pullback.md) | `Orderly Pullback` | Legacy consolidated | `Pullback Quality scan`, `21EMA scan`, `RS Acceleration`, `Volume Accumulation` |
+| [orderly_pullback.md](orderly_pullback.md) | `Orderly Pullback` | Legacy consolidated | `Pullback Quality scan`, `21EMA Pattern H`, `21EMA Pattern L`, `RS Acceleration`, `Volume Accumulation` |
 | [reclaim_trigger.md](reclaim_trigger.md) | `Reclaim Trigger` | Legacy consolidated | `Reclaim scan`, `Pocket Pivot` |
 | [momentum_surge.md](momentum_surge.md) | `Momentum Surge` | Legacy consolidated | `4% bullish`, `Momentum 97`, `PP Count`, `Sustained Leadership` |
 | [early_cycle_recovery.md](early_cycle_recovery.md) | `Early Cycle Recovery` | Legacy consolidated | `Trend Reversal Setup`, `Pocket Pivot`, `VCS 52 Low`, `Volume Accumulation` |

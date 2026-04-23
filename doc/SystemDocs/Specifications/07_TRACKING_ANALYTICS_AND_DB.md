@@ -1,8 +1,8 @@
-# Tracking Analytics and Database
+# Analysis and Tracking Database
 
 ## 1. Purpose
 
-This document defines the current preset-hit tracking design implemented in SQLite and rendered through the Tracking Analytics page.
+This document defines the current preset-hit tracking design implemented in SQLite and rendered through the Analysis page.
 
 The tracking system answers:
 
@@ -167,14 +167,14 @@ The SQLite schema defines these views:
 
 Current app usage:
 
-- Tracking Analytics reads `v_detection_detail` through `read_detection_detail()`
+- Analysis reads `v_detection_detail` through `read_detection_detail()`
 - repository functions expose horizon and scan performance views for analysis and future UI use
 
-## 6. Tracking Analytics UI
+## 6. Analysis UI
 
 Page owner:
 
-- `app/main.py::render_tracking_analytics`
+- `app/main.py::render_analysis`
 
 Filters:
 
@@ -194,10 +194,25 @@ Benchmark behavior:
 Result areas:
 
 - `Ranking`: grouped preset performance for the selected scope and horizon
-- `Detail`: row-level detection records for the selected scope
+- `Detail`: row-level detection records for the selected scope, including fixed horizon close and return columns through the selected horizon
 - observation CSV export: one row per detection horizon with available target data
 - detection-scan CSV export: one row per detection and hit scan
-- Tracking Health expander: diagnostics only
+- Setting page: diagnostics only
+
+Ranking display:
+
+- uses readable column names such as `Preset`, `Market`, `Avg Return (%)`, `Excess vs Benchmark (%)`, `Win Rate (%)`, and `Detections`
+- does not display the raw benchmark return column
+- highlights positive excess-return rows green and negative excess-return rows red
+
+Detail display:
+
+- uses readable column names instead of raw SQLite field names
+- formats percentage values with `(%)`
+- hides `benchmark_return_pct`
+- displays the selected-horizon excess return against the selected benchmark
+- shows later horizons as `-`
+- highlights positive excess-return rows green and negative excess-return rows red
 
 ## 7. Analysis Interpretation
 

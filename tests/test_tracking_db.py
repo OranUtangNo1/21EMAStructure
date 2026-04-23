@@ -67,7 +67,7 @@ def test_tracking_db_initialization_is_idempotent(tmp_path) -> None:
         initialize_tracking_db(conn)
         conn.execute(
             "INSERT INTO scan_hits (hit_date, ticker, scan_name, kind) VALUES (?, ?, ?, ?)",
-            ("2026-04-17", "AAA", "21EMA scan", "scan"),
+            ("2026-04-17", "AAA", "21EMA Pattern H", "scan"),
         )
         initialize_tracking_db(conn)
         count = conn.execute("SELECT COUNT(*) FROM scan_hits").fetchone()[0]

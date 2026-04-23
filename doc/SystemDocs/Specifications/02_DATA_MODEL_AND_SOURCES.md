@@ -183,18 +183,18 @@ The current default config sets this to `false`, so sample fallback is inactive 
 - fundamental cache: `24h`
 - universe snapshot TTL: `7d`
 
-The app-level `Force Price Data Refresh` control bypasses the technical price-cache TTL for the active run. It does not clear cache files; existing cached rows are still used to merge incremental live data and to provide stale fallback if the live refresh fails.
+The app-level `Force price data refresh` run option bypasses the technical price-cache TTL for the active run. It does not clear cache files; existing cached rows are still used to merge incremental live data and to provide stale fallback if the live refresh fails.
 
 ### 4.3 Same-day saved-run restore helper
 
 When persistence is enabled, `ResearchPlatform.load_latest_run_artifacts()` can reuse the latest saved run instead of rerunning the pipeline when all of these hold:
 
-- `Force Weekly Universe Refresh` is off
+- `Force weekly universe refresh` is off
 - the saved run metadata `config_path` matches the current resolved config path
-- the saved run metadata `manual_symbols_input` matches the current manual-symbol input
+- the saved run metadata `manual_symbols_input` matches the current symbol input, which is empty in the active UI
 - the saved run `trade_date` matches the current expected trade date
 
-The current expected trade date is derived from US/Eastern calendar date with a daily close cutoff and a weekday-only fallback. The Streamlit app uses this helper on startup and artifact-key changes when neither refresh control is forced. Explicit `Refresh`, `Force Weekly Universe Refresh`, or `Force Price Data Refresh` bypass saved-run restore and recompute through `ResearchPlatform.run()`.
+The current expected trade date is derived from US/Eastern calendar date with a daily close cutoff and a weekday-only fallback. The Streamlit app uses this helper on startup and artifact-key changes when neither refresh control is forced. Explicit `Refresh data`, `Force weekly universe refresh`, or `Force price data refresh` bypass saved-run restore and recompute through `ResearchPlatform.run()`.
 
 ### 4.4 Fetch-status states
 
@@ -246,8 +246,13 @@ The active scan pipeline produces:
 
 - `scan_hits` with `ticker`, `kind`, and `name`
 - raw watchlist rows with scan-hit counts, annotation-hit counts, compatibility alias fields, and duplicate flags
+- persisted watchlist rows with explicit aliases for scan and annotation matches:
+  - `matched_scan_rules` mirrors `hit_scans`
+  - `matched_annotation_filters` mirrors `annotation_hits`
+  - `backend_duplicate_ticker` mirrors the raw/global `duplicate_ticker`
+  - `backend_duplicate_rule` records the global duplicate rule basis
 - display-oriented duplicate-ticker frames for the UI
-- same-day earnings frames for the UI
+- same-day earnings frames retained as artifacts, but not rendered by the active Watchlist UI
 
 ### 5.4 Tracking database rows
 
@@ -284,6 +289,8 @@ When `data.persist_research_snapshots` is true, the pipeline saves:
 - `market_summary/YYYYMMDD.json`
 - `radar_summary/YYYYMMDD.json`
 - date-level scan hits into `tracking.db`
+
+The saved `watchlist.csv` is a scan-hit artifact, not a preset-hit artifact. A row means the ticker matched at least one enabled scan. Preset-hit CSVs are written separately under `data_runs/preset_exports/`.
 
 Run metadata currently includes:
 

@@ -16,9 +16,9 @@
 * Reads only precomputed indicator fields.
 * All conditions are combined with `AND`.
 * Intended as a **strict orderly-pullback-quality scan**.
-* This scan is responsible for the **pullback-quality judgment that was separated from the stricter draft of 21EMA scan**.
+* This scan is responsible for the **pullback-quality judgment that was separated from the older 21EMA pullback draft**.
 * This scan is **not** a reclaim / trigger scan.
-* This scan is **narrower** than `21EMA scan`, and is intended to filter a broad 21EMA candidate list down to higher-quality pullbacks.
+* This scan is intended to combine with trigger-oriented 21EMA pattern scans or reclaim scans when a preset needs both pullback quality and a trigger.
 
 ## Canonical Boolean Definition
 

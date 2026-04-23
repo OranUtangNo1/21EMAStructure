@@ -144,6 +144,32 @@ Implemented fields:
 - `monthly_return = close.pct_change(21) * 100`
 - `quarterly_return = close.pct_change(63) * 100`
 
+### 2.11 Breakout Quality Fields
+
+Implemented fields:
+
+- `resistance_level_lookback = rolling_max(high, resistance_test_lookback).shift(1)`
+- `resistance_test_count`
+- `breakout_body_ratio = (close - open) / (high - low)`
+
+`resistance_test_count` formula:
+
+- `resistance_zone_threshold = atr * resistance_zone_width_atr`
+- `tested = (high >= resistance_level_lookback - resistance_zone_threshold) and (close < resistance_level_lookback)`
+- `resistance_test_count = rolling_sum(tested, resistance_test_count_window, min_periods=resistance_test_count_window)`
+
+Edge handling:
+
+- `resistance_level_lookback` uses `shift(1)` to avoid same-day self-reference
+- `breakout_body_ratio` uses directional body; bearish bars are negative
+- when `high == low`, `breakout_body_ratio` is `NaN`
+
+Default parameters:
+
+- `resistance_test_lookback = 20`
+- `resistance_zone_width_atr = 0.5`
+- `resistance_test_count_window = 20`
+
 ## 3. Zone And Structure Metrics
 
 ### 3.1 ATR Distance Zones
@@ -151,8 +177,13 @@ Implemented fields:
 Implemented fields:
 
 - `atr_21ema_zone = (close - ema21_close) / atr`
+- `atr_21emaH_zone = (close - ema21_high) / atr`
+- `atr_21emaL_zone = (close - ema21_low) / atr`
+- `atr_low_to_ema21_high = (low - ema21_high) / atr`
+- `atr_low_to_ema21_low = (low - ema21_low) / atr`
 - `atr_10wma_zone = (close - wma10_weekly) / atr`
 - `atr_50sma_zone = (close - sma50) / atr`
+- `prev_high = high.shift(1)`
 
 Derived labels:
 

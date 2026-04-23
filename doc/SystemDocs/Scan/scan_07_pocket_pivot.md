@@ -8,7 +8,7 @@
 | UI display name | `Pocket Pivot` |
 | Implementation owner | `src/scan/rules.py::_scan_pocket_pivot` |
 | Output | `bool` |
-| Direct scan config | none |
+| Direct scan config | `scan.pocket_pivot_pp_count_min` |
 
 ## Evaluation Context
 
@@ -18,27 +18,24 @@
 ## Canonical Boolean Definition
 
 ```python
-matched = bool(
-    row.get("close", 0.0) > row.get("sma50", float("inf"))
-    and row.get("pocket_pivot", False)
-)
+matched = bool(row.get("pp_count_window", 0) >= config.pocket_pivot_pp_count_min)
 ```
 
 ## Required Inputs
 
 | Field | Producer | Missing/default used by scan | Scan use |
 |---|---|---|---|
-| `close` | latest price row | `0.0` | `> sma50` |
-| `sma50` | `src/indicators/core.py::IndicatorCalculator.calculate` | `float("inf")` | upper comparison target |
-| `pocket_pivot` | `src/indicators/core.py::IndicatorCalculator.calculate` | `False` | must be `True` |
+| `pp_count_window` | `src/indicators/core.py::IndicatorCalculator.calculate` | `0` | `>= pocket_pivot_pp_count_min` |
 
 ## Direct Config Dependencies
 
-None. `_scan_pocket_pivot` uses hard-coded rule terms only.
+| Config key | Default | Used as |
+|---|---|---|
+| `scan.pocket_pivot_pp_count_min` | `1` | minimum recent pocket-pivot count |
 
 ## Upstream Field Definitions
 
-- `sma50 = close.rolling(50).mean()`
 - `prior_volume_high = volume.rolling(pocket_pivot_lookback).max().shift(1)`
 - `pocket_pivot = (close > open) & (volume > prior_volume_high)`
-- default `pocket_pivot_lookback = 10` under `indicators.pocket_pivot_lookback`
+- `pp_count_window = pocket_pivot.rolling(pp_count_window_days).sum().fillna(0).astype(int)`
+- default `pocket_pivot_lookback = 10`, `pp_count_window_days = 20` under `indicators.*`

@@ -34,6 +34,11 @@ def test_indicator_formulas_match_docs() -> None:
     latest = result.iloc[-1]
 
     assert round(float(latest["atr_21ema_zone"]), 6) == 0.0
+    assert round(float(latest["atr_21emaH_zone"]), 6) == 0.0
+    assert round(float(latest["atr_21emaL_zone"]), 6) == 1.0
+    assert round(float(latest["atr_low_to_ema21_high"]), 6) == -1.0
+    assert round(float(latest["atr_low_to_ema21_low"]), 6) == 0.0
+    assert round(float(latest["prev_high"]), 6) == 11.0
     assert round(float(latest["ema21_low_pct"]), 6) == 20.0
     assert round(float(latest["adr_percent"]), 6) == round((((11.0 / 9.0) + (12.0 / 10.0)) / 2.0 - 1.0) * 100.0, 6)
     assert round(float(latest["atr_pct_from_50sma"]), 6) == round((((12.0 / 11.0) - 1.0) / (2.0 / 12.0)), 6)
@@ -427,6 +432,42 @@ def test_indicator_calculator_adds_pullback_and_reclaim_fields() -> None:
     assert round(float(latest["min_atr_21ema_zone_5d"]), 6) == round(float(expected_min_atr_21ema_zone_5d), 6)
 
 
+def test_indicator_calculator_adds_resistance_breakout_quality_fields() -> None:
+    dates = pd.date_range("2025-01-01", periods=10, freq="D")
+    frame = pd.DataFrame(
+        {
+            "open": [9.8, 10.8, 11.8, 12.8, 13.8, 13.5, 13.6, 13.4, 13.9, 14.2],
+            "high": [10.0, 11.0, 12.0, 13.0, 14.0, 13.8, 13.9, 13.7, 14.8, 15.5],
+            "low": [9.5, 10.5, 11.5, 12.5, 13.5, 13.2, 13.3, 13.1, 13.5, 14.0],
+            "close": [9.8, 10.8, 11.8, 12.8, 13.8, 13.6, 13.7, 13.5, 14.0, 15.2],
+            "adjusted_close": [9.8, 10.8, 11.8, 12.8, 13.8, 13.6, 13.7, 13.5, 14.0, 15.2],
+            "volume": [1_000_000] * 10,
+        },
+        index=dates,
+    )
+    calculator = IndicatorCalculator(
+        IndicatorConfig(
+            ema_period=2,
+            sma_short_period=2,
+            sma_long_period=3,
+            atr_period=2,
+            adr_period=2,
+            relvol_period=2,
+            enable_3wt=False,
+            resistance_test_lookback=5,
+            resistance_zone_width_atr=0.5,
+            resistance_test_count_window=5,
+        )
+    )
+
+    result = calculator.calculate(frame)
+    latest = result.iloc[-1]
+
+    assert round(float(latest["resistance_level_lookback"]), 6) == 14.8
+    assert float(latest["resistance_test_count"]) >= 2.0
+    assert round(float(latest["breakout_body_ratio"]), 6) == round((15.2 - 14.2) / (15.5 - 14.0), 6)
+
+
 def test_indicator_calculator_adds_structure_pivot_fields_from_history() -> None:
     dates = pd.date_range("2025-01-01", periods=8, freq="D")
     frame = pd.DataFrame(
@@ -466,6 +507,14 @@ def test_indicator_calculator_adds_structure_pivot_fields_from_history() -> None
     assert float(latest["structure_pivot_long_length"]) == 1.0
     assert round(float(latest["structure_pivot_long_ll_price"]), 6) == 8.0
     assert round(float(latest["structure_pivot_long_hl_price"]), 6) == 8.6
+    assert round(float(latest["structure_pivot_hl_price"]), 6) == 8.6
+    assert round(float(latest["structure_pivot_swing_high"]), 6) == 11.0
+    assert round(float(latest["structure_pivot_1st_pivot"]), 6) == 10.0832
+    assert round(float(latest["structure_pivot_2nd_pivot"]), 6) == 11.0
+    assert bool(latest["structure_pivot_1st_break"]) is False
+    assert bool(latest["structure_pivot_2nd_break"]) is False
+    assert pd.isna(latest["ct_trendline_value"])
+    assert bool(latest["ct_trendline_break"]) is False
 
 
 def test_indicator_calculator_flags_first_day_structure_pivot_breakout() -> None:
@@ -502,6 +551,41 @@ def test_indicator_calculator_flags_first_day_structure_pivot_breakout() -> None
     assert bool(latest["structure_pivot_long_breakout"]) is True
     assert bool(latest["structure_pivot_long_breakout_first_day"]) is True
     assert bool(latest["structure_pivot_long_breakout_gap_up"]) is False
+
+
+def test_indicator_calculator_computes_ct_break_only_when_long_structure_is_inactive() -> None:
+    dates = pd.date_range("2025-03-01", periods=8, freq="D")
+    frame = pd.DataFrame(
+        {
+            "open": [11.5, 10.8, 9.8, 10.8, 8.8, 9.6, 8.2, 8.9],
+            "high": [12.0, 11.0, 10.0, 11.0, 9.0, 10.0, 8.0, 10.0],
+            "low": [10.5, 9.0, 8.0, 9.0, 7.0, 8.0, 6.5, 7.5],
+            "close": [11.0, 9.5, 8.7, 10.0, 7.8, 9.2, 9.2, 9.4],
+            "adjusted_close": [11.0, 9.5, 8.7, 10.0, 7.8, 9.2, 9.2, 9.4],
+            "volume": [1_000_000] * 8,
+        },
+        index=dates,
+    )
+    calculator = IndicatorCalculator(
+        IndicatorConfig(
+            ema_period=2,
+            sma_short_period=2,
+            sma_long_period=3,
+            atr_period=2,
+            adr_period=2,
+            relvol_period=2,
+            enable_3wt=False,
+            structure_pivot_min_length=1,
+            structure_pivot_max_length=1,
+        )
+    )
+
+    result = calculator.calculate(frame)
+    latest = result.iloc[-1]
+
+    assert bool(latest["structure_pivot_long_active"]) is False
+    assert round(float(latest["ct_trendline_value"]), 6) == 9.0
+    assert bool(latest["ct_trendline_break"]) is True
 
 
 def test_structure_pivot_priority_mode_accepts_legacy_aliases() -> None:

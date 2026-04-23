@@ -155,3 +155,26 @@ def test_entry_signal_runner_builds_selected_universe_modes() -> None:
     assert set(eligible_universe.index) == {"AAA", "BBB", "CCC"}
     assert watchlist_universe.loc["AAA", "universe_sources"] == "Today's Watchlist"
     assert eligible_universe.loc["CCC", "universe_sources"] == "Eligible Universe"
+
+
+def test_entry_signal_runner_evaluates_resistance_breakout_entry() -> None:
+    scan_config = ScanConfig()
+    signal_config = EntrySignalConfig.from_dict({})
+    universe = pd.DataFrame(
+        {
+            "close": [101.0],
+            "resistance_level_lookback": [100.0],
+            "resistance_test_count": [2.0],
+            "breakout_body_ratio": [0.7],
+            "rel_volume": [1.6],
+            "universe_sources": ["Current Selection"],
+        },
+        index=["AAA"],
+    )
+
+    runner = EntrySignalRunner(signal_config, scan_config)
+    result = runner.evaluate(universe, ["Resistance Breakout Entry"])
+
+    assert list(result["Ticker"]) == ["AAA"]
+    assert result.iloc[0]["Entry Signals"] == "Resistance Breakout Entry"
+    assert result.iloc[0]["Risk Reference"] == "resistance_level_lookback: 100.00"
