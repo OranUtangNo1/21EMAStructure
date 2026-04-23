@@ -278,6 +278,24 @@ def test_pp_count_thresholds_can_be_parameterized_independently() -> None:
     assert annotation_result["PP Count (20d)"] is True
 
 
+def test_pocket_pivot_scan_uses_recent_pp_count_threshold() -> None:
+    row = pd.Series({"pp_count_window": 1, "close": 1.0, "sma50": 999.0, "pocket_pivot": False})
+    config = ScanConfig(enabled_scan_rules=("Pocket Pivot",), pocket_pivot_pp_count_min=1)
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["Pocket Pivot"] is True
+
+
+def test_pocket_pivot_scan_respects_configurable_pp_count_minimum() -> None:
+    row = pd.Series({"pp_count_window": 1, "close": 1.0, "sma50": 999.0, "pocket_pivot": True})
+    config = ScanConfig(enabled_scan_rules=("Pocket Pivot",), pocket_pivot_pp_count_min=2)
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["Pocket Pivot"] is False
+
+
 def test_volume_accumulation_scan_uses_ud_ratio_rel_volume_and_positive_day() -> None:
     row = pd.Series({"ud_volume_ratio": 1.5, "rel_volume": 1.0, "daily_change_pct": 0.1})
     config = ScanConfig(enabled_scan_rules=("Volume Accumulation",))
@@ -435,6 +453,33 @@ def test_structure_pivot_scan_can_exclude_gap_up_breakouts() -> None:
     result = evaluate_scan_rules(row, config)
 
     assert result["Structure Pivot"] is False
+
+
+def test_llhl_1st_pivot_scan_requires_rs_and_first_break() -> None:
+    row = pd.Series({"raw_rs21": 60.0, "structure_pivot_1st_break": True})
+    config = ScanConfig(enabled_scan_rules=("LL-HL Structure 1st Pivot",), llhl_1st_rs21_min=60.0)
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["LL-HL Structure 1st Pivot"] is True
+
+
+def test_llhl_2nd_pivot_scan_requires_rs_and_second_break() -> None:
+    row = pd.Series({"raw_rs21": 60.0, "structure_pivot_2nd_break": True})
+    config = ScanConfig(enabled_scan_rules=("LL-HL Structure 2nd Pivot",), llhl_2nd_rs21_min=60.0)
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["LL-HL Structure 2nd Pivot"] is True
+
+
+def test_llhl_ct_break_scan_uses_ct_trendline_break_flag() -> None:
+    row = pd.Series({"ct_trendline_break": True})
+    config = ScanConfig(enabled_scan_rules=("LL-HL Structure Trend Line Break",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["LL-HL Structure Trend Line Break"] is True
 
 
 def test_watchlist_default_sort_prefers_hybrid_score() -> None:

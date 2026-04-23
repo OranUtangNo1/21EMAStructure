@@ -507,6 +507,14 @@ def test_indicator_calculator_adds_structure_pivot_fields_from_history() -> None
     assert float(latest["structure_pivot_long_length"]) == 1.0
     assert round(float(latest["structure_pivot_long_ll_price"]), 6) == 8.0
     assert round(float(latest["structure_pivot_long_hl_price"]), 6) == 8.6
+    assert round(float(latest["structure_pivot_hl_price"]), 6) == 8.6
+    assert round(float(latest["structure_pivot_swing_high"]), 6) == 11.0
+    assert round(float(latest["structure_pivot_1st_pivot"]), 6) == 10.0832
+    assert round(float(latest["structure_pivot_2nd_pivot"]), 6) == 11.0
+    assert bool(latest["structure_pivot_1st_break"]) is False
+    assert bool(latest["structure_pivot_2nd_break"]) is False
+    assert pd.isna(latest["ct_trendline_value"])
+    assert bool(latest["ct_trendline_break"]) is False
 
 
 def test_indicator_calculator_flags_first_day_structure_pivot_breakout() -> None:
@@ -543,6 +551,41 @@ def test_indicator_calculator_flags_first_day_structure_pivot_breakout() -> None
     assert bool(latest["structure_pivot_long_breakout"]) is True
     assert bool(latest["structure_pivot_long_breakout_first_day"]) is True
     assert bool(latest["structure_pivot_long_breakout_gap_up"]) is False
+
+
+def test_indicator_calculator_computes_ct_break_only_when_long_structure_is_inactive() -> None:
+    dates = pd.date_range("2025-03-01", periods=8, freq="D")
+    frame = pd.DataFrame(
+        {
+            "open": [11.5, 10.8, 9.8, 10.8, 8.8, 9.6, 8.2, 8.9],
+            "high": [12.0, 11.0, 10.0, 11.0, 9.0, 10.0, 8.0, 10.0],
+            "low": [10.5, 9.0, 8.0, 9.0, 7.0, 8.0, 6.5, 7.5],
+            "close": [11.0, 9.5, 8.7, 10.0, 7.8, 9.2, 9.2, 9.4],
+            "adjusted_close": [11.0, 9.5, 8.7, 10.0, 7.8, 9.2, 9.2, 9.4],
+            "volume": [1_000_000] * 8,
+        },
+        index=dates,
+    )
+    calculator = IndicatorCalculator(
+        IndicatorConfig(
+            ema_period=2,
+            sma_short_period=2,
+            sma_long_period=3,
+            atr_period=2,
+            adr_period=2,
+            relvol_period=2,
+            enable_3wt=False,
+            structure_pivot_min_length=1,
+            structure_pivot_max_length=1,
+        )
+    )
+
+    result = calculator.calculate(frame)
+    latest = result.iloc[-1]
+
+    assert bool(latest["structure_pivot_long_active"]) is False
+    assert round(float(latest["ct_trendline_value"]), 6) == 9.0
+    assert bool(latest["ct_trendline_break"]) is True
 
 
 def test_structure_pivot_priority_mode_accepts_legacy_aliases() -> None:

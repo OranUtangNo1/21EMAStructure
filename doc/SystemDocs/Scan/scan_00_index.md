@@ -40,7 +40,7 @@ Each file in this folder must allow a developer to reproduce the scan boolean lo
 
 ## Active Scan Specs
 
-The default config currently enables `19` scan families.
+The default config currently enables `22` scan families.
 
 | File | Canonical scan name | Implementation owner |
 |---|---|---|
@@ -63,6 +63,9 @@ The default config currently enables `19` scan families.
 | [scan_21_structure_pivot.md](scan_21_structure_pivot.md) | `Structure Pivot` | `src/scan/rules.py::_scan_structure_pivot` |
 | [scan_22_21ema_pattern_h.md](scan_22_21ema_pattern_h.md) | `21EMA Pattern H` | `src/scan/rules.py::_scan_21ema_pattern_h` |
 | [scan_23_21ema_pattern_l.md](scan_23_21ema_pattern_l.md) | `21EMA Pattern L` | `src/scan/rules.py::_scan_21ema_pattern_l` |
+| [scan_24_llhl_1st_pivot.md](scan_24_llhl_1st_pivot.md) | `LL-HL Structure 1st Pivot` | `src/scan/rules.py::_scan_llhl_1st_pivot` |
+| [scan_25_llhl_2nd_pivot.md](scan_25_llhl_2nd_pivot.md) | `LL-HL Structure 2nd Pivot` | `src/scan/rules.py::_scan_llhl_2nd_pivot` |
+| [scan_26_llhl_ct_break.md](scan_26_llhl_ct_break.md) | `LL-HL Structure Trend Line Break` | `src/scan/rules.py::_scan_llhl_ct_break` |
 
 ## Disabled Default Scan Specs
 

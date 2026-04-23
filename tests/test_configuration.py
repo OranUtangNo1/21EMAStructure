@@ -76,7 +76,7 @@ def test_default_settings_include_builtin_watchlist_presets() -> None:
     presets = settings["scan"]["watchlist_presets"]
     preset_names = [preset["preset_name"] for preset in presets]
 
-    assert len(presets) == 9
+    assert len(presets) == 13
     assert preset_names == [
         "Leader Breakout",
         "Orderly Pullback",
@@ -84,10 +84,16 @@ def test_default_settings_include_builtin_watchlist_presets() -> None:
         "Momentum Surge",
         "Early Cycle Recovery",
         "Base Breakout",
+        "Accumulation Breakout",
         "Trend Pullback",
         "Resilient Leader",
         "Early Recovery",
+        "Screening Thesis",
+        "Pullback Trigger",
+        "Momentum Ignition",
     ]
+
+
 def test_default_watchlist_presets_use_expected_duplicate_rules() -> None:
     settings = load_settings()
     scan_config = ScanConfig.from_dict(settings["scan"])
@@ -99,10 +105,58 @@ def test_default_watchlist_presets_use_expected_duplicate_rules() -> None:
         "Base Breakout": (("VCS 52 High", "Pocket Pivot"), ("97 Club", "Three Weeks Tight")),
         "Early Recovery": (("Trend Reversal Setup", "Structure Pivot"), ("VCS 52 Low", "Volume Accumulation")),
     }
+    grouped_rules = {
+        "Orderly Pullback": (
+            (),
+            (
+                ("21EMA Trigger", ("21EMA Pattern H", "21EMA Pattern L"), 1),
+                ("Quality / Strength Confirmation", ("Pullback Quality scan", "RS Acceleration", "Volume Accumulation"), 1),
+            ),
+        ),
+        "Accumulation Breakout": (
+            ("VCS 52 High",),
+            (
+                ("Accumulation Evidence", ("PP Count", "Volume Accumulation"), 1),
+                ("Breakout Trigger", ("Pocket Pivot", "4% bullish"), 1),
+            ),
+        ),
+        "Trend Pullback": (
+            ("Reclaim scan",),
+            (
+                ("Pullback Evidence", ("Pullback Quality scan",), 1),
+                ("Strength Confirmation", ("RS Acceleration", "Volume Accumulation"), 1),
+            ),
+        ),
+        "Screening Thesis": (
+            ("Trend Reversal Setup",),
+            (
+                (
+                    "Structure Break",
+                    ("LL-HL Structure 1st Pivot", "LL-HL Structure 2nd Pivot", "LL-HL Structure Trend Line Break"),
+                    1,
+                ),
+                ("Demand Confirmation", ("Volume Accumulation", "Pocket Pivot"), 1),
+            ),
+        ),
+        "Pullback Trigger": (
+            ("Pullback Quality scan",),
+            (
+                ("Pattern Trigger", ("21EMA Pattern H", "21EMA Pattern L"), 1),
+                ("Demand Confirmation", ("Volume Accumulation", "Pocket Pivot"), 1),
+            ),
+        ),
+        "Momentum Ignition": (
+            ("Momentum 97",),
+            (
+                ("Acceleration Event", ("4% bullish", "PP Count"), 1),
+                ("Quality Structure", ("VCS 52 High", "Volume Accumulation"), 1),
+            ),
+        ),
+    }
 
     presets = {preset.preset_name: preset for preset in scan_config.watchlist_presets}
 
-    assert set(presets) == {*required_plus_optional_rules, "Orderly Pullback", "Trend Pullback", "Resilient Leader"}
+    assert set(presets) == {*required_plus_optional_rules, *grouped_rules, "Resilient Leader"}
     for preset_name, (required_scans, optional_scans) in required_plus_optional_rules.items():
         preset = presets[preset_name]
         assert preset.duplicate_threshold == 1
@@ -111,28 +165,20 @@ def test_default_watchlist_presets_use_expected_duplicate_rules() -> None:
         assert preset.duplicate_rule.optional_scans == optional_scans
         assert preset.duplicate_rule.optional_min_hits == 1
 
+    for preset_name, (required_scans, optional_groups) in grouped_rules.items():
+        preset = presets[preset_name]
+        assert preset.duplicate_threshold == 1
+        assert preset.duplicate_rule.mode == "grouped_threshold"
+        assert preset.duplicate_rule.required_scans == required_scans
+        assert [(group.group_name, group.scans, group.min_hits) for group in preset.duplicate_rule.optional_groups] == list(
+            optional_groups
+        )
+
     resilient = presets["Resilient Leader"]
     assert resilient.duplicate_threshold == 2
     assert resilient.duplicate_rule.mode == "min_count"
     assert resilient.duplicate_rule.min_count == 2
     assert resilient.selected_scan_names == ("Sustained Leadership", "Near 52W High")
-    orderly = presets["Orderly Pullback"]
-    assert orderly.duplicate_threshold == 1
-    assert orderly.duplicate_rule.mode == "grouped_threshold"
-    assert orderly.duplicate_rule.required_scans == ()
-    assert [(group.group_name, group.scans, group.min_hits) for group in orderly.duplicate_rule.optional_groups] == [
-        ("21EMA Trigger", ("21EMA Pattern H", "21EMA Pattern L"), 1),
-        ("Quality / Strength Confirmation", ("Pullback Quality scan", "RS Acceleration", "Volume Accumulation"), 1),
-    ]
-
-    trend_pullback = presets["Trend Pullback"]
-    assert trend_pullback.duplicate_threshold == 1
-    assert trend_pullback.duplicate_rule.mode == "grouped_threshold"
-    assert trend_pullback.duplicate_rule.required_scans == ("Reclaim scan",)
-    assert [(group.group_name, group.scans, group.min_hits) for group in trend_pullback.duplicate_rule.optional_groups] == [
-        ("Pullback Evidence", ("Pullback Quality scan",), 1),
-        ("Strength Confirmation", ("RS Acceleration", "Volume Accumulation"), 1),
-    ]
 
 
 def test_default_watchlist_presets_do_not_reference_disabled_scans() -> None:
@@ -146,6 +192,8 @@ def test_default_watchlist_presets_do_not_reference_disabled_scans() -> None:
 
     assert {"Vol Up", "VCS"}.issubset(disabled_scans)
     for preset in scan_config.watchlist_presets:
+        if preset.preset_status == "disabled":
+            continue
         assert disabled_scans.isdisjoint(preset.selected_scan_names)
         assert disabled_scans.isdisjoint(preset.duplicate_rule.required_scans)
         assert disabled_scans.isdisjoint(preset.duplicate_rule.optional_scans)

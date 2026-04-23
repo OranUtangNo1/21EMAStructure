@@ -2127,8 +2127,9 @@ def render_entry_signals(
         default_min_count=duplicate_threshold,
     )
     runner = EntrySignalRunner(signal_state.signal_config, watchlist_state.scan_config)
+    signal_watchlist = artifacts.entry_signal_watchlist if artifacts.entry_signal_watchlist is not None else artifacts.watchlist
     universe = runner.build_universe(
-        artifacts.watchlist,
+        signal_watchlist,
         artifacts.scan_hits,
         selected_scan_names=watchlist_state.selected_scan_names,
         duplicate_threshold=duplicate_threshold,
