@@ -39,6 +39,8 @@ Related folders:
 - Codex output docs: `doc/ForCodexOutput/`
 - user-managed docs: `doc/ForUsersOnly/`
 - warehouse references: `doc/Archive/`
+- annotation filter catalog: `doc/SystemDocs/AnnotationFilters/`
+- entry signal catalog: `doc/SystemDocs/EntrySignal/`
 - watchlist preset catalog: `doc/SystemDocs/WatchlistPresets/`
 
 ## Numbered Specifications
@@ -108,6 +110,20 @@ Related folders:
   - entry point for per-scan reference documents
   - one scan per document
   - exact scan-specific thresholds and formulas live there instead of in the numbered specifications
+
+## Annotation Filter References
+
+- `doc/SystemDocs/AnnotationFilters/00_index.md`
+  - entry point for per-annotation-filter reference documents
+  - one annotation filter per document
+  - exact filter conditions live there instead of in the numbered specifications
+
+## Entry Signal References
+
+- `doc/SystemDocs/EntrySignal/00_index.md`
+  - entry point for per-entry-signal reference documents
+  - one entry signal per document
+  - exact signal conditions live there instead of in the numbered specifications
 
 ## Preset Catalog
 

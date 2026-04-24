@@ -76,7 +76,7 @@ def test_default_settings_include_builtin_watchlist_presets() -> None:
     presets = settings["scan"]["watchlist_presets"]
     preset_names = [preset["preset_name"] for preset in presets]
 
-    assert len(presets) == 13
+    assert len(presets) == 16
     assert preset_names == [
         "Leader Breakout",
         "Orderly Pullback",
@@ -85,6 +85,9 @@ def test_default_settings_include_builtin_watchlist_presets() -> None:
         "Early Cycle Recovery",
         "Base Breakout",
         "Accumulation Breakout",
+        "50SMA Defense",
+        "Power Gap Pullback",
+        "RS Breakout Setup",
         "Trend Pullback",
         "Resilient Leader",
         "Early Recovery",
@@ -118,6 +121,26 @@ def test_default_watchlist_presets_use_expected_duplicate_rules() -> None:
             (
                 ("Accumulation Evidence", ("PP Count", "Volume Accumulation"), 1),
                 ("Breakout Trigger", ("Pocket Pivot", "4% bullish"), 1),
+            ),
+        ),
+        "50SMA Defense": (
+            ("50SMA Reclaim",),
+            (
+                ("Pullback Quality", ("Pullback Quality scan",), 1),
+                ("Demand Confirmation", ("Volume Accumulation", "Pocket Pivot"), 1),
+            ),
+        ),
+        "Power Gap Pullback": (
+            ("Pullback Quality scan",),
+            (
+                ("Reentry Trigger", ("21EMA Pattern H", "21EMA Pattern L", "Reclaim scan"), 1),
+                ("Demand Confirmation", ("Volume Accumulation", "Pocket Pivot"), 1),
+            ),
+        ),
+        "RS Breakout Setup": (
+            ("RS New High", "VCS 52 High"),
+            (
+                ("Breakout Event", ("Pocket Pivot", "4% bullish", "PP Count"), 1),
             ),
         ),
         "Trend Pullback": (
@@ -197,3 +220,15 @@ def test_default_watchlist_presets_do_not_reference_disabled_scans() -> None:
         assert disabled_scans.isdisjoint(preset.selected_scan_names)
         assert disabled_scans.isdisjoint(preset.duplicate_rule.required_scans)
         assert disabled_scans.isdisjoint(preset.duplicate_rule.optional_scans)
+
+
+def test_default_settings_include_annotation_and_entry_signal_status_maps() -> None:
+    settings = load_settings()
+
+    annotation_status_map = settings["scan"]["annotation_filter_status_map"]
+    signal_status_map = settings["entry_signals"]["signal_status_map"]
+
+    assert annotation_status_map["Trend Base"] == "enabled"
+    assert annotation_status_map["Recent Power Gap"] == "enabled"
+    assert signal_status_map["Pocket Pivot Entry"] == "enabled"
+    assert signal_status_map["Resistance Breakout Entry"] == "enabled"

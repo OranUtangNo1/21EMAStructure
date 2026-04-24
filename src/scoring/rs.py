@@ -17,6 +17,7 @@ class RSConfig:
     rs_normalization_method: str = "percentile"
     rs_strong_threshold: float = 80.0
     rs_weak_threshold: float = 39.0
+    rs_new_high_tolerance: float = 1.0
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> "RSConfig":
@@ -27,6 +28,7 @@ class RSConfig:
             rs_normalization_method=str(payload.get("rs_normalization_method", "percentile")),
             rs_strong_threshold=float(payload.get("rs_strong_threshold", 80.0)),
             rs_weak_threshold=float(payload.get("rs_weak_threshold", 39.0)),
+            rs_new_high_tolerance=float(payload.get("rs_new_high_tolerance", 1.0)),
         )
 
 
@@ -49,10 +51,14 @@ class RSScorer:
         benchmark_close = benchmark_history["close"].sort_index().replace(0, np.nan)
         raw_scores: dict[str, dict[str, float]] = {}
         current_ratios: dict[str, float] = {}
+        current_ratio_52w_highs: dict[str, float] = {}
+        current_ratio_at_52w_highs: dict[str, bool] = {}
 
         for ticker, history in histories.items():
             raw_scores[ticker] = {}
             current_ratios[ticker] = np.nan
+            current_ratio_52w_highs[ticker] = np.nan
+            current_ratio_at_52w_highs[ticker] = False
             if history.empty or "close" not in history:
                 self._fill_missing_scores(raw_scores[ticker])
                 continue
@@ -69,6 +75,11 @@ class RSScorer:
                 continue
 
             current_ratios[ticker] = float(ratio.iloc[-1])
+            ratio_52w_high = ratio.rolling(252, min_periods=126).max().iloc[-1]
+            current_ratio_52w_highs[ticker] = float(ratio_52w_high) if pd.notna(ratio_52w_high) else np.nan
+            if pd.notna(ratio_52w_high):
+                threshold = float(ratio_52w_high) * (1.0 - self.config.rs_new_high_tolerance / 100.0)
+                current_ratio_at_52w_highs[ticker] = float(ratio.iloc[-1]) >= threshold
             for lookback in self.config.rs_lookbacks:
                 raw_scores[ticker][f"raw_rs{lookback}"] = self._score_ratio_window(ratio, lookback)
 
@@ -80,6 +91,9 @@ class RSScorer:
             result[f"rs{lookback}"] = result[column]
 
         result["price_ratio"] = pd.Series(current_ratios, dtype=float).reindex(result.index)
+        result["rs_ratio"] = pd.Series(current_ratios, dtype=float).reindex(result.index)
+        result["rs_ratio_52w_high"] = pd.Series(current_ratio_52w_highs, dtype=float).reindex(result.index)
+        result["rs_ratio_at_52w_high"] = pd.Series(current_ratio_at_52w_highs, dtype=bool).reindex(result.index).fillna(False)
         return result
 
     def _append_empty_columns(self, snapshot: pd.DataFrame) -> pd.DataFrame:
@@ -88,6 +102,9 @@ class RSScorer:
             result[f"raw_rs{lookback}"] = np.nan
             result[f"rs{lookback}"] = np.nan
         result["price_ratio"] = np.nan
+        result["rs_ratio"] = np.nan
+        result["rs_ratio_52w_high"] = np.nan
+        result["rs_ratio_at_52w_high"] = False
         return result
 
     def _fill_missing_scores(self, raw_score_row: dict[str, float]) -> None:

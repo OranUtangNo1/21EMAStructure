@@ -50,6 +50,32 @@ def test_resistance_tests_annotation_uses_minimum_two_tests() -> None:
     assert result["Resistance Tests >= 2"] is True
 
 
+def test_recent_power_gap_annotation_uses_gap_size_and_recency() -> None:
+    row = pd.Series({"power_gap_up_pct": 12.0, "days_since_power_gap": 10.0})
+    config = ScanConfig()
+
+    result = evaluate_annotation_filters(row, config)
+
+    assert result["Recent Power Gap"] is True
+
+
+def test_recent_power_gap_annotation_respects_config_thresholds() -> None:
+    row = pd.Series({"power_gap_up_pct": 9.0, "days_since_power_gap": 25.0})
+    config = ScanConfig(
+        power_gap_annotation_min_pct=10.0,
+        power_gap_annotation_max_days=20,
+    )
+    result = evaluate_annotation_filters(row, config)
+    assert result["Recent Power Gap"] is False
+
+    relaxed = ScanConfig(
+        power_gap_annotation_min_pct=8.0,
+        power_gap_annotation_max_days=30,
+    )
+    relaxed_result = evaluate_annotation_filters(row, relaxed)
+    assert relaxed_result["Recent Power Gap"] is True
+
+
 def test_enabled_scan_rules_can_be_swapped_from_config() -> None:
     row = pd.Series({"rel_volume": 2.0, "daily_change_pct": 1.0})
     config = ScanConfig(enabled_scan_rules=("Vol Up",))
@@ -169,6 +195,82 @@ def test_reclaim_scan_rejects_rows_without_reclaim_cross() -> None:
     result = evaluate_scan_rules(row, config)
 
     assert result["Reclaim scan"] is False
+
+
+def test_50sma_reclaim_scan_requires_sma50_cross_and_recent_undercut() -> None:
+    row = pd.Series(
+        {
+            "sma50_slope_10d_pct": 0.5,
+            "atr_50sma_zone": 0.6,
+            "close_crossed_above_sma50": True,
+            "min_atr_50sma_zone_5d": -0.5,
+            "dcr_percent": 65.0,
+            "volume_ratio_20d": 1.2,
+            "drawdown_from_20d_high_pct": 8.0,
+        }
+    )
+    config = ScanConfig(enabled_scan_rules=("50SMA Reclaim",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["50SMA Reclaim"] is True
+
+
+def test_50sma_reclaim_scan_rejects_without_same_day_cross() -> None:
+    row = pd.Series(
+        {
+            "sma50_slope_10d_pct": 0.5,
+            "atr_50sma_zone": 0.6,
+            "close_crossed_above_sma50": False,
+            "min_atr_50sma_zone_5d": -0.5,
+            "dcr_percent": 65.0,
+            "volume_ratio_20d": 1.2,
+            "drawdown_from_20d_high_pct": 8.0,
+        }
+    )
+    config = ScanConfig(enabled_scan_rules=("50SMA Reclaim",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["50SMA Reclaim"] is False
+
+
+def test_rs_new_high_scan_uses_rs_flag_and_distance_band() -> None:
+    row = pd.Series(
+        {
+            "rs_ratio_at_52w_high": True,
+            "dist_from_52w_high": -12.0,
+        }
+    )
+    config = ScanConfig(enabled_scan_rules=("RS New High",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["RS New High"] is True
+
+
+def test_rs_new_high_scan_respects_configurable_distance_bounds() -> None:
+    row = pd.Series(
+        {
+            "rs_ratio_at_52w_high": True,
+            "dist_from_52w_high": -4.9,
+        }
+    )
+    config = ScanConfig(
+        enabled_scan_rules=("RS New High",),
+        rs_new_high_price_dist_max=-5.0,
+        rs_new_high_price_dist_min=-30.0,
+    )
+    result = evaluate_scan_rules(row, config)
+    assert result["RS New High"] is False
+
+    relaxed = ScanConfig(
+        enabled_scan_rules=("RS New High",),
+        rs_new_high_price_dist_max=-4.0,
+        rs_new_high_price_dist_min=-30.0,
+    )
+    relaxed_result = evaluate_scan_rules(row, relaxed)
+    assert relaxed_result["RS New High"] is True
 
 
 def test_21ema_pattern_h_requires_shallow_high_band_support_and_prev_high_break() -> None:
@@ -984,6 +1086,8 @@ def test_default_scan_config_includes_new_scan_names_and_cards() -> None:
         "21EMA Pattern L",
         "Pullback Quality scan",
         "Reclaim scan",
+        "50SMA Reclaim",
+        "RS New High",
         "Volume Accumulation",
         "VCS 52 High",
         "VCS 52 Low",
@@ -998,6 +1102,8 @@ def test_default_scan_config_includes_new_scan_names_and_cards() -> None:
         "21EMA Pattern L",
         "Pullback Quality scan",
         "Reclaim scan",
+        "50SMA Reclaim",
+        "RS New High",
         "Volume Accumulation",
         "VCS 52 High",
         "VCS 52 Low",
@@ -1013,6 +1119,7 @@ def test_default_scan_config_includes_new_scan_names_and_cards() -> None:
         "PP Count (20d)",
         "Trend Base",
         "Fund Score > 70",
+        "Recent Power Gap",
     }
 
 
@@ -1070,6 +1177,36 @@ def test_scan_config_coerces_misplaced_scan_names_out_of_enabled_annotation_filt
 
     assert config.enabled_scan_rules == ("Vol Up", "Trend Reversal Setup")
     assert config.enabled_annotation_filters == ("RS 21 >= 63",)
+
+
+def test_scan_config_filters_disabled_annotation_filters_from_runtime_and_presets() -> None:
+    config = ScanConfig.from_dict(
+        {
+            "annotation_filter_status_map": {
+                "Trend Base": "disabled",
+                "RS 21 >= 63": "enabled",
+            },
+            "enabled_annotation_filters": ["Trend Base", "RS 21 >= 63"],
+            "annotation_filters": [
+                {"filter_name": "Trend Base", "display_name": "Trend Base"},
+                {"filter_name": "RS 21 >= 63", "display_name": "RS 21 >= 63"},
+            ],
+            "card_sections": [
+                {"scan_name": "Vol Up", "display_name": "Vol Up"},
+            ],
+            "watchlist_presets": [
+                {
+                    "preset_name": "Filter Trim",
+                    "selected_scan_names": ["Vol Up"],
+                    "selected_annotation_filters": ["Trend Base", "RS 21 >= 63"],
+                }
+            ],
+        }
+    )
+
+    assert config.enabled_annotation_filters == ("RS 21 >= 63",)
+    assert tuple(section.filter_name for section in config.annotation_filters) == ("RS 21 >= 63",)
+    assert config.watchlist_presets[0].selected_annotation_filters == ("RS 21 >= 63",)
 
 
 def test_scan_config_drops_unavailable_startup_selected_scan_names() -> None:
@@ -1280,6 +1417,15 @@ def test_scan_config_rejects_unknown_scan_status_name() -> None:
         assert "scan_status_map" in str(exc)
     else:
         raise AssertionError("Expected invalid scan_status_map name to raise ValueError")
+
+
+def test_scan_config_rejects_unknown_annotation_filter_status_name() -> None:
+    try:
+        ScanConfig.from_dict({"annotation_filter_status_map": {"Made Up Filter": "disabled"}})
+    except ValueError as exc:
+        assert "annotation_filter_status_map" in str(exc)
+    else:
+        raise AssertionError("Expected invalid annotation_filter_status_map name to raise ValueError")
 
 
 

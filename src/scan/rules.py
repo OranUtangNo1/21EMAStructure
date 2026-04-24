@@ -35,6 +35,8 @@ DEFAULT_SCAN_RULE_NAMES = (
     "LL-HL Structure 1st Pivot",
     "LL-HL Structure 2nd Pivot",
     "LL-HL Structure Trend Line Break",
+    "50SMA Reclaim",
+    "RS New High",
 )
 
 DEFAULT_ANNOTATION_FILTER_NAMES = (
@@ -44,6 +46,7 @@ DEFAULT_ANNOTATION_FILTER_NAMES = (
     "Trend Base",
     "Fund Score > 70",
     "Resistance Tests >= 2",
+    "Recent Power Gap",
 )
 
 ANNOTATION_FILTER_NAME_ALIASES = {
@@ -79,6 +82,8 @@ DEFAULT_CARD_SECTION_PAYLOADS = (
     {"scan_name": "LL-HL Structure 1st Pivot", "display_name": "LL-HL 1st"},
     {"scan_name": "LL-HL Structure 2nd Pivot", "display_name": "LL-HL 2nd"},
     {"scan_name": "LL-HL Structure Trend Line Break", "display_name": "CT Break"},
+    {"scan_name": "50SMA Reclaim", "display_name": "50SMA Reclaim"},
+    {"scan_name": "RS New High", "display_name": "RS New High"},
 )
 DEFAULT_ANNOTATION_FILTER_PAYLOADS = (
     {"filter_name": "RS 21 >= 63", "display_name": "RS 21 >= 63"},
@@ -87,6 +92,7 @@ DEFAULT_ANNOTATION_FILTER_PAYLOADS = (
     {"filter_name": "Trend Base", "display_name": "Trend Base"},
     {"filter_name": "Fund Score > 70", "display_name": "Fund Score > 70"},
     {"filter_name": "Resistance Tests >= 2", "display_name": "Resistance Tests >= 2"},
+    {"filter_name": "Recent Power Gap", "display_name": "Recent Power Gap"},
 )
 ANNOTATION_FILTER_COLUMN_NAMES = {
     "RS 21 >= 63": "annotation_rs21_gte_63",
@@ -96,8 +102,10 @@ ANNOTATION_FILTER_COLUMN_NAMES = {
     "Trend Base": "annotation_trend_base",
     "Fund Score > 70": "annotation_fund_score_gt_70",
     "Resistance Tests >= 2": "annotation_resistance_tests_gte_2",
+    "Recent Power Gap": "annotation_recent_power_gap",
 }
 SCAN_STATUS_VALUES = ("enabled", "disabled")
+ANNOTATION_FILTER_STATUS_VALUES = ("enabled", "disabled")
 WATCHLIST_PRESET_STATUS_VALUES = ("enabled", "hidden_enabled", "disabled")
 
 
@@ -394,11 +402,16 @@ class ScanConfig:
     pp_count_annotation_min: int = 2
     llhl_1st_rs21_min: float = 60.0
     llhl_2nd_rs21_min: float = 60.0
+    power_gap_annotation_min_pct: float = 10.0
+    power_gap_annotation_max_days: int = 20
+    rs_new_high_price_dist_max: float = -5.0
+    rs_new_high_price_dist_min: float = -30.0
     earnings_warning_days: int = 7
     watchlist_sort_mode: str = "hybrid_score"
     scan_status_map: dict[str, str] = field(default_factory=dict)
     enabled_scan_rules: tuple[str, ...] = field(default_factory=lambda: DEFAULT_SCAN_RULE_NAMES)
     default_selected_scan_names: tuple[str, ...] | None = None
+    annotation_filter_status_map: dict[str, str] = field(default_factory=dict)
     enabled_annotation_filters: tuple[str, ...] = field(default_factory=tuple)
     annotation_filters: tuple[AnnotationFilterConfig, ...] = field(
         default_factory=lambda: tuple(AnnotationFilterConfig.from_dict(payload) for payload in DEFAULT_ANNOTATION_FILTER_PAYLOADS)
@@ -420,6 +433,7 @@ class ScanConfig:
                 "enabled_scan_rules",
                 "scan_status_map",
                 "default_selected_scan_names",
+                "annotation_filter_status_map",
                 "enabled_annotation_filters",
                 "annotation_filters",
                 "watchlist_presets",
@@ -445,8 +459,18 @@ class ScanConfig:
         enabled_scan_rules = tuple(
             name for name in enabled_scan_rules if scan_status_map.get(name, "enabled") == "enabled"
         )
+        annotation_filter_status_map = _normalize_annotation_filter_status_map(payload.get("annotation_filter_status_map"))
         annotation_payloads = payload.get("annotation_filters", DEFAULT_ANNOTATION_FILTER_PAYLOADS)
-        annotation_filters = tuple(AnnotationFilterConfig.from_dict(item) for item in annotation_payloads)
+        raw_annotation_filters = tuple(AnnotationFilterConfig.from_dict(item) for item in annotation_payloads)
+        annotation_filters = tuple(
+            section
+            for section in raw_annotation_filters
+            if annotation_filter_status_map.get(section.filter_name, "enabled") == "enabled"
+        )
+        active_annotation_filter_names = {section.filter_name for section in annotation_filters}
+        enabled_annotation_filters = tuple(
+            name for name in enabled_annotation_filters if name in active_annotation_filter_names
+        )
         watchlist_preset_payloads = payload.get("watchlist_presets", ())
         watchlist_presets = tuple(WatchlistPresetConfig.from_dict(item) for item in watchlist_preset_payloads)
         preset_csv_export = WatchlistPresetCsvExportConfig.from_dict(payload.get("preset_csv_export"))
@@ -461,6 +485,10 @@ class ScanConfig:
                 name for name in default_selected_scan_names if name in active_card_scan_names
             )
         watchlist_presets = tuple(
+            _drop_inactive_filters_from_preset(preset, active_annotation_filter_names)
+            for preset in watchlist_presets
+        )
+        watchlist_presets = tuple(
             _disable_preset_when_scans_inactive(preset, active_card_scan_names)
             for preset in watchlist_presets
         )
@@ -469,6 +497,7 @@ class ScanConfig:
             scan_status_map=scan_status_map,
             enabled_scan_rules=enabled_scan_rules,
             default_selected_scan_names=default_selected_scan_names,
+            annotation_filter_status_map=annotation_filter_status_map,
             enabled_annotation_filters=enabled_annotation_filters,
             annotation_filters=annotation_filters,
             watchlist_presets=watchlist_presets,
@@ -477,7 +506,8 @@ class ScanConfig:
         )
         _validate_rule_names(config.enabled_scan_rules, SCAN_RULE_REGISTRY, "scan")
         _validate_rule_names(config.enabled_annotation_filters, ANNOTATION_FILTER_REGISTRY, "annotation filter")
-        _validate_annotation_filters(config.annotation_filters)
+        _validate_annotation_filter_status_map(config.annotation_filter_status_map)
+        _validate_annotation_filters(raw_annotation_filters)
         available_filter_names = {section.filter_name for section in config.annotation_filters}
         unknown_enabled = [name for name in config.enabled_annotation_filters if name not in available_filter_names]
         if unknown_enabled:
@@ -626,6 +656,12 @@ def _validate_annotation_filters(annotation_filters: tuple[AnnotationFilterConfi
         raise ValueError(f"Unknown annotation filter section(s): {', '.join(sorted(unknown))}")
 
 
+def _validate_annotation_filter_status_map(status_map: dict[str, str]) -> None:
+    unknown = [name for name in status_map if name not in ANNOTATION_FILTER_REGISTRY]
+    if unknown:
+        raise ValueError(f"annotation_filter_status_map references unknown annotation filter: {', '.join(sorted(unknown))}")
+
+
 def _validate_watchlist_presets(
     watchlist_presets: tuple[WatchlistPresetConfig, ...],
     available_filter_names: set[str],
@@ -682,6 +718,35 @@ def _normalize_scan_status_map(raw_map: object) -> dict[str, str]:
     return normalized
 
 
+def _normalize_annotation_filter_status_map(raw_map: object) -> dict[str, str]:
+    if raw_map is None:
+        return {}
+    if not isinstance(raw_map, dict):
+        raise ValueError("annotation_filter_status_map must be a mapping of annotation filter name to status")
+    normalized: dict[str, str] = {}
+    for raw_name, raw_status in raw_map.items():
+        filter_name = _canonical_annotation_filter_name(raw_name)
+        if not filter_name:
+            continue
+        if filter_name not in ANNOTATION_FILTER_REGISTRY:
+            raise ValueError(f"annotation_filter_status_map references unknown annotation filter: {filter_name}")
+        status = str(raw_status).strip().lower().replace("-", "_").replace(" ", "_")
+        status = {
+            "enabled": "enabled",
+            "active": "enabled",
+            "disabled": "disabled",
+            "inactive": "disabled",
+            "off": "disabled",
+        }.get(status, status)
+        if status not in ANNOTATION_FILTER_STATUS_VALUES:
+            raise ValueError(
+                "annotation_filter_status_map status for "
+                f"'{filter_name}' must be one of: {', '.join(ANNOTATION_FILTER_STATUS_VALUES)}"
+            )
+        normalized[filter_name] = status
+    return normalized
+
+
 def _disable_preset_when_scans_inactive(
     preset: WatchlistPresetConfig,
     active_scan_names: set[str],
@@ -689,6 +754,16 @@ def _disable_preset_when_scans_inactive(
     if all(name in active_scan_names for name in preset.selected_scan_names):
         return preset
     preset.preset_status = "disabled"
+    return preset
+
+
+def _drop_inactive_filters_from_preset(
+    preset: WatchlistPresetConfig,
+    active_annotation_filter_names: set[str],
+) -> WatchlistPresetConfig:
+    preset.selected_annotation_filters = tuple(
+        name for name in preset.selected_annotation_filters if name in active_annotation_filter_names
+    )
     return preset
 
 
@@ -771,6 +846,18 @@ def _scan_reclaim(row: pd.Series, config: ScanConfig) -> bool:
         and row.get("volume_ratio_20d", float("nan")) >= 1.10
         and row.get("close_crossed_above_ema21", False)
         and row.get("min_atr_21ema_zone_5d", float("nan")) <= -0.25
+    )
+
+
+def _scan_50sma_reclaim(row: pd.Series, config: ScanConfig) -> bool:
+    return bool(
+        row.get("sma50_slope_10d_pct", float("nan")) > 0.0
+        and 0.0 <= row.get("atr_50sma_zone", float("nan")) <= 1.0
+        and row.get("close_crossed_above_sma50", False)
+        and row.get("min_atr_50sma_zone_5d", float("nan")) <= -0.25
+        and row.get("dcr_percent", 0.0) >= 60.0
+        and row.get("volume_ratio_20d", float("nan")) >= 1.10
+        and 3.0 <= row.get("drawdown_from_20d_high_pct", float("nan")) <= 20.0
     )
 
 
@@ -935,6 +1022,14 @@ def _scan_llhl_ct_break(row: pd.Series, config: ScanConfig) -> bool:
     return bool(row.get("ct_trendline_break", False))
 
 
+def _scan_rs_new_high(row: pd.Series, config: ScanConfig) -> bool:
+    return bool(
+        row.get("rs_ratio_at_52w_high", False)
+        and row.get("dist_from_52w_high", float("nan")) <= config.rs_new_high_price_dist_max
+        and row.get("dist_from_52w_high", float("nan")) >= config.rs_new_high_price_dist_min
+    )
+
+
 def _annotation_rs21_gte_63(row: pd.Series, config: ScanConfig) -> bool:
     rs21 = _raw_rs(row, 21)
     return bool(pd.notna(rs21) and float(rs21) >= 63.0)
@@ -958,6 +1053,17 @@ def _annotation_fund_score_gt_70(row: pd.Series, config: ScanConfig) -> bool:
 
 def _annotation_resistance_tests_gte_2(row: pd.Series, config: ScanConfig) -> bool:
     return bool(row.get("resistance_test_count", 0.0) >= 2.0)
+
+
+def _annotation_recent_power_gap(row: pd.Series, config: ScanConfig) -> bool:
+    power_gap_up_pct = row.get("power_gap_up_pct", float("nan"))
+    days_since = row.get("days_since_power_gap", float("nan"))
+    return bool(
+        pd.notna(power_gap_up_pct)
+        and power_gap_up_pct >= config.power_gap_annotation_min_pct
+        and pd.notna(days_since)
+        and days_since <= config.power_gap_annotation_max_days
+    )
 
 
 SCAN_RULE_REGISTRY: dict[str, RuleEvaluator] = {
@@ -986,6 +1092,8 @@ SCAN_RULE_REGISTRY: dict[str, RuleEvaluator] = {
     "LL-HL Structure 1st Pivot": _scan_llhl_1st_pivot,
     "LL-HL Structure 2nd Pivot": _scan_llhl_2nd_pivot,
     "LL-HL Structure Trend Line Break": _scan_llhl_ct_break,
+    "50SMA Reclaim": _scan_50sma_reclaim,
+    "RS New High": _scan_rs_new_high,
 }
 
 ANNOTATION_FILTER_REGISTRY: dict[str, RuleEvaluator] = {
@@ -996,6 +1104,7 @@ ANNOTATION_FILTER_REGISTRY: dict[str, RuleEvaluator] = {
     "Trend Base": _annotation_trend_base,
     "Fund Score > 70": _annotation_fund_score_gt_70,
     "Resistance Tests >= 2": _annotation_resistance_tests_gte_2,
+    "Recent Power Gap": _annotation_recent_power_gap,
 }
 
 

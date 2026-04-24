@@ -36,6 +36,10 @@
   pp_count_annotation_min: 2
   llhl_1st_rs21_min: 60.0
   llhl_2nd_rs21_min: 60.0
+  power_gap_annotation_min_pct: 10.0
+  power_gap_annotation_max_days: 20
+  rs_new_high_price_dist_max: -5.0
+  rs_new_high_price_dist_min: -30.0
   earnings_warning_days: 7
   watchlist_sort_mode: hybrid_score
   scan_status_map:
@@ -64,6 +68,8 @@
     LL-HL Structure 1st Pivot: enabled
     LL-HL Structure 2nd Pivot: enabled
     LL-HL Structure Trend Line Break: enabled
+    50SMA Reclaim: enabled
+    RS New High: enabled
   enabled_scan_rules:
   - 21EMA scan
   - 21EMA Pattern H
@@ -82,6 +88,8 @@
   - LL-HL Structure 1st Pivot
   - LL-HL Structure 2nd Pivot
   - LL-HL Structure Trend Line Break
+  - 50SMA Reclaim
+  - RS New High
   default_selected_scan_names:
   - 21EMA Pattern H
   - 21EMA Pattern L
@@ -102,6 +110,16 @@
   - Sustained Leadership
   - Trend Reversal Setup
   - Structure Pivot
+  - 50SMA Reclaim
+  - RS New High
+  annotation_filter_status_map:
+    RS 21 >= 63: enabled
+    High Est. EPS Growth: enabled
+    PP Count (20d): enabled
+    Trend Base: enabled
+    Fund Score > 70: enabled
+    Resistance Tests >= 2: enabled
+    Recent Power Gap: enabled
   enabled_annotation_filters: []
   annotation_filters:
   - filter_name: RS 21 >= 63
@@ -116,6 +134,8 @@
     display_name: Fund Score > 70
   - filter_name: Resistance Tests >= 2
     display_name: Resistance Tests >= 2
+  - filter_name: Recent Power Gap
+    display_name: Recent Power Gap
   preset_csv_export:
     enabled: true
     output_dir: data_runs/preset_exports
@@ -207,6 +227,51 @@
         min_hits: 1
       - group_name: Breakout Trigger
         scans: [Pocket Pivot, 4% bullish]
+        min_hits: 1
+    preset_status: enabled
+  - preset_name: 50SMA Defense
+    selected_scan_names: [50SMA Reclaim, Pullback Quality scan, Volume Accumulation, Pocket Pivot]
+    selected_annotation_filters: [Trend Base]
+    selected_duplicate_subfilters: []
+    duplicate_threshold: 1
+    duplicate_rule:
+      mode: grouped_threshold
+      required_scans: [50SMA Reclaim]
+      optional_groups:
+      - group_name: Pullback Quality
+        scans: [Pullback Quality scan]
+        min_hits: 1
+      - group_name: Demand Confirmation
+        scans: [Volume Accumulation, Pocket Pivot]
+        min_hits: 1
+    preset_status: enabled
+  - preset_name: Power Gap Pullback
+    selected_scan_names: [Pullback Quality scan, 21EMA Pattern H, 21EMA Pattern L, Reclaim scan, Volume Accumulation, Pocket Pivot]
+    selected_annotation_filters: [Recent Power Gap, Trend Base]
+    selected_duplicate_subfilters: []
+    duplicate_threshold: 1
+    duplicate_rule:
+      mode: grouped_threshold
+      required_scans: [Pullback Quality scan]
+      optional_groups:
+      - group_name: Reentry Trigger
+        scans: [21EMA Pattern H, 21EMA Pattern L, Reclaim scan]
+        min_hits: 1
+      - group_name: Demand Confirmation
+        scans: [Volume Accumulation, Pocket Pivot]
+        min_hits: 1
+    preset_status: enabled
+  - preset_name: RS Breakout Setup
+    selected_scan_names: [RS New High, VCS 52 High, Pocket Pivot, 4% bullish, PP Count]
+    selected_annotation_filters: [Trend Base]
+    selected_duplicate_subfilters: []
+    duplicate_threshold: 1
+    duplicate_rule:
+      mode: grouped_threshold
+      required_scans: [RS New High, VCS 52 High]
+      optional_groups:
+      - group_name: Breakout Event
+        scans: [Pocket Pivot, 4% bullish, PP Count]
         min_hits: 1
     preset_status: enabled
   - preset_name: Trend Pullback
@@ -342,3 +407,7 @@
     display_name: LL-HL 2nd
   - scan_name: LL-HL Structure Trend Line Break
     display_name: CT Break
+  - scan_name: 50SMA Reclaim
+    display_name: 50SMA Reclaim
+  - scan_name: RS New High
+    display_name: RS New High

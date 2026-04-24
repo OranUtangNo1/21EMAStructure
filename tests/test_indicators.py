@@ -597,3 +597,111 @@ def test_structure_pivot_priority_mode_accepts_legacy_aliases() -> None:
     assert calculator._normalize_structure_pivot_priority_mode("Longest Length") == "longest"
     assert calculator._normalize_structure_pivot_priority_mode("shortest") == "shortest"
     assert calculator._normalize_structure_pivot_priority_mode("Shortest Length") == "shortest"
+
+
+def test_indicator_calculator_adds_sma50_reclaim_support_fields() -> None:
+    dates = pd.date_range("2025-01-01", periods=8, freq="D")
+    close = [10.0, 10.0, 10.0, 9.0, 9.0, 9.0, 9.0, 11.0]
+    frame = pd.DataFrame(
+        {
+            "open": [value - 0.2 for value in close],
+            "high": [value + 0.5 for value in close],
+            "low": [value - 0.5 for value in close],
+            "close": close,
+            "adjusted_close": close,
+            "volume": [1_000_000] * len(close),
+        },
+        index=dates,
+    )
+    calculator = IndicatorCalculator(
+        IndicatorConfig(
+            ema_period=2,
+            sma_short_period=3,
+            sma_long_period=5,
+            atr_period=2,
+            adr_period=2,
+            relvol_period=2,
+            enable_3wt=False,
+        )
+    )
+
+    result = calculator.calculate(frame)
+
+    assert bool(result.iloc[-1]["close_crossed_above_sma50"]) is True
+    assert bool(result.iloc[-2]["close_crossed_above_sma50"]) is False
+    assert round(float(result.iloc[-1]["min_atr_50sma_zone_5d"]), 6) == round(float(result["atr_50sma_zone"].iloc[-5:].min()), 6)
+
+
+def test_indicator_calculator_keeps_sma50_reclaim_support_fields_nan_before_sma50_warmup() -> None:
+    dates = pd.date_range("2025-01-01", periods=30, freq="D")
+    close = [100.0 + i for i in range(30)]
+    frame = pd.DataFrame(
+        {
+            "open": close,
+            "high": [value + 1.0 for value in close],
+            "low": [value - 1.0 for value in close],
+            "close": close,
+            "adjusted_close": close,
+            "volume": [1_000_000] * len(close),
+        },
+        index=dates,
+    )
+    calculator = IndicatorCalculator(IndicatorConfig(enable_3wt=False))
+
+    result = calculator.calculate(frame)
+
+    assert bool(result["close_crossed_above_sma50"].any()) is False
+    assert bool(result["min_atr_50sma_zone_5d"].isna().all()) is True
+
+
+def test_indicator_calculator_adds_power_gap_context_fields_with_threshold_control() -> None:
+    dates = pd.date_range("2025-01-01", periods=6, freq="D")
+    close = [100.0, 101.0, 102.0, 103.0, 104.0, 105.0]
+    frame = pd.DataFrame(
+        {
+            "open": [100.0, 112.0, 102.0, 103.0, 120.0, 106.0],
+            "high": [value + 1.0 for value in close],
+            "low": [value - 1.0 for value in close],
+            "close": close,
+            "adjusted_close": close,
+            "volume": [1_000_000] * len(close),
+        },
+        index=dates,
+    )
+    calculator = IndicatorCalculator(
+        IndicatorConfig(
+            ema_period=2,
+            sma_short_period=2,
+            sma_long_period=2,
+            atr_period=2,
+            adr_period=2,
+            relvol_period=2,
+            enable_3wt=False,
+            power_gap_threshold=10.0,
+        )
+    )
+
+    result = calculator.calculate(frame)
+
+    assert pd.isna(result.iloc[0]["days_since_power_gap"])
+    assert round(float(result.iloc[1]["days_since_power_gap"]), 6) == 0.0
+    assert round(float(result.iloc[2]["days_since_power_gap"]), 6) == 1.0
+    assert round(float(result.iloc[4]["days_since_power_gap"]), 6) == 0.0
+    assert round(float(result.iloc[5]["days_since_power_gap"]), 6) == 1.0
+    assert round(float(result.iloc[2]["power_gap_up_pct"]), 6) == round(float(result.iloc[1]["power_gap_up_pct"]), 6)
+    assert round(float(result.iloc[5]["power_gap_up_pct"]), 6) == round(float(result.iloc[4]["power_gap_up_pct"]), 6)
+
+    stricter = IndicatorCalculator(
+        IndicatorConfig(
+            ema_period=2,
+            sma_short_period=2,
+            sma_long_period=2,
+            atr_period=2,
+            adr_period=2,
+            relvol_period=2,
+            enable_3wt=False,
+            power_gap_threshold=15.0,
+        )
+    ).calculate(frame)
+    assert pd.isna(stricter.iloc[1]["days_since_power_gap"])
+    assert round(float(stricter.iloc[4]["days_since_power_gap"]), 6) == 0.0
