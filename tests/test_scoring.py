@@ -91,6 +91,45 @@ def test_rs_scorer_uses_less_or_equal_count_for_tied_windows() -> None:
     assert result.loc["BBB", "rs5"] == 80.0
 
 
+def test_rs_scorer_outputs_rs_ratio_and_52w_high_flags() -> None:
+    dates = pd.date_range("2025-01-01", periods=200, freq="D")
+    benchmark_history = pd.DataFrame({"close": [100.0] * len(dates)}, index=dates)
+    aaa_close = [100.0 + (i * 0.5) for i in range(len(dates))]
+    bbb_close = [120.0 - (i * 0.3) for i in range(len(dates))]
+    histories = {
+        "AAA": pd.DataFrame({"close": aaa_close}, index=dates),
+        "BBB": pd.DataFrame({"close": bbb_close}, index=dates),
+    }
+    snapshot = pd.DataFrame(index=["AAA", "BBB"])
+
+    scorer = RSScorer(RSConfig(rs_lookbacks=(21,)))
+    result = scorer.score(snapshot, histories, benchmark_history)
+
+    assert round(float(result.loc["AAA", "rs_ratio"]), 6) == round(aaa_close[-1] / 100.0, 6)
+    assert round(float(result.loc["AAA", "rs_ratio_52w_high"]), 6) == round(max([value / 100.0 for value in aaa_close]), 6)
+    assert bool(result.loc["AAA", "rs_ratio_at_52w_high"]) is True
+    assert bool(result.loc["BBB", "rs_ratio_at_52w_high"]) is False
+
+
+def test_rs_scorer_respects_rs_new_high_tolerance_and_min_history() -> None:
+    long_dates = pd.date_range("2025-01-01", periods=200, freq="D")
+    benchmark_history = pd.DataFrame({"close": [100.0] * len(long_dates)}, index=long_dates)
+    close_long = [100.0 + (i * 0.4) for i in range(len(long_dates) - 1)] + [100.0 + ((len(long_dates) - 2) * 0.4) * 0.995]
+    histories = {"AAA": pd.DataFrame({"close": close_long}, index=long_dates)}
+    snapshot = pd.DataFrame(index=["AAA"])
+
+    loose = RSScorer(RSConfig(rs_lookbacks=(21,), rs_new_high_tolerance=1.0)).score(snapshot, histories, benchmark_history)
+    strict = RSScorer(RSConfig(rs_lookbacks=(21,), rs_new_high_tolerance=0.1)).score(snapshot, histories, benchmark_history)
+    assert bool(loose.loc["AAA", "rs_ratio_at_52w_high"]) is True
+    assert bool(strict.loc["AAA", "rs_ratio_at_52w_high"]) is False
+
+    short_dates = pd.date_range("2025-01-01", periods=120, freq="D")
+    short_history = {"AAA": pd.DataFrame({"close": [100.0 + i for i in range(len(short_dates))]}, index=short_dates)}
+    short_benchmark = pd.DataFrame({"close": [100.0] * len(short_dates)}, index=short_dates)
+    short_result = RSScorer(RSConfig(rs_lookbacks=(21,))).score(pd.DataFrame(index=["AAA"]), short_history, short_benchmark)
+    assert bool(short_result.loc["AAA", "rs_ratio_at_52w_high"]) is False
+
+
 
 def test_vcs_penalizes_broken_higher_low_against_shifted_structure_base() -> None:
     dates = pd.date_range("2025-01-01", periods=80, freq="D")

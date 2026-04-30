@@ -42,6 +42,7 @@ class IndicatorConfig:
     resistance_test_lookback: int = 20
     resistance_zone_width_atr: float = 0.5
     resistance_test_count_window: int = 20
+    power_gap_threshold: float = 10.0
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> "IndicatorConfig":
@@ -165,11 +166,22 @@ class IndicatorCalculator:
         df["atr_50sma_zone"] = (df["close"] - df["sma50"]) / atr
         df["prev_high"] = df["high"].shift(1)
         df["min_atr_21ema_zone_5d"] = df["atr_21ema_zone"].rolling(5).min()
+        df["min_atr_50sma_zone_5d"] = df["atr_50sma_zone"].rolling(5).min()
         df["close_crossed_above_ema21"] = (df["close"] > df["ema21_close"]) & (
             df["close"].shift(1) <= df["ema21_close"].shift(1)
         )
+        df["close_crossed_above_sma50"] = (df["close"] > df["sma50"]) & (
+            df["close"].shift(1) <= df["sma50"].shift(1)
+        )
         df["ema21_slope_5d_pct"] = ((df["ema21_close"] / df["ema21_close"].shift(5)) - 1.0) * 100.0
         df["sma50_slope_10d_pct"] = ((df["sma50"] / df["sma50"].shift(10)) - 1.0) * 100.0
+        gap_up_pct = ((df["open"] / df["close"].shift(1)) - 1.0) * 100.0
+        is_power_gap = gap_up_pct >= self.config.power_gap_threshold
+        gap_group = is_power_gap.astype(int).cumsum()
+        days_since_power_gap = gap_group.groupby(gap_group).cumcount().astype(float)
+        days_since_power_gap.loc[gap_group == 0] = np.nan
+        df["days_since_power_gap"] = days_since_power_gap
+        df["power_gap_up_pct"] = gap_up_pct.where(is_power_gap).ffill()
 
         above_ema21_low = df["close"] >= df["ema21_low"]
         df["ema21_low_pct"] = np.where(

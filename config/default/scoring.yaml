@@ -9,6 +9,7 @@ scoring:
     rs_normalization_method: percentile
     rs_strong_threshold: 80
     rs_weak_threshold: 39
+    rs_new_high_tolerance: 1.0
   fundamental:
     eps_weight: 1.0
     revenue_weight: 1.0

@@ -65,13 +65,17 @@ The application also evaluates configured annotation filters on the same eligibl
 
 Current implemented behavior:
 
+- annotation-filter availability is controlled by `annotation_filter_status_map`
 - annotation filters are defined by `scan.annotation_filters`
-- the default config ships five available filters:
+- the default config ships seven available filters:
   - `RS 21 >= 63`
   - `High Est. EPS Growth`
   - `PP Count (20d)`
   - `Trend Base`
   - `Fund Score > 70`
+  - `Resistance Tests >= 2`
+  - `Recent Power Gap`
+- only annotation filters marked `enabled` remain available for runtime evaluation, preset loading, and UI selection
 - the default config enables none of them at runtime because `enabled_annotation_filters` is `[]`
 - annotation results are attached to the raw watchlist as:
   - one boolean column per configured filter
@@ -281,10 +285,13 @@ Instead:
 - scan availability is controlled by `scan_status_map`
 - only scans marked `enabled` are evaluated and exposed through watchlist card selection
 - legacy `enabled_scan_rules` is still accepted as a backward-compatible active-scan list
+- annotation-filter availability is controlled by `annotation_filter_status_map`
 - available annotation-filter definitions are controlled by `annotation_filters`
+- only annotation filters marked `enabled` are evaluated and exposed through watchlist filter selection
 - startup-enabled annotation filters come from `enabled_annotation_filters`
 - the legacy config alias `enabled_list_rules` is still accepted for backward compatibility
 - if `enabled_annotation_filters` mistakenly includes scan names, the loader moves those names into the enabled scan rule set and keeps only real annotation filters in the enabled annotation set
+- built-in presets automatically drop selected annotation filters that are not currently enabled
 - built-in presets that reference any non-enabled scan are forced to `preset_status: disabled`
 
 ## 5. Active Watchlist Outputs

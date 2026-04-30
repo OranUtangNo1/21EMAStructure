@@ -299,6 +299,9 @@ When `rs_normalization_method = percentile`, the current implementation uses the
   - `disabled`: skip scan evaluation and remove it from watchlist card selection and preset composition
 - `enabled_scan_rules`: legacy enabled scan family list still accepted for backward compatibility
 - `default_selected_scan_names`: startup-selected watchlist cards for the watchlist controls
+- `annotation_filter_status_map`: per-annotation-filter runtime status map
+  - `enabled`: keep the filter available for UI selection, runtime evaluation, and preset loading
+  - `disabled`: keep the filter definition in config but remove it from UI selection and runtime evaluation
 - `enabled_annotation_filters`: startup-enabled post-scan filters; current default is empty
 - `enabled_list_rules`: legacy alias still accepted for annotation rules
 - misplaced scan names inside `enabled_annotation_filters` are coerced into the enabled scan rule set during config loading
@@ -310,6 +313,7 @@ When `rs_normalization_method = percentile`, the current implementation uses the
   - `Trend Base`
   - `Fund Score > 70`
   - `Resistance Tests >= 2`
+  - `Recent Power Gap`
 - `watchlist_presets`: built-in watchlist preset definitions loaded into the watchlist preset picker
   - each preset supports `preset_name`, `selected_scan_names`, `selected_annotation_filters`, `selected_duplicate_subfilters`, `duplicate_threshold`, optional `duplicate_rule`, and `preset_status`
   - `duplicate_rule.mode: min_count` uses `min_count` scan hits
@@ -320,6 +324,7 @@ When `rs_normalization_method = percentile`, the current implementation uses the
   - `preset_status: enabled` shows the preset in the UI and includes it in automatic preset exports
   - `preset_status: hidden_enabled` hides the preset from the UI and still includes it in automatic preset exports
   - `preset_status: disabled` hides the preset from the UI and excludes it from automatic preset exports
+  - preset-selected annotation filters that are not currently enabled are dropped during config loading
   - a built-in preset that references any non-enabled scan is forced to `preset_status: disabled`
   - legacy `export_enabled: false` is still accepted and maps to `preset_status: disabled`
 - `preset_csv_export`: automatic preset CSV export settings
@@ -338,6 +343,7 @@ The `entry_signals` section controls the Entry Signals tab.
   - `enabled`: keep the signal available for UI selection and evaluation
   - `disabled`: keep the logic in code but remove it from UI selection and evaluation
 - `default_selected_signal_names`: startup-selected entry signals for the Entry Signals tab
+  - any default-selected signal that is currently disabled is dropped during config loading
 
 Current built-in entry signal names:
 

@@ -29,3 +29,4 @@ indicators:
   resistance_test_lookback: 20
   resistance_zone_width_atr: 0.5
   resistance_test_count_window: 20
+  power_gap_threshold: 10.0
