@@ -58,15 +58,31 @@ def calculate_stop_price(
     entry_price = _to_float(row.get("close"))
     atr = _to_float(row.get("atr"))
     reference_price = _resolve_stop_reference(pool_entry, row, config.stop.reference)
+    return calculate_buffered_stop(entry_price, atr, reference_price, config)
+
+
+def calculate_buffered_stop(
+    entry_price: float | None,
+    atr: float | None,
+    reference_price: float | None,
+    config: RiskRewardConfig,
+    *,
+    atr_buffer: float | None = None,
+) -> StopResult:
     if entry_price is None or atr is None or atr <= 0.0 or reference_price is None:
         return StopResult(stop_price=None, risk_in_atr=None, stop_adjusted=False)
 
-    buffered_stop = reference_price - atr * config.stop.atr_buffer
+    resolved_atr_buffer = config.stop.atr_buffer if atr_buffer is None else float(atr_buffer)
+    buffered_stop = reference_price - atr * resolved_atr_buffer
     min_distance = atr * config.stop.min_distance_atr
     adjusted_stop = min(buffered_stop, entry_price - min_distance)
     stop_adjusted = adjusted_stop != buffered_stop
     if adjusted_stop >= entry_price:
         adjusted_stop = entry_price - min_distance
+        stop_adjusted = True
+    safety_stop = _avoid_obvious_stop_zone(adjusted_stop, atr)
+    if safety_stop != adjusted_stop:
+        adjusted_stop = safety_stop
         stop_adjusted = True
     risk_in_atr = (entry_price - adjusted_stop) / atr if atr > 0.0 else None
     return StopResult(
@@ -121,6 +137,35 @@ def score_rr(
     if stop_adjusted:
         return max(0.0, min(100.0, base_score * config.stop.structural_penalty))
     return base_score
+
+
+def _avoid_obvious_stop_zone(stop_price: float, atr: float) -> float:
+    step = _round_level_step(stop_price)
+    if step <= 0.0:
+        return stop_price
+    upper_level = _ceil_to_step(stop_price, step)
+    distance_below_level = upper_level - stop_price
+    safety_buffer = max(atr * 0.05, step * 0.02)
+    if 0.0 < distance_below_level < safety_buffer:
+        return upper_level - safety_buffer
+    return stop_price
+
+
+def _round_level_step(price: float) -> float:
+    if price >= 100.0:
+        return 5.0
+    if price >= 20.0:
+        return 1.0
+    if price >= 5.0:
+        return 0.5
+    return 0.1
+
+
+def _ceil_to_step(value: float, step: float) -> float:
+    multiple = int(value / step)
+    if multiple * step == value:
+        return value
+    return (multiple + 1) * step
 
 
 def _resolve_stop_reference(

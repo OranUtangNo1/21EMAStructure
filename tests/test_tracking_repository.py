@@ -13,6 +13,7 @@ from src.data.tracking_repository import (
     read_scan_combo_performance,
     read_scan_hits,
     read_scan_hits_for_watchlist,
+    read_signal_entry_events,
     read_signal_evaluations,
     read_signal_pool_entries,
 )
@@ -219,6 +220,7 @@ def test_tracking_repository_reads_signal_tracking_tables(tmp_path: Path) -> Non
 
     pool_entries = read_signal_pool_entries(root_dir=tmp_path, signal_name="orderly_pullback_entry", ticker="aaa")
     evaluations = read_signal_evaluations(root_dir=tmp_path, eval_date="2026-04-20")
+    events = read_signal_entry_events(root_dir=tmp_path, event_date="2026-04-20")
 
     assert list(pool_entries["ticker"]) == ["AAA"]
     assert pool_entries.loc[0, "latest_detected_date"] == "2026-04-20"
@@ -227,3 +229,5 @@ def test_tracking_repository_reads_signal_tracking_tables(tmp_path: Path) -> Non
     assert list(evaluations["signal_version"]) == ["1.0"]
     assert float(evaluations.loc[0, "entry_strength"]) == 72.0
     assert float(evaluations.loc[0, "rr_ratio"]) == 2.0
+    assert events.empty
+    assert "rr_current" in events.columns

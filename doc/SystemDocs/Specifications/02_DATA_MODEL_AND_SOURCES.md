@@ -173,7 +173,7 @@ The current default config sets this to `false`, so sample fallback is inactive 
 - fundamental cache under `data_cache/`
 - user preferences under `data_cache/user_preferences.yaml`
 - weekly universe snapshots under `data_runs/universe_snapshots/`
-- run artifacts under file-type folders keyed by trade-date date key, such as `data_runs/run_metadata/YYYYMMDD.json`, `data_runs/eligible_snapshot/YYYYMMDD.csv`, `data_runs/watchlist/YYYYMMDD.csv`, `data_runs/market_summary/YYYYMMDD.json`, and `data_runs/radar_summary/YYYYMMDD.json`
+- run artifacts under file-type folders keyed by trade-date date key, such as `data_runs/run_metadata/YYYYMMDD.json`, `data_runs/eligible_snapshot/YYYYMMDD.csv`, `data_runs/market_summary/YYYYMMDD.json`, and `data_runs/radar_summary/YYYYMMDD.json`
 - scan-hit history and preset-hit tracking under `data_runs/tracking.db`
 
 ### 4.2 Current TTLs
@@ -264,12 +264,19 @@ Core tables:
 - `detection_scans`: bridge rows from tracked detections to scan names hit at detection time
 - `detection_filters`: bridge rows from tracked detections to selected annotation filters
 - `scan_hits`: date-level scan-hit history used by saved-run restore and watchlist reconstruction
+- `signal_pool_entry`: active and historical EntrySignal pool entries derived from preset duplicates
+- `signal_evaluation`: daily EntrySignal evaluation rows, including score components, stop/target metrics, and the mechanical Entry Plan fields used to explain inclusion or exclusion
+- `signal_entry_event`: distinct valid `Ready Now` EntrySignal events used as the base for later forward-return, SL-hit, and TP1-hit analysis
 
 Forward tracking fields are stored directly on `detection`:
 
 - `close_at_hit`
 - `close_at_1d`, `close_at_5d`, `close_at_10d`, `close_at_20d`
 - `return_1d`, `return_5d`, `return_10d`, `return_20d`
+
+`detection.market_env` stores the normalized analysis buckets `bull`, `neutral`, `weak`, or `bear`. Source labels such as `Bullish`, `Positive`, `Negative`, and `Bearish` are normalized before insertion so Analysis filters do not drop current market records.
+
+EntrySignal tracking persists the user-facing Entry Plan fields needed for later review: `plan_status`, `plan_type`, `entry_type`, `entry_price`, `current_price`, `entry_zone_low`, `entry_zone_high`, `max_entry_price`, `distance_to_entry_zone_pct`, `stop_loss`, `tp1`, `tp2`, `rr_tp1`, `rr_current`, `rr_ideal`, `tp2_plan`, `trigger_condition`, `plan_verdict`, `plan_reject_codes`, `plan_reject_reason`, `sl_quality`, `sl_source`, `sl_basis`, `sl_safety`, `tp1_source`, `plan_invalidation`, `plan_note`, and `plan_detail`.
 
 Analysis views:
 
@@ -285,13 +292,12 @@ Analysis views:
 When `data.persist_research_snapshots` is true, the pipeline saves:
 
 - `eligible_snapshot/YYYYMMDD.csv`
-- `watchlist.csv`
 - `run_metadata/YYYYMMDD.json`
 - `market_summary/YYYYMMDD.json`
 - `radar_summary/YYYYMMDD.json`
 - date-level scan hits into `tracking.db`
 
-The saved `watchlist.csv` is a scan-hit artifact, not a preset-hit artifact. A row means the ticker matched at least one enabled scan. Preset-hit CSVs are written separately under `data_runs/preset_exports/`.
+`eligible_snapshot` is retained as the inspectable scan universe and saved-run restore base. The raw watchlist CSV is optional and controlled by `data.persist_watchlist_snapshot`; the default is false. When the watchlist CSV is absent, same-day saved-run restore rebuilds the watchlist from `eligible_snapshot` and stored scan hits. Preset-hit CSVs remain separate under `data_runs/preset_exports/`.
 
 Run metadata currently includes:
 

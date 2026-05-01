@@ -7,7 +7,7 @@ import pandas as pd
 
 from src.signals.evaluators.orderly_pullback import AxisResult, calculate_entry_strength
 from src.signals.pool import SignalPoolEntry
-from src.signals.risk_reward import RiskRewardResult, calculate_rr_ratio, score_rr
+from src.signals.risk_reward import RiskRewardResult, calculate_buffered_stop, calculate_rr_ratio, score_rr
 from src.signals.rules import EntrySignalDefinition
 from src.signals.scoring import composite_score, piecewise_linear_score
 
@@ -189,14 +189,8 @@ def _acceleration_day_stop(
     if entry_price is None or atr is None or atr <= 0.0 or reference_price is None:
         return None, None, False
 
-    buffered_stop = reference_price - atr * definition.risk_reward.stop.atr_buffer
-    min_distance = atr * definition.risk_reward.stop.min_distance_atr
-    adjusted_stop = min(buffered_stop, entry_price - min_distance)
-    stop_adjusted = adjusted_stop != buffered_stop
-    if adjusted_stop >= entry_price:
-        adjusted_stop = entry_price - min_distance
-        stop_adjusted = True
-    return adjusted_stop, (entry_price - adjusted_stop) / atr, stop_adjusted
+    stop_result = calculate_buffered_stop(entry_price, atr, reference_price, definition.risk_reward)
+    return stop_result.stop_price, stop_result.risk_in_atr, stop_result.stop_adjusted
 
 
 def _rr_2x_target(entry_price: float | None, stop_price: float | None) -> float | None:

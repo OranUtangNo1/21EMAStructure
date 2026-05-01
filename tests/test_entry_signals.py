@@ -5,8 +5,11 @@ import pandas as pd
 from src.data.tracking_db import connect_tracking_db
 from src.pipeline import PlatformArtifacts
 from src.scan.rules import ScanConfig
+from src.signals.entry_plan import build_entry_plan
+from src.signals.pool import SignalPoolEntry
+from src.signals.risk_reward import calculate_buffered_stop
 from src.signals.rules import EntrySignalConfig, evaluate_invalidation
-from src.signals.runner import EntrySignalRunner
+from src.signals.runner import EntrySignalRunner, ENTRY_ACTION_ENTRY_READY, ENTRY_ACTION_NEEDS_REVIEW, ENTRY_ACTION_WATCH_SETUP
 
 
 def test_entry_signal_config_uses_definition_keys_and_status_map() -> None:
@@ -72,6 +75,171 @@ def test_entry_signal_config_loads_context_guard() -> None:
     assert config.context_guard.weak_market_threshold_for("early_cycle_recovery_entry") == 20.0
 
 
+def test_entry_signal_config_loads_action_thresholds() -> None:
+    config = EntrySignalConfig.from_dict(
+        {
+            "definitions": {
+                "orderly_pullback_entry": {
+                    **_definition_payload("Orderly Pullback Entry"),
+                    "action": {
+                        "entry_ready": {
+                            "entry_strength_min": 60.0,
+                            "timing_min": 55.0,
+                            "risk_reward_min": 52.0,
+                            "rr_ratio_min": 2.2,
+                            "setup_maturity_min": 45.0,
+                        },
+                        "watch_setup": {
+                            "setup_maturity_min": 50.0,
+                            "risk_reward_min": 35.0,
+                        },
+                    },
+                },
+            },
+        }
+    )
+
+    action = config.definition_for("orderly_pullback_entry").action
+
+    assert action.entry_ready_entry_strength_min == 60.0
+    assert action.entry_ready_timing_min == 55.0
+    assert action.entry_ready_risk_reward_min == 52.0
+    assert action.entry_ready_rr_ratio_min == 2.2
+    assert action.entry_ready_setup_maturity_min == 45.0
+    assert action.watch_setup_setup_maturity_min == 50.0
+    assert action.watch_setup_risk_reward_min == 35.0
+
+
+def test_entry_signal_runner_classifies_entry_ready_and_watch_setup() -> None:
+    signal_config = EntrySignalConfig.from_dict(
+        {"definitions": {"test_signal": _definition_payload("Test Signal")}}
+    )
+    definition = signal_config.definition_for("test_signal")
+    runner = EntrySignalRunner(signal_config, ScanConfig.from_dict({}))
+
+    entry_ready = runner._classify_entry_action(
+        definition=definition,
+        display_bucket="Signal Detected",
+        setup_maturity_score=55.0,
+        timing_score=62.0,
+        risk_reward_score=70.0,
+        entry_strength=65.0,
+        rr_ratio=2.3,
+        maturity_detail={},
+        pool_status="active",
+        pool_transition="",
+        timing_detail={},
+        risk_in_atr=1.2,
+        reward_in_atr=2.5,
+        stop_adjusted=False,
+    )
+    watch_setup = runner._classify_entry_action(
+        definition=definition,
+        display_bucket="Approaching",
+        setup_maturity_score=58.0,
+        timing_score=35.0,
+        risk_reward_score=65.0,
+        entry_strength=42.0,
+        rr_ratio=2.5,
+        maturity_detail={},
+        pool_status="active",
+        pool_transition="",
+        timing_detail={"ema_reclaim_event": 20.0, "volume_confirmation": 70.0},
+        risk_in_atr=1.2,
+        reward_in_atr=2.5,
+        stop_adjusted=False,
+    )
+    weak_rr = runner._classify_entry_action(
+        definition=definition,
+        display_bucket="Approaching",
+        setup_maturity_score=58.0,
+        timing_score=55.0,
+        risk_reward_score=45.0,
+        entry_strength=42.0,
+        rr_ratio=1.5,
+        maturity_detail={},
+        pool_status="active",
+        pool_transition="",
+        timing_detail={},
+        risk_in_atr=2.4,
+        reward_in_atr=1.0,
+        stop_adjusted=True,
+    )
+
+    assert entry_ready[0] == "Entry Ready"
+    assert watch_setup[0] == "Watch Setup"
+    assert "waiting for EMA reclaim" in watch_setup[2]
+    assert "R/R below 2" in weak_rr[2]
+    assert "stop is too wide" in weak_rr[2]
+
+
+def test_entry_signal_stop_avoids_obvious_round_number_zone() -> None:
+    signal_config = EntrySignalConfig.from_dict(
+        {"definitions": {"test_signal": _definition_payload("Test Signal")}}
+    )
+    definition = signal_config.definition_for("test_signal")
+
+    stop = calculate_buffered_stop(
+        entry_price=105.0,
+        atr=4.0,
+        reference_price=100.05,
+        config=definition.risk_reward,
+        atr_buffer=0.02,
+    )
+
+    assert stop.stop_price == 99.8
+    assert stop.stop_adjusted
+
+
+def test_entry_signal_plan_tracks_reject_reason_when_tp1_rr_is_too_low() -> None:
+    signal_config = EntrySignalConfig.from_dict(
+        {"definitions": {"test_signal": _definition_payload("Test Signal")}}
+    )
+    definition = signal_config.definition_for("test_signal")
+    pool_entry = SignalPoolEntry(
+        id=1,
+        signal_name="test_signal",
+        ticker="AAA",
+        preset_sources=("Test",),
+        first_detected_date=pd.Timestamp("2026-04-24"),
+        latest_detected_date=pd.Timestamp("2026-04-24"),
+        detection_count=1,
+        pool_status="active",
+        invalidated_date=None,
+        invalidated_reason=None,
+        snapshot_at_detection={"low": 97.5, "rolling_20d_close_high": 103.0},
+        low_since_detection=97.5,
+        high_since_detection=103.0,
+    )
+
+    plan = build_entry_plan(
+        action_bucket=ENTRY_ACTION_ENTRY_READY,
+        entry_ready_bucket=ENTRY_ACTION_ENTRY_READY,
+        watch_setup_bucket=ENTRY_ACTION_WATCH_SETUP,
+        needs_review_bucket=ENTRY_ACTION_NEEDS_REVIEW,
+        definition=definition,
+        pool_entry=pool_entry,
+        current_row=pd.Series(
+            {
+                "close": 101.0,
+                "atr": 4.0,
+                "low": 97.5,
+                "ema21_close": 99.5,
+                "sma50": 95.0,
+                "rolling_20d_close_high": 103.0,
+                "high_52w": 120.0,
+            }
+        ),
+        pool_status="active",
+        pool_transition="",
+    )
+
+    assert plan.plan_verdict == "Valid"
+    assert plan.plan_type == "Wait Pullback"
+    assert "rr_current_below_min" in plan.plan_reject_codes
+    assert "rr_current_below_min" in plan.to_row()["Plan Detail"]
+
+
 def test_entry_signal_runner_builds_pool_and_persists_evaluation(tmp_path) -> None:
     scan_config = ScanConfig.from_dict(
         {
@@ -102,7 +270,7 @@ def test_entry_signal_runner_builds_pool_and_persists_evaluation(tmp_path) -> No
             {
                 "close": [101.0],
                 "open": [98.0],
-                "high": [103.0],
+                "high": [114.0],
                 "low": [97.5],
                 "ema21_close": [99.5],
                 "sma50": [95.0],
@@ -146,6 +314,17 @@ def test_entry_signal_runner_builds_pool_and_persists_evaluation(tmp_path) -> No
     assert result.iloc[0]["Display Bucket"] == "Signal Detected"
     assert float(result.iloc[0]["Entry Strength"]) >= 50.0
     assert float(result.iloc[0]["R/R Ratio"]) > 1.0
+    assert result.iloc[0]["Plan Status"] == "Ready"
+    assert result.iloc[0]["Plan Verdict"] == "Valid"
+    assert result.iloc[0]["Entry Type"] == "Current Close"
+    assert float(result.iloc[0]["Entry Price"]) == 101.0
+    assert float(result.iloc[0]["Stop Loss"]) < float(result.iloc[0]["Entry Price"])
+    assert float(result.iloc[0]["TP1"]) > float(result.iloc[0]["Entry Price"])
+    assert float(result.iloc[0]["R/R TP1"]) >= 2.0
+    assert result.iloc[0]["TP2"] == "Future trailing stop"
+    assert "round-number buffer" in str(result.iloc[0]["SL Safety"])
+    assert "Ready Now" in str(result.iloc[0]["Plan Note"])
+    assert "rr_tp1_below_min" not in str(result.iloc[0]["Plan Reject Codes"])
 
     conn = connect_tracking_db(root_dir=tmp_path)
     try:
@@ -157,8 +336,16 @@ def test_entry_signal_runner_builds_pool_and_persists_evaluation(tmp_path) -> No
         ).fetchone()
         evaluation_row = conn.execute(
             """
-            SELECT signal_name, ticker, signal_version, entry_strength, rr_ratio, stop_price, reward_target
+            SELECT signal_name, ticker, signal_version, entry_strength, rr_ratio, stop_price, reward_target,
+                   plan_status, plan_type, entry_price, stop_loss, tp1, rr_tp1, rr_current, rr_ideal,
+                   plan_verdict, plan_reject_codes
             FROM signal_evaluation
+            """
+        ).fetchone()
+        event_row = conn.execute(
+            """
+            SELECT signal_name, ticker, event_date, plan_type, entry_price, stop_loss, tp1, rr_current
+            FROM signal_entry_event
             """
         ).fetchone()
     finally:
@@ -168,12 +355,27 @@ def test_entry_signal_runner_builds_pool_and_persists_evaluation(tmp_path) -> No
     assert pool_row["ticker"] == "AAA"
     assert pool_row["pool_status"] == "active"
     assert float(pool_row["low_since_detection"]) == 97.5
-    assert float(pool_row["high_since_detection"]) == 103.0
+    assert float(pool_row["high_since_detection"]) == 114.0
     assert evaluation_row["signal_name"] == "orderly_pullback_entry"
     assert evaluation_row["ticker"] == "AAA"
     assert evaluation_row["signal_version"] == "1.0"
     assert float(evaluation_row["entry_strength"]) >= 50.0
     assert float(evaluation_row["rr_ratio"]) > 1.0
+    assert evaluation_row["plan_status"] == "Ready"
+    assert evaluation_row["plan_type"] == "Ready Now"
+    assert float(evaluation_row["entry_price"]) == 101.0
+    assert float(evaluation_row["stop_loss"]) < float(evaluation_row["entry_price"])
+    assert float(evaluation_row["tp1"]) > float(evaluation_row["entry_price"])
+    assert float(evaluation_row["rr_tp1"]) >= 2.0
+    assert float(evaluation_row["rr_current"]) >= 2.0
+    assert float(evaluation_row["rr_ideal"]) >= 2.0
+    assert evaluation_row["plan_verdict"] == "Valid"
+    assert "rr_tp1_below_min" not in str(evaluation_row["plan_reject_codes"])
+    assert event_row["signal_name"] == "orderly_pullback_entry"
+    assert event_row["ticker"] == "AAA"
+    assert event_row["event_date"] == "2026-04-24"
+    assert event_row["plan_type"] == "Ready Now"
+    assert float(event_row["rr_current"]) >= 2.0
 
 
 def test_entry_signal_runner_syncs_same_day_saved_run_idempotently(tmp_path) -> None:

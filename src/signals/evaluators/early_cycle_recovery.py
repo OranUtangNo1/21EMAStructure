@@ -7,7 +7,7 @@ import pandas as pd
 
 from src.signals.evaluators.orderly_pullback import AxisResult, calculate_entry_strength
 from src.signals.pool import SignalPoolEntry
-from src.signals.risk_reward import RiskRewardResult, calculate_rr_ratio, score_rr
+from src.signals.risk_reward import RiskRewardResult, calculate_buffered_stop, calculate_rr_ratio, score_rr
 from src.signals.rules import EntrySignalDefinition
 from src.signals.scoring import composite_score, piecewise_linear_score
 
@@ -182,11 +182,8 @@ def _recovery_stop(
         reference = _to_float(pool_entry.snapshot_at_detection.get("low"))
     if reference is None:
         return None, None, False
-    raw_stop = reference - atr * definition.risk_reward.stop.atr_buffer
-    min_distance = atr * definition.risk_reward.stop.min_distance_atr
-    adjusted_stop = min(raw_stop, entry_price - min_distance)
-    stop_adjusted = adjusted_stop != raw_stop
-    return adjusted_stop, (entry_price - adjusted_stop) / atr, stop_adjusted
+    stop_result = calculate_buffered_stop(entry_price, atr, reference, definition.risk_reward)
+    return stop_result.stop_price, stop_result.risk_in_atr, stop_result.stop_adjusted
 
 
 def _reward_target(row: dict[str, object], entry_price: float | None, stop_price: float | None) -> float | None:

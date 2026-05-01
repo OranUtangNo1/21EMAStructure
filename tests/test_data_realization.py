@@ -82,6 +82,31 @@ def test_snapshot_store_persists_run_outputs() -> None:
         assert (Path(tmp_dir) / "run_metadata" / f"{date_key}.json").exists()
 
 
+def test_snapshot_store_can_skip_watchlist_csv_output() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        store = DataSnapshotStore(tmp_dir)
+        snapshot = pd.DataFrame({"close": [10.0]}, index=["AAA"])
+        eligible_snapshot = snapshot.copy()
+        watchlist = snapshot.copy()
+        run_dir = store.save_run(
+            snapshot,
+            eligible_snapshot,
+            watchlist,
+            pd.DataFrame(),
+            {"data_source_label": "live"},
+            persist_watchlist=False,
+        )
+
+        date_key = run_dir.stem
+        assert (Path(tmp_dir) / "eligible_snapshot" / f"{date_key}.csv").exists()
+        assert not (Path(tmp_dir) / "watchlist" / f"{date_key}.csv").exists()
+        loaded = store.load_latest_run()
+        assert loaded.eligible_snapshot is not None
+        assert loaded.watchlist is None
+        assert loaded.metadata is not None
+        assert loaded.metadata["watchlist_persisted"] is False
+
+
 def test_summarize_data_source_label_handles_mixed_sources() -> None:
     frame = pd.DataFrame(
         [
@@ -115,6 +140,7 @@ def _sample_market_result(trade_date: pd.Timestamp) -> MarketConditionResult:
         breadth_summary={"pct_above_sma10": 75.0},
         performance_overview={"% YTD": 12.3},
         high_vix_summary={"S2W HIGH %": 8.0, "VIX": 17.5},
+        risk_on_ratio_summary={"REL 1M %": 1.5, "REL 3M %": 3.0, "HIGH DIST %": 0.0, "ABOVE MA COUNT": 3.0, "MA COUNT": 3.0},
         market_snapshot=snapshot,
         leadership_snapshot=snapshot.copy(),
         external_snapshot=snapshot.copy(),

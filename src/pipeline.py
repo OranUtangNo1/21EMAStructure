@@ -121,6 +121,7 @@ class ResearchPlatform:
 
         allow_stale = bool(data_settings.get("allow_stale_cache_on_failure", True))
         self.persist_research_snapshots = bool(data_settings.get("persist_research_snapshots", True))
+        self.persist_watchlist_snapshot = bool(data_settings.get("persist_watchlist_snapshot", False))
         self.price_provider = YFinancePriceDataProvider(
             self.cache,
             technical_ttl_hours=int(data_settings.get("technical_cache_ttl_hours", 12)),
@@ -252,8 +253,8 @@ class ResearchPlatform:
         if (
             loaded.path is None
             or loaded.metadata is None
-            or loaded.watchlist is None
             or loaded.scan_hits is None
+            or loaded.eligible_snapshot is None
             or loaded.market_metadata is None
             or loaded.radar_metadata is None
         ):
@@ -267,7 +268,15 @@ class ResearchPlatform:
         expected_trade_date = self._expected_trade_date()
         if trade_date is None or expected_trade_date is None or trade_date.normalize() != expected_trade_date.normalize():
             return None
-        if not self._saved_run_has_required_scan_columns(loaded.watchlist, loaded.eligible_snapshot):
+        watchlist, scan_hits, entry_signal_watchlist = self._saved_run_watchlist_frames(
+            loaded.watchlist,
+            loaded.eligible_snapshot,
+            loaded.scan_hits,
+        )
+        if watchlist is None or scan_hits is None or entry_signal_watchlist is None:
+            return None
+
+        if not self._saved_run_has_required_scan_columns(watchlist, loaded.eligible_snapshot):
             return None
 
         market_result = self._restore_market_result(loaded.market_metadata, loaded.market_frames)
@@ -275,15 +284,15 @@ class ResearchPlatform:
         if market_result is None or radar_result is None:
             return None
 
-        minimal_snapshot = self._minimal_snapshot_for_saved_run(loaded.watchlist.index.tolist(), trade_date)
+        minimal_snapshot = self._minimal_snapshot_for_saved_run(watchlist.index.tolist(), trade_date)
         eligible_snapshot = loaded.eligible_snapshot.copy() if loaded.eligible_snapshot is not None else minimal_snapshot.copy()
 
         duplicate_tickers = self.watchlist_builder.build_duplicate_tickers(
-            loaded.watchlist,
-            loaded.scan_hits,
+            watchlist,
+            scan_hits,
             self.scan_config.duplicate_min_count,
         )
-        watchlist_cards = self.watchlist_builder.build_scan_cards(loaded.watchlist, loaded.scan_hits)
+        watchlist_cards = self.watchlist_builder.build_scan_cards(watchlist, scan_hits)
         earnings_today = pd.DataFrame(columns=["Ticker", "Name", "Sector", "Industry", "Hybrid-RS"])
         fetch_status = pd.DataFrame()
         data_health_summary = self._data_health_summary_from_metadata(loaded.metadata)
@@ -293,16 +302,16 @@ class ResearchPlatform:
         requested_symbols = loaded.metadata.get("requested_symbols", [])
         resolved_symbols = self._normalize_symbols(requested_symbols) if isinstance(requested_symbols, list) else []
         if not resolved_symbols:
-            resolved_symbols = self._normalize_symbols(list(loaded.watchlist.index))
+            resolved_symbols = self._normalize_symbols(list(watchlist.index))
 
         return PlatformArtifacts(
             snapshot=minimal_snapshot,
             eligible_snapshot=eligible_snapshot,
-            watchlist=loaded.watchlist,
+            watchlist=watchlist,
             duplicate_tickers=duplicate_tickers,
             watchlist_cards=watchlist_cards,
             earnings_today=earnings_today,
-            scan_hits=loaded.scan_hits,
+            scan_hits=scan_hits,
             benchmark_history=pd.DataFrame(),
             vix_history=pd.DataFrame(),
             market_result=market_result,
@@ -316,8 +325,23 @@ class ResearchPlatform:
             resolved_symbols=resolved_symbols,
             universe_snapshot_path=str(loaded.metadata.get("universe_snapshot_path")) if loaded.metadata.get("universe_snapshot_path") else None,
             artifact_origin="same_day_saved_run",
-            entry_signal_watchlist=loaded.watchlist,
+            entry_signal_watchlist=entry_signal_watchlist,
         )
+
+    def _saved_run_watchlist_frames(
+        self,
+        saved_watchlist: pd.DataFrame | None,
+        eligible_snapshot: pd.DataFrame | None,
+        saved_scan_hits: pd.DataFrame | None,
+    ) -> tuple[pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None]:
+        if saved_watchlist is not None and saved_scan_hits is not None:
+            return saved_watchlist, saved_scan_hits, saved_watchlist
+        if eligible_snapshot is None or eligible_snapshot.empty:
+            return None, None, None
+        scan_result = self.scan_runner.run(eligible_snapshot)
+        if scan_result.watchlist.empty:
+            return None, None, None
+        return self.watchlist_builder.build(scan_result.watchlist), scan_result.hits, scan_result.watchlist
 
     def _saved_run_matches_request(self, metadata: dict[str, object], manual_symbols: list[str]) -> bool:
         config_path_value = metadata.get("config_path")
@@ -392,6 +416,7 @@ class ResearchPlatform:
             breadth_summary=self._float_mapping(metadata.get("breadth_summary")),
             performance_overview=self._float_mapping(metadata.get("performance_overview")),
             high_vix_summary=self._float_mapping(metadata.get("high_vix_summary")),
+            risk_on_ratio_summary=self._float_mapping(metadata.get("risk_on_ratio_summary")),
             market_snapshot=market_snapshot,
             leadership_snapshot=leadership_snapshot,
             external_snapshot=external_snapshot,
@@ -732,6 +757,7 @@ class ResearchPlatform:
             scan_hits=scan_hits,
             market_result=market_result,
             radar_result=radar_result,
+            persist_watchlist=self.persist_watchlist_snapshot,
         )
         return str(run_dir)
 

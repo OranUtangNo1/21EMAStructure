@@ -13,3 +13,6 @@ instructions = """
 Always use the local .venv environment if it exists.
 Never use system Python.
 """
+
+[sandbox_workspace_write]
+network_access = true

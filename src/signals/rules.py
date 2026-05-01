@@ -97,6 +97,17 @@ class DisplayThresholdConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class EntryActionConfig:
+    entry_ready_entry_strength_min: float = 50.0
+    entry_ready_timing_min: float = 50.0
+    entry_ready_risk_reward_min: float = 50.0
+    entry_ready_rr_ratio_min: float = 2.0
+    entry_ready_setup_maturity_min: float = 40.0
+    watch_setup_setup_maturity_min: float = 45.0
+    watch_setup_risk_reward_min: float = 30.0
+
+
+@dataclass(frozen=True, slots=True)
 class EntrySignalContextGuardConfig:
     enabled: bool
     weak_market_score_threshold: float | None
@@ -121,6 +132,7 @@ class EntrySignalDefinition:
     risk_reward: RiskRewardConfig
     entry_strength: EntryStrengthConfig
     display: DisplayThresholdConfig
+    action: EntryActionConfig = dc_field(default_factory=EntryActionConfig)
 
 
 @dataclass(slots=True)
@@ -207,6 +219,7 @@ def _normalize_definitions(raw_payload: object) -> dict[str, EntrySignalDefiniti
             risk_reward=_normalize_risk_reward_config(signal_key, raw_value.get("risk_reward")),
             entry_strength=_normalize_entry_strength_config(signal_key, raw_value.get("entry_strength")),
             display=_normalize_display_config(signal_key, raw_value.get("display")),
+            action=_normalize_action_config(signal_key, raw_value.get("action")),
         )
     return definitions
 
@@ -396,6 +409,55 @@ def _normalize_display_config(signal_key: str, raw_value: object) -> DisplayThre
     )
 
 
+def _normalize_action_config(signal_key: str, raw_value: object) -> EntryActionConfig:
+    if raw_value is None:
+        return EntryActionConfig()
+    if not isinstance(raw_value, dict):
+        raise ValueError(f"entry_signals.definitions.{signal_key}.action must be a mapping")
+    entry_ready_raw = raw_value.get("entry_ready", {})
+    watch_setup_raw = raw_value.get("watch_setup", {})
+    if not isinstance(entry_ready_raw, dict) or not isinstance(watch_setup_raw, dict):
+        raise ValueError(f"entry_signals.definitions.{signal_key}.action entry_ready/watch_setup must be mappings")
+    defaults = EntryActionConfig()
+    return EntryActionConfig(
+        entry_ready_entry_strength_min=_normalize_float_with_default(
+            entry_ready_raw.get("entry_strength_min"),
+            defaults.entry_ready_entry_strength_min,
+            field_name=f"{signal_key}.action.entry_ready.entry_strength_min",
+        ),
+        entry_ready_timing_min=_normalize_float_with_default(
+            entry_ready_raw.get("timing_min"),
+            defaults.entry_ready_timing_min,
+            field_name=f"{signal_key}.action.entry_ready.timing_min",
+        ),
+        entry_ready_risk_reward_min=_normalize_float_with_default(
+            entry_ready_raw.get("risk_reward_min"),
+            defaults.entry_ready_risk_reward_min,
+            field_name=f"{signal_key}.action.entry_ready.risk_reward_min",
+        ),
+        entry_ready_rr_ratio_min=_normalize_float_with_default(
+            entry_ready_raw.get("rr_ratio_min"),
+            defaults.entry_ready_rr_ratio_min,
+            field_name=f"{signal_key}.action.entry_ready.rr_ratio_min",
+        ),
+        entry_ready_setup_maturity_min=_normalize_float_with_default(
+            entry_ready_raw.get("setup_maturity_min"),
+            defaults.entry_ready_setup_maturity_min,
+            field_name=f"{signal_key}.action.entry_ready.setup_maturity_min",
+        ),
+        watch_setup_setup_maturity_min=_normalize_float_with_default(
+            watch_setup_raw.get("setup_maturity_min"),
+            defaults.watch_setup_setup_maturity_min,
+            field_name=f"{signal_key}.action.watch_setup.setup_maturity_min",
+        ),
+        watch_setup_risk_reward_min=_normalize_float_with_default(
+            watch_setup_raw.get("risk_reward_min"),
+            defaults.watch_setup_risk_reward_min,
+            field_name=f"{signal_key}.action.watch_setup.risk_reward_min",
+        ),
+    )
+
+
 def _normalize_context_guard_config(raw_value: object) -> EntrySignalContextGuardConfig:
     if raw_value is None:
         return EntrySignalContextGuardConfig(
@@ -523,6 +585,12 @@ def _normalize_float(value: object, *, field_name: str) -> float:
     if parsed is None:
         raise ValueError(f"{field_name} must be numeric")
     return parsed
+
+
+def _normalize_float_with_default(value: object, default: float, *, field_name: str) -> float:
+    if value is None:
+        return float(default)
+    return _normalize_float(value, field_name=field_name)
 
 
 def _normalize_optional_float(value: object) -> float | None:

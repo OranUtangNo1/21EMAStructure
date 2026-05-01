@@ -204,6 +204,16 @@ entry_signals:
           signal_detected: 50
           approaching: 35
           tracking: 0
+      action:
+        entry_ready:
+          entry_strength_min: 50
+          timing_min: 50
+          risk_reward_min: 50
+          rr_ratio_min: 2.0
+          setup_maturity_min: 40
+        watch_setup:
+          setup_maturity_min: 45
+          risk_reward_min: 30
     pullback_resumption_entry:
       display_name: "Pullback Resumption Entry"
       signal_version: "1.0"
@@ -323,6 +333,16 @@ entry_signals:
           signal_detected: 48
           approaching: 32
           tracking: 0
+      action:
+        entry_ready:
+          entry_strength_min: 48
+          timing_min: 48
+          risk_reward_min: 48
+          rr_ratio_min: 1.8
+          setup_maturity_min: 40
+        watch_setup:
+          setup_maturity_min: 45
+          risk_reward_min: 30
     momentum_acceleration_entry:
       display_name: "Momentum Acceleration Entry"
       signal_version: "1.0"
@@ -443,6 +463,16 @@ entry_signals:
           signal_detected: 55
           approaching: 40
           tracking: 0
+      action:
+        entry_ready:
+          entry_strength_min: 55
+          timing_min: 55
+          risk_reward_min: 45
+          rr_ratio_min: 1.8
+          setup_maturity_min: 35
+        watch_setup:
+          setup_maturity_min: 50
+          risk_reward_min: 25
     accumulation_breakout_entry:
       display_name: "Accumulation Breakout Entry"
       signal_version: "1.0"
@@ -580,6 +610,16 @@ entry_signals:
           signal_detected: 55
           approaching: 38
           tracking: 0
+      action:
+        entry_ready:
+          entry_strength_min: 55
+          timing_min: 50
+          risk_reward_min: 50
+          rr_ratio_min: 2.0
+          setup_maturity_min: 45
+        watch_setup:
+          setup_maturity_min: 50
+          risk_reward_min: 35
     early_cycle_recovery_entry:
       display_name: "Early Cycle Recovery Entry"
       signal_version: "1.0"
@@ -707,6 +747,16 @@ entry_signals:
           signal_detected: 52
           approaching: 35
           tracking: 0
+      action:
+        entry_ready:
+          entry_strength_min: 52
+          timing_min: 50
+          risk_reward_min: 55
+          rr_ratio_min: 2.5
+          setup_maturity_min: 45
+        watch_setup:
+          setup_maturity_min: 45
+          risk_reward_min: 35
     power_gap_pullback_entry:
       display_name: "Power Gap Pullback Entry"
       signal_version: "1.0"
@@ -827,3 +877,13 @@ entry_signals:
           signal_detected: 52
           approaching: 35
           tracking: 0
+      action:
+        entry_ready:
+          entry_strength_min: 52
+          timing_min: 50
+          risk_reward_min: 50
+          rr_ratio_min: 2.0
+          setup_maturity_min: 45
+        watch_setup:
+          setup_maturity_min: 45
+          risk_reward_min: 35

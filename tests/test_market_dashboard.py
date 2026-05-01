@@ -35,6 +35,8 @@ def test_market_dashboard_result_contains_expanded_sections() -> None:
         "EXT": _make_history([60.0 - (i * 0.05) for i in range(320)], dates),
         "^VIX": _make_history([18.0 - (i * 0.01) for i in range(320)], dates, volume_scale=100_000),
         "FFF": _make_history([70.0 + (i * 0.18) for i in range(320)], dates),
+        "IWO": _make_history([95.0 + (i * 0.24) for i in range(320)], dates),
+        "IWN": _make_history([92.0 + (i * 0.08) for i in range(320)], dates),
     }
     market_histories = {ticker: calculator.calculate(history) for ticker, history in market_raw.items()}
     benchmark_history = calculator.calculate(benchmark_raw)
@@ -86,6 +88,9 @@ def test_market_dashboard_result_contains_expanded_sections() -> None:
     assert "% 1M" in result.performance_overview
     assert "S2W HIGH %" in result.high_vix_summary
     assert "SAFE HAVEN %" in result.high_vix_summary
+    assert result.risk_on_ratio_summary["REL 1M %"] > 0.0
+    assert result.risk_on_ratio_summary["ABOVE MA COUNT"] == pytest.approx(3.0)
+    assert result.risk_on_ratio_summary["MA COUNT"] == pytest.approx(3.0)
     assert not result.market_snapshot.empty
     assert list(result.market_snapshot["TICKER"]) == ["AAA", "BBB"]
     assert not result.leadership_snapshot.empty
@@ -149,6 +154,14 @@ def test_market_dashboard_supports_etf_active_and_blended_modes() -> None:
     assert etf_result.score < blended_result.score < active_result.score
     assert blended_result.component_scores["pct_positive_ytd"] > 50.0
     assert blended_result.component_scores["safe_haven_score"] > 50.0
+
+
+def test_market_dashboard_required_symbols_include_risk_on_ratio_pair() -> None:
+    config = MarketConditionConfig.from_dict({})
+    required_symbols = MarketConditionScorer(config).required_symbols()
+
+    assert "IWO" in required_symbols
+    assert "IWN" in required_symbols
 
 
 def test_market_dashboard_vix_scoring_is_centered_around_neutral_level() -> None:

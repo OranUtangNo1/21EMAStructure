@@ -164,6 +164,65 @@ SIGNAL_EVALUATION_COLUMNS = [
     "risk_in_atr",
     "reward_in_atr",
     "stop_adjusted",
+    "plan_status",
+    "plan_type",
+    "entry_type",
+    "entry_price",
+    "current_price",
+    "entry_zone_low",
+    "entry_zone_high",
+    "max_entry_price",
+    "distance_to_entry_zone_pct",
+    "stop_loss",
+    "tp1",
+    "tp2",
+    "rr_tp1",
+    "rr_current",
+    "rr_ideal",
+    "tp2_plan",
+    "trigger_condition",
+    "plan_verdict",
+    "plan_reject_codes",
+    "plan_reject_reason",
+    "sl_quality",
+    "sl_source",
+    "sl_basis",
+    "sl_safety",
+    "tp1_source",
+    "plan_invalidation",
+    "plan_note",
+    "plan_detail",
+    "created_at",
+]
+SIGNAL_ENTRY_EVENT_COLUMNS = [
+    "id",
+    "signal_name",
+    "ticker",
+    "event_date",
+    "source_evaluation_id",
+    "plan_type",
+    "entry_price",
+    "entry_zone_low",
+    "entry_zone_high",
+    "max_entry_price",
+    "stop_loss",
+    "tp1",
+    "rr_current",
+    "rr_ideal",
+    "plan_verdict",
+    "reject_codes",
+    "close_at_1d",
+    "close_at_5d",
+    "close_at_10d",
+    "close_at_20d",
+    "return_1d",
+    "return_5d",
+    "return_10d",
+    "return_20d",
+    "hit_sl",
+    "hit_tp1",
+    "max_gain_20d",
+    "max_drawdown_20d",
     "created_at",
 ]
 
@@ -458,6 +517,40 @@ def read_signal_evaluations(
         """,
         params,
         SIGNAL_EVALUATION_COLUMNS,
+        root_dir=root_dir,
+        db_path=db_path,
+    )
+
+
+def read_signal_entry_events(
+    *,
+    root_dir: str | Path | None = None,
+    db_path: str | Path | None = None,
+    signal_name: str | None = None,
+    ticker: str | None = None,
+    event_date: str | pd.Timestamp | None = None,
+) -> pd.DataFrame:
+    clauses: list[str] = []
+    params: list[object] = []
+    if signal_name:
+        clauses.append("signal_name = ?")
+        params.append(str(signal_name))
+    if ticker:
+        clauses.append("ticker = ?")
+        params.append(str(ticker).upper())
+    if event_date is not None:
+        clauses.append("event_date = ?")
+        params.append(_date_key(event_date))
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    return _read_query(
+        f"""
+        SELECT {', '.join(SIGNAL_ENTRY_EVENT_COLUMNS)}
+        FROM signal_entry_event
+        {where}
+        ORDER BY event_date, signal_name, ticker
+        """,
+        params,
+        SIGNAL_ENTRY_EVENT_COLUMNS,
         root_dir=root_dir,
         db_path=db_path,
     )

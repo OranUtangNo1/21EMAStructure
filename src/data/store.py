@@ -45,12 +45,15 @@ class DataSnapshotStore:
         scan_hits: pd.DataFrame | None = None,
         market_result: Any | None = None,
         radar_result: Any | None = None,
+        persist_watchlist: bool = True,
     ) -> Path:
         date_key = self._date_key_from_metadata(metadata, snapshot)
         trade_date_iso = self._trade_date_iso(metadata, snapshot)
 
         eligible_snapshot.to_csv(self.eligible_snapshot_dir / f"{date_key}.csv", index_label="ticker")
-        watchlist.to_csv(self.watchlist_dir / f"{date_key}.csv", index_label="ticker")
+        watchlist_persisted = bool(persist_watchlist)
+        if watchlist_persisted:
+            watchlist.to_csv(self.watchlist_dir / f"{date_key}.csv", index_label="ticker")
         if scan_hits is not None:
             self._save_scan_hits(date_key, trade_date_iso, scan_hits)
         if market_result is not None:
@@ -65,6 +68,7 @@ class DataSnapshotStore:
             "saved_at": datetime.now().isoformat(timespec="seconds"),
             "date_key": date_key,
             "watchlist_count": int(len(watchlist)),
+            "watchlist_persisted": watchlist_persisted,
             "scan_hit_count": int(len(scan_hits)) if scan_hits is not None else 0,
             "fetch_summary": fetch_summary,
         }
@@ -152,6 +156,7 @@ class DataSnapshotStore:
             "breadth_summary": dict(market_result.breadth_summary),
             "performance_overview": dict(market_result.performance_overview),
             "high_vix_summary": dict(market_result.high_vix_summary),
+            "risk_on_ratio_summary": dict(getattr(market_result, "risk_on_ratio_summary", {})),
             "vix_close": market_result.vix_close,
             "update_time": market_result.update_time,
             "market_snapshot": self._frame_to_records(getattr(market_result, "market_snapshot", pd.DataFrame())),

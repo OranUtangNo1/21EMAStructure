@@ -383,6 +383,25 @@ Current built-in entry signal names:
 - `early_cycle_recovery_entry`
 - `power_gap_pullback_entry`
 
+Each entry signal definition may include an `action` section. These thresholds drive `Action Bucket` classification on the Entry Signal page.
+
+```yaml
+action:
+  entry_ready:
+    entry_strength_min: 50
+    timing_min: 50
+    risk_reward_min: 50
+    rr_ratio_min: 2.0
+    setup_maturity_min: 40
+  watch_setup:
+    setup_maturity_min: 45
+    risk_reward_min: 30
+```
+
+The thresholds are signal-specific. Missing `action` values fall back to the defaults shown above. Entry Signal `Missing Piece` text is derived from these thresholds plus each evaluator's maturity/timing detail scores and risk/reward values, so a low timing score should point to the weak trigger component where available.
+
+The same `entry_ready.rr_ratio_min` value is used as the minimum acceptable `R/R Current` or `R/R Ideal` for generated entry plans. EntrySignal strategies choose signal-specific SL and TP1 candidate structures; pullback-style signals prioritize structural and moving-average support plus nearby resistance, while momentum and breakout-style signals can use 2R, measured-move, and momentum targets before falling back to broad resistance. `Max Entry Price` is derived from TP1, SL, and the minimum R/R so the UI can show `Wait Pullback` candidates whose current close is too extended but whose entry zone would satisfy the threshold. TP2 is not price-calculated in the current active system and is displayed as the future trailing-stop plan. Stop-loss generation applies the configured ATR buffer, a minimum 1 ATR distance in the plan layer, and a round-number buffer. Plan failures and downgrades are exposed as reject codes so excluded entries can be reviewed later.
+
 ## 9. Market Dashboard
 
 ### Scoring mode and thresholds
@@ -399,6 +418,10 @@ Current built-in entry signal names:
 - `safe_haven_risk_off_symbol`: `TLT`
 - `safe_haven_window`: `20`
 - `safe_haven_score_scale`: `4.0`
+- `risk_on_ratio_numerator_symbol`: `IWO`
+- `risk_on_ratio_denominator_symbol`: `IWN`
+- `risk_on_ratio_high_window`: `756`
+- `risk_on_ratio_ma_windows`: `[20, 50, 200]`
 
 ### Component weights
 - `pct_above_sma20`: `0.12`
@@ -444,12 +467,15 @@ Current built-in entry signal names:
 
 When persistence is enabled, the current implementation saves these run-level artifacts:
 
-- watchlist table
+- eligible snapshot table
+- optional watchlist table when `data.persist_watchlist_snapshot` is true
 - run metadata
 - weekly universe snapshots
 - market summary JSON
 - radar summary JSON
 - date-level scan-hit history in `data_runs/tracking.db`
+
+`data.persist_watchlist_snapshot` defaults to `false`. The saved-run restore path rebuilds the watchlist from `eligible_snapshot` and stored scan hits when the raw watchlist table is not persisted.
 
 The current implementation also maintains preset-hit tracking data in `data_runs/tracking.db`:
 

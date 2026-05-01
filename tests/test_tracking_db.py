@@ -28,6 +28,7 @@ def test_tracking_db_initializes_schema(tmp_path) -> None:
             "scan_hits",
             "signal_pool_entry",
             "signal_evaluation",
+            "signal_entry_event",
         }.issubset(tables)
         detection_columns = {
             row["name"]
@@ -60,6 +61,21 @@ def test_tracking_db_initializes_schema(tmp_path) -> None:
             "risk_in_atr",
             "reward_in_atr",
             "stop_adjusted",
+            "plan_status",
+            "plan_type",
+            "entry_price",
+            "entry_zone_low",
+            "entry_zone_high",
+            "max_entry_price",
+            "stop_loss",
+            "tp1",
+            "rr_tp1",
+            "rr_current",
+            "rr_ideal",
+            "plan_verdict",
+            "plan_reject_codes",
+            "plan_reject_reason",
+            "plan_detail",
         }.issubset(evaluation_columns)
         assert (tmp_path / "data_runs" / "tracking.db").exists()
     finally:

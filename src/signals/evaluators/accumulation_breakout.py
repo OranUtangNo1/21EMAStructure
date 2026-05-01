@@ -7,7 +7,7 @@ import pandas as pd
 
 from src.signals.evaluators.orderly_pullback import AxisResult, calculate_entry_strength
 from src.signals.pool import SignalPoolEntry
-from src.signals.risk_reward import RiskRewardResult, calculate_rr_ratio, score_rr
+from src.signals.risk_reward import RiskRewardResult, calculate_buffered_stop, calculate_rr_ratio, score_rr
 from src.signals.rules import EntrySignalDefinition
 from src.signals.scoring import composite_score, piecewise_linear_score
 
@@ -242,9 +242,14 @@ def _breakout_stop(
     min_distance = atr * definition.risk_reward.stop.min_distance_atr
     valid_candidates = [candidate for candidate in candidates if candidate < entry_price]
     reference_stop = max(valid_candidates) if valid_candidates else entry_price - min_distance
-    adjusted_stop = min(reference_stop, entry_price - min_distance)
-    stop_adjusted = adjusted_stop != reference_stop
-    return adjusted_stop, (entry_price - adjusted_stop) / atr, stop_adjusted
+    stop_result = calculate_buffered_stop(
+        entry_price,
+        atr,
+        reference_stop,
+        definition.risk_reward,
+        atr_buffer=0.0,
+    )
+    return stop_result.stop_price, stop_result.risk_in_atr, stop_result.stop_adjusted
 
 
 def _reward_target(row: dict[str, object], entry_price: float | None, stop_price: float | None) -> float | None:

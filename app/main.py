@@ -41,6 +41,84 @@ WATCHLIST_PRESET_SCHEMA_VERSION = 1
 WATCHLIST_PRESET_LIMIT = 10
 PAGE_SELECTION_KEY = "active_page"
 
+ENTRY_SIGNAL_DECISION_COLUMNS = (
+    "Ticker",
+    "Signal",
+    "Action Bucket",
+    "Plan Status",
+    "Plan Type",
+    "Entry Type",
+    "Current Price",
+    "Entry Zone Low",
+    "Entry Zone High",
+    "Max Entry Price",
+    "Distance To Entry Zone %",
+    "Stop Loss",
+    "TP1",
+    "R/R Current",
+    "R/R Ideal",
+    "Trigger Condition",
+    "Plan Verdict",
+    "Plan Reject Reason",
+    "Missing Piece",
+    "Preset Sources",
+    "Entry Strength",
+    "Timing",
+    "Risk/Reward",
+    "Risk In ATR",
+    "Setup Maturity",
+    "Pool Days",
+)
+ENTRY_SIGNAL_DETAIL_COLUMNS = (
+    "Ticker",
+    "Signal",
+    "Action Bucket",
+    "Action Reason",
+    "Missing Piece",
+    "Plan Status",
+    "Plan Type",
+    "Entry Type",
+    "Current Price",
+    "Entry Zone Low",
+    "Entry Zone High",
+    "Max Entry Price",
+    "Distance To Entry Zone %",
+    "Stop Loss",
+    "TP1",
+    "R/R Current",
+    "R/R Ideal",
+    "Trigger Condition",
+    "Plan Verdict",
+    "Plan Reject Codes",
+    "Plan Invalidation",
+    "SL Quality",
+    "SL Source",
+    "SL Basis",
+    "SL Safety",
+    "TP1 Source",
+    "TP2 Plan",
+    "Plan Note",
+    "Plan Detail",
+    "Display Bucket",
+    "First Detected",
+    "Latest Detected",
+    "Detection Count",
+    "RS21",
+    "ATR 21EMA Zone",
+    "Volume Ratio 20D",
+    "Drawdown 20D High %",
+    "Low Since Detection",
+    "High Since Detection",
+    "Reward In ATR",
+    "Stop Adjusted",
+    "Maturity Detail",
+    "Timing Detail",
+    "Pool Status",
+    "Pool Transition",
+    "Signal Version",
+    "Pool Entry Id",
+)
+
 GLOBAL_CSS = """
 <style>
 :root { --bg:#f3f5fb; --panel:#ffffff; --panel-border:#dbe4f3; --text:#223045; --muted:#6f7f98; }
@@ -2061,6 +2139,76 @@ def render_preset_hits_panel(
             st.caption(f"Automatic preset CSV output failed: {export_error}")
 
 
+def _existing_columns(frame: pd.DataFrame, columns: tuple[str, ...]) -> list[str]:
+    return [column for column in columns if column in frame.columns]
+
+
+def _entry_signal_decision_view(frame: pd.DataFrame) -> pd.DataFrame:
+    return frame.loc[:, _existing_columns(frame, ENTRY_SIGNAL_DECISION_COLUMNS)].copy()
+
+
+def _entry_signal_detail_view(frame: pd.DataFrame) -> pd.DataFrame:
+    return frame.loc[:, _existing_columns(frame, ENTRY_SIGNAL_DETAIL_COLUMNS)].copy()
+
+
+def _entry_signal_column_config() -> dict[str, object]:
+    return {
+        "Action Bucket": st.column_config.TextColumn("Action"),
+        "Plan Status": st.column_config.TextColumn("Plan"),
+        "Plan Type": st.column_config.TextColumn("Plan Type"),
+        "Entry Type": st.column_config.TextColumn("Entry Type"),
+        "Entry Price": st.column_config.NumberColumn("Entry", format="%.2f"),
+        "Current Price": st.column_config.NumberColumn("Current", format="%.2f"),
+        "Entry Zone Low": st.column_config.NumberColumn("Zone Low", format="%.2f"),
+        "Entry Zone High": st.column_config.NumberColumn("Zone High", format="%.2f"),
+        "Max Entry Price": st.column_config.NumberColumn("Max Entry", format="%.2f"),
+        "Distance To Entry Zone %": st.column_config.NumberColumn("Distance %", format="%.2f"),
+        "Stop Loss": st.column_config.NumberColumn("SL", format="%.2f"),
+        "TP1": st.column_config.NumberColumn("TP1", format="%.2f"),
+        "TP2": st.column_config.TextColumn("TP2"),
+        "R/R TP1": st.column_config.NumberColumn("R/R TP1", format="%.2f"),
+        "R/R Current": st.column_config.NumberColumn("R/R Current", format="%.2f"),
+        "R/R Ideal": st.column_config.NumberColumn("R/R Ideal", format="%.2f"),
+        "TP2 Plan": st.column_config.TextColumn("TP2 Plan"),
+        "Trigger Condition": st.column_config.TextColumn("Trigger"),
+        "Plan Verdict": st.column_config.TextColumn("Verdict"),
+        "Plan Reject Codes": st.column_config.TextColumn("Reject Codes"),
+        "Plan Reject Reason": st.column_config.TextColumn("Reject Reason"),
+        "SL Quality": st.column_config.TextColumn("SL Quality"),
+        "SL Source": st.column_config.TextColumn("SL Source"),
+        "SL Basis": st.column_config.TextColumn("SL Basis"),
+        "SL Safety": st.column_config.TextColumn("SL Safety"),
+        "TP1 Source": st.column_config.TextColumn("TP1 Source"),
+        "Plan Note": st.column_config.TextColumn("Plan Note"),
+        "Plan Detail": st.column_config.TextColumn("Plan Detail"),
+        "Missing Piece": st.column_config.TextColumn("Next Check"),
+        "Entry Strength": st.column_config.NumberColumn("Entry Strength", format="%.1f"),
+        "Timing": st.column_config.NumberColumn("Timing", format="%.1f"),
+        "Risk/Reward": st.column_config.NumberColumn("Risk/Reward", format="%.1f"),
+        "R/R Ratio": st.column_config.NumberColumn("R/R Ratio", format="%.2f"),
+        "Risk In ATR": st.column_config.NumberColumn("Risk ATR", format="%.2f"),
+        "Close": st.column_config.NumberColumn("Close", format="%.2f"),
+        "Stop Price": st.column_config.NumberColumn("Stop", format="%.2f"),
+        "Reward Target": st.column_config.NumberColumn("Target", format="%.2f"),
+        "Setup Maturity": st.column_config.NumberColumn("Setup", format="%.1f"),
+        "Pool Days": st.column_config.NumberColumn("Days", format="%d"),
+    }
+
+
+def _render_entry_signal_rows(label: str, rows: pd.DataFrame, *, max_height: int) -> None:
+    if rows.empty:
+        return
+    st.caption(f"{label}: {len(rows)}")
+    display_rows = _entry_signal_decision_view(rows)
+    st.dataframe(
+        display_rows,
+        width="stretch",
+        hide_index=True,
+        height=min(max_height, 110 + len(display_rows) * 35),
+        column_config=_entry_signal_column_config(),
+    )
+
+
 def render_entry_signals(
     artifacts: PlatformArtifacts,
     signal_state: EntrySignalPageState,
@@ -2105,9 +2253,11 @@ def render_entry_signals(
     result = runner.evaluate_active_pools(artifacts, selected_signal_names)
     with summary_col:
         active_rows = int(len(result.loc[result["Pool Transition"] == ""])) if not result.empty else 0
-        detected_count = int((result["Display Bucket"] == "Signal Detected").sum()) if not result.empty else 0
+        entry_ready_count = int((result["Action Bucket"] == "Entry Ready").sum()) if not result.empty else 0
+        watch_setup_count = int((result["Action Bucket"] == "Watch Setup").sum()) if not result.empty else 0
         st.metric("Active Pool Rows", active_rows)
-        st.metric("Signal Detected", detected_count)
+        st.metric("Entry Ready", entry_ready_count)
+        st.metric("Watch Setup", watch_setup_count)
     st.caption(
         "Selected signals: "
         + (", ".join(selected_signal_names) if selected_signal_names else "None")
@@ -2118,25 +2268,55 @@ def render_entry_signals(
     elif result.empty:
         st.caption("No active pool entries were available for the selected signals.")
     else:
-        for signal_name in selected_signal_names:
-            signal_rows = result.loc[result["Signal Key"] == signal_name].copy()
-            if signal_rows.empty:
-                continue
-            definition = resolved_definitions.get(signal_name)
-            section_title = definition.display_name if definition is not None else signal_name
-            render_section_heading(section_title, "Pool-backed entry evaluation")
-            detected_rows = signal_rows.loc[signal_rows["Display Bucket"] == "Signal Detected"]
-            approaching_rows = signal_rows.loc[signal_rows["Display Bucket"] == "Approaching"]
-            tracking_rows = signal_rows.loc[signal_rows["Display Bucket"] == "Tracking"]
-            if not detected_rows.empty:
-                st.caption(f"Detected: {len(detected_rows)}")
-                st.dataframe(detected_rows, width="stretch", hide_index=True, height=min(420, 110 + len(detected_rows) * 35))
-            if not approaching_rows.empty:
-                st.caption(f"Approaching: {len(approaching_rows)}")
-                st.dataframe(approaching_rows, width="stretch", hide_index=True, height=min(360, 110 + len(approaching_rows) * 35))
-            if not tracking_rows.empty:
-                with st.expander(f"Tracking ({len(tracking_rows)})", expanded=False):
-                    st.dataframe(tracking_rows, width="stretch", hide_index=True, height=min(420, 110 + len(tracking_rows) * 35))
+        entry_ready_rows = result.loc[result["Action Bucket"] == "Entry Ready"].copy()
+        watch_setup_rows = result.loc[result["Action Bucket"] == "Watch Setup"].copy()
+        needs_review_rows = result.loc[result["Action Bucket"] == "Needs Review"].copy()
+        render_section_heading("Entry Ready", "Candidates where timing and risk/reward meet execution thresholds.")
+        if entry_ready_rows.empty:
+            st.caption("No entry-ready candidates for the selected signals.")
+        else:
+            _render_entry_signal_rows("Entry Ready", entry_ready_rows, max_height=480)
+
+        render_section_heading("Watch Setup", "Setups worth monitoring while waiting for a cleaner trigger or R/R.")
+        if watch_setup_rows.empty:
+            st.caption("No watch setups for the selected signals.")
+        else:
+            _render_entry_signal_rows("Watch Setup", watch_setup_rows, max_height=520)
+
+        if not needs_review_rows.empty:
+            with st.expander(f"Needs Review ({len(needs_review_rows)})", expanded=False):
+                st.dataframe(
+                    _entry_signal_decision_view(needs_review_rows),
+                    width="stretch",
+                    hide_index=True,
+                    height=min(420, 110 + len(needs_review_rows) * 35),
+                    column_config=_entry_signal_column_config(),
+                )
+
+        with st.expander("Signal breakdown and details", expanded=False):
+            for signal_name in selected_signal_names:
+                signal_rows = result.loc[result["Signal Key"] == signal_name].copy()
+                if signal_rows.empty:
+                    continue
+                definition = resolved_definitions.get(signal_name)
+                section_title = definition.display_name if definition is not None else signal_name
+                render_section_heading(section_title, "Pool-backed entry evaluation")
+                st.dataframe(
+                    _entry_signal_decision_view(signal_rows),
+                    width="stretch",
+                    hide_index=True,
+                    height=min(420, 110 + len(signal_rows) * 35),
+                    column_config=_entry_signal_column_config(),
+                )
+                detail_rows = _entry_signal_detail_view(signal_rows)
+                if not detail_rows.empty:
+                    with st.expander(f"{section_title} details", expanded=False):
+                        st.dataframe(
+                            detail_rows,
+                            width="stretch",
+                            hide_index=True,
+                            height=min(420, 110 + len(detail_rows) * 35),
+                        )
 
     render_data_health_table(artifacts)
 
@@ -2281,7 +2461,32 @@ def render_market_metric_panel(title: str, items: list[tuple[str, str, str, str]
     )
 
 
-def _market_metric_items(result) -> tuple[list[tuple[str, str, str, str]], list[tuple[str, str, str, str]], list[tuple[str, str, str, str]]]:
+def _risk_ratio_high_label(value: float | None) -> str:
+    if value is None or pd.isna(value):
+        return "Neutral"
+    numeric = float(value)
+    if numeric >= -1.0:
+        return "Positive"
+    if numeric <= -5.0:
+        return "Negative"
+    return "Neutral"
+
+
+def _risk_ratio_ma_label(above_count: float | None, total_count: float | None) -> str:
+    if above_count is None or total_count is None or pd.isna(above_count) or pd.isna(total_count):
+        return "Neutral"
+    total = int(total_count)
+    above = int(above_count)
+    if total <= 0:
+        return "Neutral"
+    if above >= total:
+        return "Positive"
+    if above <= 0:
+        return "Negative"
+    return "Neutral"
+
+
+def _market_metric_items(result) -> tuple[list[tuple[str, str, str, str]], list[tuple[str, str, str, str]], list[tuple[str, str, str, str]], list[tuple[str, str, str, str]]]:
     breadth_keys = (
         ("pct_above_sma10", "SMA 10"),
         ("pct_above_sma20", "SMA 20"),
@@ -2314,7 +2519,27 @@ def _market_metric_items(result) -> tuple[list[tuple[str, str, str, str]], list[
         ("VIX", _format_market_number(vix_value, 2), vix_status, _tone_class(vix_status)),
         ("Safe Haven", _format_market_percent(safe_haven_value, signed=True, decimals=2), safe_haven_status, _tone_class(safe_haven_status)),
     ]
-    return breadth_items, performance_items, high_vix_items
+
+    ratio_summary = getattr(result, "risk_on_ratio_summary", {}) or {}
+    ratio_1m = ratio_summary.get("REL 1M %")
+    ratio_3m = ratio_summary.get("REL 3M %")
+    high_distance = ratio_summary.get("HIGH DIST %")
+    above_ma_count = ratio_summary.get("ABOVE MA COUNT")
+    ma_count = ratio_summary.get("MA COUNT")
+    ratio_1m_status = _performance_label(float(ratio_1m)) if ratio_1m is not None and not pd.isna(ratio_1m) else "Neutral"
+    ratio_3m_status = _performance_label(float(ratio_3m)) if ratio_3m is not None and not pd.isna(ratio_3m) else "Neutral"
+    high_distance_status = _risk_ratio_high_label(high_distance)
+    ma_status = _risk_ratio_ma_label(above_ma_count, ma_count)
+    ma_value = "N/A"
+    if above_ma_count is not None and ma_count is not None and not pd.isna(above_ma_count) and not pd.isna(ma_count):
+        ma_value = f"{int(above_ma_count)}/{int(ma_count)}"
+    risk_on_ratio_items = [
+        ("1M", _format_market_percent(ratio_1m, signed=True, decimals=2), ratio_1m_status, _tone_class(ratio_1m_status)),
+        ("3M", _format_market_percent(ratio_3m, signed=True, decimals=2), ratio_3m_status, _tone_class(ratio_3m_status)),
+        ("High Delta", _format_market_percent(high_distance, signed=True, decimals=2), high_distance_status, _tone_class(high_distance_status)),
+        ("MA", ma_value, ma_status, _tone_class(ma_status)),
+    ]
+    return breadth_items, performance_items, high_vix_items, risk_on_ratio_items
 
 
 def render_market_snapshot_panel(frame: pd.DataFrame) -> None:
@@ -2363,7 +2588,7 @@ def render_market_dashboard(artifacts: PlatformArtifacts) -> None:
     updated_meta = f"Updated: {result.update_time.split('T')[-1]}" if result.update_time else "Updated: N/A"
     render_page_header("Market Dashboard", meta=updated_meta, centered=True)
 
-    breadth_items, performance_items, high_vix_items = _market_metric_items(result)
+    breadth_items, performance_items, high_vix_items, risk_on_ratio_items = _market_metric_items(result)
 
     left_col, middle_col, right_col = st.columns([1.15, 1.0, 2.35])
     with left_col:
@@ -2377,6 +2602,7 @@ def render_market_dashboard(artifacts: PlatformArtifacts) -> None:
             render_market_metric_panel("Performance Overview", performance_items, 4, "No performance metrics available.")
         with high_vix_col:
             render_market_metric_panel("High, VIX & Safe Haven", high_vix_items, 3, "No High, VIX & Safe Haven metrics available.")
+        render_market_metric_panel("Risk-On Ratio IWO/IWN", risk_on_ratio_items, 4, "No IWO/IWN ratio metrics available.")
 
     snapshot_col, factor_col = st.columns([2.3, 1.1])
     with snapshot_col:
@@ -2639,6 +2865,19 @@ def _format_tracking_win_rate(value: object) -> str:
     return f"{number * 100.0:.1f}%"
 
 
+def _normalize_tracking_market_env(value: object) -> str | None:
+    text = str(value).strip().lower()
+    if text in {"bull", "bullish", "positive"}:
+        return "bull"
+    if text == "neutral":
+        return "neutral"
+    if text in {"weak", "negative"}:
+        return "weak"
+    if text in {"bear", "bearish"}:
+        return "bear"
+    return text or None
+
+
 def _tracking_value_until_horizon(row: pd.Series, column_name: str, horizon: int, selected_horizon: int, formatter) -> str:
     if horizon > selected_horizon:
         return "-"
@@ -2747,7 +2986,9 @@ def render_analysis() -> None:
 
     detail_frame = detail_frame.copy()
     detail_frame["hit_date"] = pd.to_datetime(detail_frame["hit_date"], errors="coerce")
-    detail_frame["market_env"] = detail_frame["market_env"].astype(str).str.strip().str.lower()
+    detail_frame["market_env"] = (
+        detail_frame["market_env"].astype(str).str.strip().str.lower().map(_normalize_tracking_market_env)
+    )
     detail_frame = detail_frame.loc[detail_frame["market_env"].isin(TRACKING_MARKET_ENV_OPTIONS)].copy()
     valid_dates = detail_frame["hit_date"].dropna()
     render_section_heading("Aggregation Scope", "Preset universe / horizon / hit date / market environment.")

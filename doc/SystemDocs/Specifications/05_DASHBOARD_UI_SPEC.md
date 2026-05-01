@@ -239,23 +239,50 @@ Current behavior:
 - watchlist controls:
   - the same watchlist preset and duplicate controls used by Today's Watchlist when the Entry Signals page is active
 - page-body controls:
-  - `Signal universe` selectbox
   - `Entry signal logic` multiselect from enabled entry signal definitions
 - result grain:
-  - one row per ticker that matches at least one selected entry signal
-- result columns include:
+  - one row per active signal pool entry for each selected entry signal
+- primary decision sections:
+  - `Entry Ready`: timing and risk/reward meet execution thresholds
+  - `Watch Setup`: setup is forming, but timing or R/R is not ready
+  - `Needs Review`: lower-quality candidates are collapsed by default
+- primary decision table columns:
   - `Ticker`
-  - `Entry Signals`
-  - `Universe Sources`
-  - `Close`
-  - `RS21`
-  - `VCS`
-  - `Rel Volume`
-  - `Dist 52W High`
-  - `Risk Reference`
-  - `Entry Note`
+  - `Signal`
+  - `Action Bucket`
+  - `Plan Status`
+  - `Entry Type`
+  - `Entry Price`
+  - `Stop Loss`
+  - `TP1`
+  - `TP2`
+  - `R/R TP1`
+  - `Plan Verdict`
+  - `Plan Reject Reason`
+  - `Missing Piece`
+  - `Preset Sources`
+  - `Entry Strength`
+  - `Timing`
+  - `Risk/Reward`
+  - `Risk In ATR`
+  - `Setup Maturity`
+  - `Pool Days`
+- detail columns are shown in a collapsed `Signal details` expander per signal section and include plan verdict, reject codes, plan invalidation, SL quality/source/basis/safety, TP1 source, TP2 plan, plan note, plan detail JSON, detection dates, tracking fields, detail JSON, pool status, signal version, and pool entry id.
 
-The page evaluates whether a ticker in the selected signal universe is at a reasonable entry point today. The default universe remains duplicate-focused, but the page can broaden evaluation to Today's Watchlist or the eligible universe.
+The page evaluates whether a preset-sourced active pool entry is at a reasonable entry point today. The primary table is intentionally limited to expected-value decision fields: action bucket, missing piece, timing, risk/reward, stop, target, setup maturity, setup source, and pool freshness.
+
+Current action-bucket semantics:
+
+- `Entry Ready`: `Signal Detected`, no market or earnings guard, and the selected signal's configured `action.entry_ready` thresholds are met.
+- `Watch Setup`: no market or earnings guard, the selected signal's configured `action.watch_setup` thresholds are met, but one or more execution conditions are still missing.
+- `Needs Review`: active candidates that do not meet the `Entry Ready` or `Watch Setup` thresholds.
+- `Avoid / Invalid`: inactive, invalidated, expired, or transitioned pool entries.
+
+Action-bucket thresholds are signal-specific and live in `config/default/entry_signals.yaml` under each signal definition's `action` section. This keeps fast momentum entries, pullback entries, early recovery entries, and breakout entries from sharing one coarse global threshold.
+
+`Missing Piece` is generated from the selected signal's maturity detail, timing detail, risk/reward values, and guard warnings. It should name the blocking condition as specifically as the evaluator can support, such as `waiting for EMA reclaim`, `volume confirmation weak`, `R/R below 2`, `stop is too wide`, or `weak market warning`, instead of only showing a generic timing or R/R label.
+
+Entry plans are generated as EntrySignal outputs for user review only; automated order placement is out of scope. The main table uses `Plan Type`, `Current Price`, `Entry Zone Low`, `Entry Zone High`, `Max Entry Price`, `Stop Loss`, `TP1`, `R/R Current`, `R/R Ideal`, and `Trigger Condition` as the primary execution context. `Ready Now` means the current close satisfies the signal's minimum R/R. `Wait Pullback` means the setup is valid but current R/R is insufficient, while the calculated entry zone would satisfy the minimum R/R if reached. `Wait Trigger` means price and plan quality are acceptable but the signal still needs confirmation. `Poor R/R` and `Invalid` are diagnostic or review states rather than actionable entries. `TP2` is not price-calculated in the active system; it is displayed as `Future trailing stop` for the planned trailing-stop workflow. Plan exclusions and downgrades are traceable through `Plan Reject Codes`, `Plan Reject Reason`, and `Plan Detail`.
 
 ## 5. RS Radar
 
@@ -384,7 +411,8 @@ The page uses a three-part top layout:
 - compact metric-card panels for:
   - `Breadth & Trend Metrics`
   - `Performance Overview`
-  - `High & VIX`
+  - `High, VIX & Safe Haven`
+  - `Risk-On Ratio IWO/IWN`
 
 The page does not render the older top stat-card row or a separate component-score table.
 
@@ -425,6 +453,13 @@ Current `High, VIX & Safe Haven` items:
 - `VIX`
 - `Safe Haven`
 
+Current `Risk-On Ratio IWO/IWN` items:
+
+- `1M` relative ratio change
+- `3M` relative ratio change
+- `High Delta` versus the configured lookback high, capped by loaded price history
+- `MA` count of configured ratio moving averages currently below the ratio
+
 ### 7.5 Core / Leadership / External
 
 The page renders three snapshot sections using the same card layout:
@@ -441,6 +476,7 @@ Current market-score composition notes:
 - raw breadth and participation percentages are still shown in the metric panels
 - the composite score itself now applies score-specific transforms instead of directly summing raw percentages
 - `Safe Haven` is derived from the configured risk-on vs risk-off ETF spread
+- `Risk-On Ratio IWO/IWN` is display-only and does not feed the composite Market Score
 
 Each card currently shows:
 

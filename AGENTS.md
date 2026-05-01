@@ -89,6 +89,8 @@
 - Keep active screening docs separate from archived entry/risk docs.
 - If numbered specs are added, moved, or repurposed, update `doc/SystemDocs/Specifications/00_INDEX.md` in the same pass.
 - Prefer ASCII-safe file edits by default. Only use non-ASCII text when it is explicitly needed and the write path has been verified to preserve UTF-8 without lossy replacement.
+- In this Windows Codex environment, if `rg` fails with `Access is denied`, switch immediately to `Get-ChildItem ... | Select-String`.
+- Preserve existing line endings when editing files; after edits, run `git diff --stat` and `git diff --check` to catch line-ending-only churn and trailing whitespace.
 
 ## Documentation Sync Rules
 

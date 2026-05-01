@@ -232,6 +232,34 @@ def insert_signal_evaluation(
     risk_in_atr: float | None = None,
     reward_in_atr: float | None = None,
     stop_adjusted: bool = False,
+    plan_status: str | None = None,
+    plan_type: str | None = None,
+    entry_type: str | None = None,
+    entry_price: float | None = None,
+    current_price: float | None = None,
+    entry_zone_low: float | None = None,
+    entry_zone_high: float | None = None,
+    max_entry_price: float | None = None,
+    distance_to_entry_zone_pct: float | None = None,
+    stop_loss: float | None = None,
+    tp1: float | None = None,
+    tp2: str | None = None,
+    rr_tp1: float | None = None,
+    rr_current: float | None = None,
+    rr_ideal: float | None = None,
+    tp2_plan: str | None = None,
+    trigger_condition: str | None = None,
+    plan_verdict: str | None = None,
+    plan_reject_codes: str | None = None,
+    plan_reject_reason: str | None = None,
+    sl_quality: str | None = None,
+    sl_source: str | None = None,
+    sl_basis: str | None = None,
+    sl_safety: str | None = None,
+    tp1_source: str | None = None,
+    plan_invalidation: str | None = None,
+    plan_note: str | None = None,
+    plan_detail: str | None = None,
 ) -> int:
     eval_date_key = _date_key(eval_date)
     normalized_signal_name = str(signal_name).strip()
@@ -255,9 +283,37 @@ def insert_signal_evaluation(
             rr_ratio,
             risk_in_atr,
             reward_in_atr,
-            stop_adjusted
+            stop_adjusted,
+            plan_status,
+            plan_type,
+            entry_type,
+            entry_price,
+            current_price,
+            entry_zone_low,
+            entry_zone_high,
+            max_entry_price,
+            distance_to_entry_zone_pct,
+            stop_loss,
+            tp1,
+            tp2,
+            rr_tp1,
+            rr_current,
+            rr_ideal,
+            tp2_plan,
+            trigger_condition,
+            plan_verdict,
+            plan_reject_codes,
+            plan_reject_reason,
+            sl_quality,
+            sl_source,
+            sl_basis,
+            sl_safety,
+            tp1_source,
+            plan_invalidation,
+            plan_note,
+            plan_detail
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(signal_name, ticker, eval_date)
         DO UPDATE SET
             pool_entry_id = excluded.pool_entry_id,
@@ -273,7 +329,35 @@ def insert_signal_evaluation(
             rr_ratio = excluded.rr_ratio,
             risk_in_atr = excluded.risk_in_atr,
             reward_in_atr = excluded.reward_in_atr,
-            stop_adjusted = excluded.stop_adjusted
+            stop_adjusted = excluded.stop_adjusted,
+            plan_status = excluded.plan_status,
+            plan_type = excluded.plan_type,
+            entry_type = excluded.entry_type,
+            entry_price = excluded.entry_price,
+            current_price = excluded.current_price,
+            entry_zone_low = excluded.entry_zone_low,
+            entry_zone_high = excluded.entry_zone_high,
+            max_entry_price = excluded.max_entry_price,
+            distance_to_entry_zone_pct = excluded.distance_to_entry_zone_pct,
+            stop_loss = excluded.stop_loss,
+            tp1 = excluded.tp1,
+            tp2 = excluded.tp2,
+            rr_tp1 = excluded.rr_tp1,
+            rr_current = excluded.rr_current,
+            rr_ideal = excluded.rr_ideal,
+            tp2_plan = excluded.tp2_plan,
+            trigger_condition = excluded.trigger_condition,
+            plan_verdict = excluded.plan_verdict,
+            plan_reject_codes = excluded.plan_reject_codes,
+            plan_reject_reason = excluded.plan_reject_reason,
+            sl_quality = excluded.sl_quality,
+            sl_source = excluded.sl_source,
+            sl_basis = excluded.sl_basis,
+            sl_safety = excluded.sl_safety,
+            tp1_source = excluded.tp1_source,
+            plan_invalidation = excluded.plan_invalidation,
+            plan_note = excluded.plan_note,
+            plan_detail = excluded.plan_detail
         """,
         (
             int(pool_entry_id),
@@ -293,6 +377,34 @@ def insert_signal_evaluation(
             _to_float(risk_in_atr),
             _to_float(reward_in_atr),
             1 if stop_adjusted else 0,
+            _clean_text(plan_status),
+            _clean_text(plan_type),
+            _clean_text(entry_type),
+            _to_float(entry_price),
+            _to_float(current_price),
+            _to_float(entry_zone_low),
+            _to_float(entry_zone_high),
+            _to_float(max_entry_price),
+            _to_float(distance_to_entry_zone_pct),
+            _to_float(stop_loss),
+            _to_float(tp1),
+            _clean_text(tp2),
+            _to_float(rr_tp1),
+            _to_float(rr_current),
+            _to_float(rr_ideal),
+            _clean_text(tp2_plan),
+            _clean_text(trigger_condition),
+            _clean_text(plan_verdict),
+            _clean_text(plan_reject_codes),
+            _clean_text(plan_reject_reason),
+            _clean_text(sl_quality),
+            _clean_text(sl_source),
+            _clean_text(sl_basis),
+            _clean_text(sl_safety),
+            _clean_text(tp1_source),
+            _clean_text(plan_invalidation),
+            _clean_text(plan_note),
+            _clean_text(plan_detail),
         ),
     )
     row = conn.execute(
@@ -303,6 +415,93 @@ def insert_signal_evaluation(
         LIMIT 1
         """,
         (normalized_signal_name, normalized_ticker, eval_date_key),
+    ).fetchone()
+    return int(row["id"] if row is not None else 0)
+
+
+def insert_signal_entry_event(
+    conn: sqlite3.Connection,
+    *,
+    signal_name: str,
+    ticker: str,
+    event_date: str | pd.Timestamp,
+    source_evaluation_id: int | None,
+    plan_type: str | None,
+    entry_price: float | None,
+    entry_zone_low: float | None,
+    entry_zone_high: float | None,
+    max_entry_price: float | None,
+    stop_loss: float | None,
+    tp1: float | None,
+    rr_current: float | None,
+    rr_ideal: float | None,
+    plan_verdict: str | None,
+    reject_codes: str | None,
+) -> int:
+    event_date_key = _date_key(event_date)
+    normalized_signal_name = str(signal_name).strip()
+    normalized_ticker = str(ticker).strip().upper()
+    conn.execute(
+        """
+        INSERT INTO signal_entry_event (
+            signal_name,
+            ticker,
+            event_date,
+            source_evaluation_id,
+            plan_type,
+            entry_price,
+            entry_zone_low,
+            entry_zone_high,
+            max_entry_price,
+            stop_loss,
+            tp1,
+            rr_current,
+            rr_ideal,
+            plan_verdict,
+            reject_codes
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(signal_name, ticker, event_date)
+        DO UPDATE SET
+            source_evaluation_id = excluded.source_evaluation_id,
+            plan_type = excluded.plan_type,
+            entry_price = excluded.entry_price,
+            entry_zone_low = excluded.entry_zone_low,
+            entry_zone_high = excluded.entry_zone_high,
+            max_entry_price = excluded.max_entry_price,
+            stop_loss = excluded.stop_loss,
+            tp1 = excluded.tp1,
+            rr_current = excluded.rr_current,
+            rr_ideal = excluded.rr_ideal,
+            plan_verdict = excluded.plan_verdict,
+            reject_codes = excluded.reject_codes
+        """,
+        (
+            normalized_signal_name,
+            normalized_ticker,
+            event_date_key,
+            int(source_evaluation_id) if source_evaluation_id else None,
+            _clean_text(plan_type),
+            _to_float(entry_price),
+            _to_float(entry_zone_low),
+            _to_float(entry_zone_high),
+            _to_float(max_entry_price),
+            _to_float(stop_loss),
+            _to_float(tp1),
+            _to_float(rr_current),
+            _to_float(rr_ideal),
+            _clean_text(plan_verdict),
+            _clean_text(reject_codes),
+        ),
+    )
+    row = conn.execute(
+        """
+        SELECT id
+        FROM signal_entry_event
+        WHERE signal_name = ? AND ticker = ? AND event_date = ?
+        LIMIT 1
+        """,
+        (normalized_signal_name, normalized_ticker, event_date_key),
     ).fetchone()
     return int(row["id"] if row is not None else 0)
 
@@ -391,6 +590,13 @@ def _to_float(value: object) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _clean_text(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _merge_low(existing: object, incoming: object) -> float | None:

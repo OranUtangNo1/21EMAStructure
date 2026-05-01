@@ -93,8 +93,69 @@ CREATE TABLE IF NOT EXISTS signal_evaluation (
     risk_in_atr REAL,
     reward_in_atr REAL,
     stop_adjusted INTEGER DEFAULT 0,
+    plan_status TEXT,
+    plan_type TEXT,
+    entry_type TEXT,
+    entry_price REAL,
+    current_price REAL,
+    entry_zone_low REAL,
+    entry_zone_high REAL,
+    max_entry_price REAL,
+    distance_to_entry_zone_pct REAL,
+    stop_loss REAL,
+    tp1 REAL,
+    tp2 TEXT,
+    rr_tp1 REAL,
+    rr_current REAL,
+    rr_ideal REAL,
+    tp2_plan TEXT,
+    trigger_condition TEXT,
+    plan_verdict TEXT,
+    plan_reject_codes TEXT,
+    plan_reject_reason TEXT,
+    sl_quality TEXT,
+    sl_source TEXT,
+    sl_basis TEXT,
+    sl_safety TEXT,
+    tp1_source TEXT,
+    plan_invalidation TEXT,
+    plan_note TEXT,
+    plan_detail TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(signal_name, ticker, eval_date)
+);
+
+CREATE TABLE IF NOT EXISTS signal_entry_event (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    signal_name TEXT NOT NULL,
+    ticker TEXT NOT NULL,
+    event_date TEXT NOT NULL,
+    source_evaluation_id INTEGER REFERENCES signal_evaluation(id) ON DELETE SET NULL,
+    plan_type TEXT,
+    entry_price REAL,
+    entry_zone_low REAL,
+    entry_zone_high REAL,
+    max_entry_price REAL,
+    stop_loss REAL,
+    tp1 REAL,
+    rr_current REAL,
+    rr_ideal REAL,
+    plan_verdict TEXT,
+    reject_codes TEXT,
+    close_at_1d REAL,
+    close_at_5d REAL,
+    close_at_10d REAL,
+    close_at_20d REAL,
+    return_1d REAL,
+    return_5d REAL,
+    return_10d REAL,
+    return_20d REAL,
+    hit_sl INTEGER CHECK (hit_sl IN (0, 1) OR hit_sl IS NULL),
+    hit_tp1 INTEGER CHECK (hit_tp1 IN (0, 1) OR hit_tp1 IS NULL),
+    max_gain_20d REAL,
+    max_drawdown_20d REAL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(signal_name, ticker, event_date)
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_detection_active_unique
@@ -141,6 +202,9 @@ ON signal_evaluation(pool_entry_id, eval_date);
 
 CREATE INDEX IF NOT EXISTS idx_eval_date
 ON signal_evaluation(eval_date, signal_name);
+
+CREATE INDEX IF NOT EXISTS idx_signal_entry_event_lookup
+ON signal_entry_event(signal_name, ticker, event_date);
 
 DROP VIEW IF EXISTS v_detection_detail;
 CREATE VIEW v_detection_detail AS

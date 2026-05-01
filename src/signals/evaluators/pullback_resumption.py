@@ -6,7 +6,7 @@ import pandas as pd
 
 from src.signals.evaluators.orderly_pullback import AxisResult, calculate_entry_strength
 from src.signals.pool import SignalPoolEntry
-from src.signals.risk_reward import RiskRewardResult, calculate_rr_ratio, score_rr
+from src.signals.risk_reward import RiskRewardResult, calculate_buffered_stop, calculate_rr_ratio, score_rr
 from src.signals.rules import EntrySignalDefinition
 from src.signals.scoring import composite_score, piecewise_linear_score
 
@@ -214,14 +214,14 @@ def _depth_adaptive_stop(
     if reference_price is None:
         return None, None, False
 
-    buffered_stop = reference_price - atr * buffer_multiplier
-    min_distance = atr * definition.risk_reward.stop.min_distance_atr
-    adjusted_stop = min(buffered_stop, entry_price - min_distance)
-    stop_adjusted = adjusted_stop != buffered_stop
-    if adjusted_stop >= entry_price:
-        adjusted_stop = entry_price - min_distance
-        stop_adjusted = True
-    return adjusted_stop, (entry_price - adjusted_stop) / atr, stop_adjusted
+    stop_result = calculate_buffered_stop(
+        entry_price,
+        atr,
+        reference_price,
+        definition.risk_reward,
+        atr_buffer=buffer_multiplier,
+    )
+    return stop_result.stop_price, stop_result.risk_in_atr, stop_result.stop_adjusted
 
 
 def _reward_target(
