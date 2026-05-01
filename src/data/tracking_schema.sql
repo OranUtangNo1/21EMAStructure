@@ -54,6 +54,49 @@ CREATE TABLE IF NOT EXISTS scan_hits (
     UNIQUE(hit_date, ticker, scan_name)
 );
 
+CREATE TABLE IF NOT EXISTS signal_pool_entry (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    signal_name TEXT NOT NULL,
+    ticker TEXT NOT NULL,
+    preset_sources TEXT NOT NULL DEFAULT '[]',
+    first_detected_date TEXT NOT NULL,
+    latest_detected_date TEXT NOT NULL,
+    detection_count INTEGER NOT NULL DEFAULT 1,
+    pool_status TEXT NOT NULL DEFAULT 'active'
+        CHECK (pool_status IN ('active', 'invalidated', 'expired', 'orphaned')),
+    invalidated_date TEXT,
+    invalidated_reason TEXT,
+    snapshot_at_detection TEXT NOT NULL,
+    low_since_detection REAL,
+    high_since_detection REAL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(signal_name, ticker, first_detected_date)
+);
+
+CREATE TABLE IF NOT EXISTS signal_evaluation (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pool_entry_id INTEGER NOT NULL REFERENCES signal_pool_entry(id) ON DELETE CASCADE,
+    signal_name TEXT NOT NULL,
+    ticker TEXT NOT NULL,
+    eval_date TEXT NOT NULL,
+    signal_version TEXT NOT NULL,
+    setup_maturity_score REAL NOT NULL,
+    timing_score REAL NOT NULL,
+    risk_reward_score REAL NOT NULL,
+    entry_strength REAL NOT NULL,
+    maturity_detail TEXT,
+    timing_detail TEXT,
+    stop_price REAL,
+    reward_target REAL,
+    rr_ratio REAL,
+    risk_in_atr REAL,
+    reward_in_atr REAL,
+    stop_adjusted INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(signal_name, ticker, eval_date)
+);
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_detection_active_unique
 ON detection(preset_name, ticker)
 WHERE status = 'active';
@@ -75,6 +118,29 @@ ON scan_hits(ticker, hit_date);
 
 CREATE INDEX IF NOT EXISTS idx_scan_hits_scan
 ON scan_hits(scan_name, hit_date);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_signal_pool_active_unique
+ON signal_pool_entry(signal_name, ticker)
+WHERE pool_status = 'active';
+
+CREATE INDEX IF NOT EXISTS idx_signal_pool_status
+ON signal_pool_entry(pool_status, signal_name, ticker);
+
+CREATE INDEX IF NOT EXISTS idx_signal_pool_latest_detected
+ON signal_pool_entry(latest_detected_date, pool_status);
+
+CREATE INDEX IF NOT EXISTS idx_pool_active
+ON signal_pool_entry(signal_name, pool_status)
+WHERE pool_status = 'active';
+
+CREATE INDEX IF NOT EXISTS idx_signal_evaluation_lookup
+ON signal_evaluation(signal_name, ticker, eval_date);
+
+CREATE INDEX IF NOT EXISTS idx_signal_evaluation_pool_entry
+ON signal_evaluation(pool_entry_id, eval_date);
+
+CREATE INDEX IF NOT EXISTS idx_eval_date
+ON signal_evaluation(eval_date, signal_name);
 
 DROP VIEW IF EXISTS v_detection_detail;
 CREATE VIEW v_detection_detail AS

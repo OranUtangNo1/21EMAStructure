@@ -10,9 +10,9 @@ Column meaning:
 - `Startup`: selected at app startup after `default_selected_scan_names` is filtered to active cards.
 
 Current totals:
-- enabled scan rules: 19
-- visible scan cards: 18
-- startup selected scans: 15
+- enabled scan rules: 20
+- visible scan cards: 19
+- startup selected scans: 16
 
 | Scan | Status | Card | Startup |
 | --- | --- | --- | --- |
@@ -34,6 +34,7 @@ Current totals:
 | `Weekly 20% plus gainers` | `enabled` | `yes` | `yes` |
 | `Near 52W High` | `disabled` | `no` | `no` |
 | `Three Weeks Tight` | `disabled` | `no` | `no` |
+| `VCP 3T` | `enabled` | `yes` | `yes` |
 | `RS Acceleration` | `disabled` | `no` | `no` |
 | `Sustained Leadership` | `disabled` | `no` | `no` |
 | `Trend Reversal Setup` | `enabled` | `yes` | `yes` |

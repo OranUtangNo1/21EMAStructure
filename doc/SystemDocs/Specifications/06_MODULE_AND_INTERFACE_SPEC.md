@@ -187,7 +187,7 @@ Current concrete implementations:
 
 `ResearchPlatform.run(symbols=None, force_universe_refresh=False, force_price_refresh=False)` returns `PlatformArtifacts`.
 
-`ResearchPlatform.load_latest_run_artifacts(symbols=None, force_universe_refresh=False)` can also return `PlatformArtifacts` by reusing the latest same-day saved run when the current request matches the saved config path, manual-symbol input, and expected trade date.
+`ResearchPlatform.load_latest_run_artifacts(symbols=None, force_universe_refresh=False)` can also return `PlatformArtifacts` by reusing the latest same-day saved run when the current request matches the saved config path, manual-symbol input, expected trade date, and required scan artifact columns. In that restore path, the saved `eligible_snapshot` is reused so Entry Signal evaluation can read the same enriched row fields without a full pipeline recompute. When `VCP 3T` is enabled, saved runs that do not contain the VCP artifact columns are rejected so the app recomputes the run with current indicators and scan hits.
 
 The pipeline contract is:
 
@@ -394,7 +394,7 @@ The active pipeline bundle includes:
 ## 5. Implementation Rules
 
 - keep config, calculation, and result concerns separate
-- keep the active scope limited to screening outputs
+- keep the active scope limited to screening and entry-evaluation outputs
 - keep fetch status and data-quality fields as product behavior
 - keep watchlist generation scan-driven
 - keep page-local UI projection in the dashboard layer, not the scan engine

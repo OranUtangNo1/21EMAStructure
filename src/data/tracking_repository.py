@@ -128,6 +128,44 @@ PRESET_SCAN_PERFORMANCE_COLUMNS = [
     "first_hit_date",
     "last_hit_date",
 ]
+SIGNAL_POOL_ENTRY_COLUMNS = [
+    "id",
+    "signal_name",
+    "ticker",
+    "preset_sources",
+    "first_detected_date",
+    "latest_detected_date",
+    "detection_count",
+    "pool_status",
+    "invalidated_date",
+    "invalidated_reason",
+    "snapshot_at_detection",
+    "low_since_detection",
+    "high_since_detection",
+    "created_at",
+    "updated_at",
+]
+SIGNAL_EVALUATION_COLUMNS = [
+    "id",
+    "pool_entry_id",
+    "signal_name",
+    "ticker",
+    "eval_date",
+    "signal_version",
+    "setup_maturity_score",
+    "timing_score",
+    "risk_reward_score",
+    "entry_strength",
+    "maturity_detail",
+    "timing_detail",
+    "stop_price",
+    "reward_target",
+    "rr_ratio",
+    "risk_in_atr",
+    "reward_in_atr",
+    "stop_adjusted",
+    "created_at",
+]
 
 
 def read_detections(
@@ -348,6 +386,78 @@ def read_preset_scan_performance(
         """,
         [],
         PRESET_SCAN_PERFORMANCE_COLUMNS,
+        root_dir=root_dir,
+        db_path=db_path,
+    )
+
+
+def read_signal_pool_entries(
+    *,
+    root_dir: str | Path | None = None,
+    db_path: str | Path | None = None,
+    signal_name: str | None = None,
+    ticker: str | None = None,
+    pool_status: str | None = None,
+) -> pd.DataFrame:
+    clauses: list[str] = []
+    params: list[object] = []
+    if signal_name:
+        clauses.append("signal_name = ?")
+        params.append(str(signal_name))
+    if ticker:
+        clauses.append("ticker = ?")
+        params.append(str(ticker).upper())
+    if pool_status:
+        clauses.append("pool_status = ?")
+        params.append(str(pool_status))
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    return _read_query(
+        f"""
+        SELECT {', '.join(SIGNAL_POOL_ENTRY_COLUMNS)}
+        FROM signal_pool_entry
+        {where}
+        ORDER BY signal_name, ticker, first_detected_date
+        """,
+        params,
+        SIGNAL_POOL_ENTRY_COLUMNS,
+        root_dir=root_dir,
+        db_path=db_path,
+    )
+
+
+def read_signal_evaluations(
+    *,
+    root_dir: str | Path | None = None,
+    db_path: str | Path | None = None,
+    signal_name: str | None = None,
+    ticker: str | None = None,
+    eval_date: str | pd.Timestamp | None = None,
+    pool_entry_id: int | None = None,
+) -> pd.DataFrame:
+    clauses: list[str] = []
+    params: list[object] = []
+    if signal_name:
+        clauses.append("signal_name = ?")
+        params.append(str(signal_name))
+    if ticker:
+        clauses.append("ticker = ?")
+        params.append(str(ticker).upper())
+    if eval_date is not None:
+        clauses.append("eval_date = ?")
+        params.append(_date_key(eval_date))
+    if pool_entry_id is not None:
+        clauses.append("pool_entry_id = ?")
+        params.append(int(pool_entry_id))
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    return _read_query(
+        f"""
+        SELECT {', '.join(SIGNAL_EVALUATION_COLUMNS)}
+        FROM signal_evaluation
+        {where}
+        ORDER BY eval_date, signal_name, ticker
+        """,
+        params,
+        SIGNAL_EVALUATION_COLUMNS,
         root_dir=root_dir,
         db_path=db_path,
     )

@@ -28,6 +28,7 @@ DEFAULT_SCAN_RULE_NAMES = (
     "Weekly 20% plus gainers",
     "Near 52W High",
     "Three Weeks Tight",
+    "VCP 3T",
     "RS Acceleration",
     "Sustained Leadership",
     "Trend Reversal Setup",
@@ -75,6 +76,7 @@ DEFAULT_CARD_SECTION_PAYLOADS = (
     {"scan_name": "Weekly 20% plus gainers", "display_name": "Weekly 20%+ Gainers"},
     {"scan_name": "Near 52W High", "display_name": "Near 52W High"},
     {"scan_name": "Three Weeks Tight", "display_name": "3WT"},
+    {"scan_name": "VCP 3T", "display_name": "VCP 3T"},
     {"scan_name": "RS Acceleration", "display_name": "RS Accel"},
     {"scan_name": "Sustained Leadership", "display_name": "RS Leader"},
     {"scan_name": "Trend Reversal Setup", "display_name": "Reversal Setup"},
@@ -386,6 +388,17 @@ class ScanConfig:
     near_52w_high_threshold_pct: float = 5.0
     near_52w_high_hybrid_min: float = 70.0
     three_weeks_tight_vcs_min: float = 50.0
+    vcp3t_prior_uptrend_min_pct: float = 30.0
+    vcp3t_t1_min_depth_pct: float = 10.0
+    vcp3t_t2_to_t1_max_ratio: float = 0.85
+    vcp3t_t3_to_t2_max_ratio: float = 0.75
+    vcp3t_t3_max_depth_pct: float = 7.0
+    vcp3t_tight_days_min: int = 3
+    vcp3t_volume_dryup_max_ratio: float = 0.8
+    vcp3t_pivot_extension_max_pct: float = 5.0
+    vcp3t_breakout_volume_ratio_min: float = 1.0
+    vcp3t_dcr_min: float = 55.0
+    vcp3t_rs21_min: float = 60.0
     rs_acceleration_rs21_min: float = 70.0
     sustained_rs21_min: float = 80.0
     sustained_rs63_min: float = 70.0
@@ -951,6 +964,33 @@ def _scan_three_weeks_tight(row: pd.Series, config: ScanConfig) -> bool:
     )
 
 
+def _scan_vcp_3t(row: pd.Series, config: ScanConfig) -> bool:
+    t1_depth = row.get("vcp_t1_depth_pct", float("nan"))
+    t2_depth = row.get("vcp_t2_depth_pct", float("nan"))
+    t3_depth = row.get("vcp_t3_depth_pct", float("nan"))
+    prior_uptrend = row.get("vcp_prior_uptrend_pct", float("nan"))
+    dryup_ratio = row.get("vcp_volume_dryup_ratio", float("nan"))
+    pivot_proximity = row.get("vcp_pivot_proximity_pct", float("nan"))
+    rs21 = _raw_rs(row, 21)
+    required_values = [t1_depth, t2_depth, t3_depth, prior_uptrend, dryup_ratio, pivot_proximity, rs21]
+    if any(pd.isna(value) for value in required_values):
+        return False
+    return bool(
+        float(prior_uptrend) >= config.vcp3t_prior_uptrend_min_pct
+        and float(t1_depth) >= config.vcp3t_t1_min_depth_pct
+        and float(t2_depth) < float(t1_depth) * config.vcp3t_t2_to_t1_max_ratio
+        and float(t3_depth) < float(t2_depth) * config.vcp3t_t3_to_t2_max_ratio
+        and float(t3_depth) <= config.vcp3t_t3_max_depth_pct
+        and row.get("vcp_tight_days", 0.0) >= config.vcp3t_tight_days_min
+        and float(dryup_ratio) <= config.vcp3t_volume_dryup_max_ratio
+        and row.get("vcp_pivot_breakout", False)
+        and 0.0 <= float(pivot_proximity) <= config.vcp3t_pivot_extension_max_pct
+        and row.get("volume_ratio_20d", 0.0) >= config.vcp3t_breakout_volume_ratio_min
+        and row.get("dcr_percent", 0.0) >= config.vcp3t_dcr_min
+        and float(rs21) >= config.vcp3t_rs21_min
+    )
+
+
 def _scan_rs_acceleration(row: pd.Series, config: ScanConfig) -> bool:
     rs21 = row.get("rs21", float("nan"))
     rs63 = row.get("rs63", float("nan"))
@@ -1085,6 +1125,7 @@ SCAN_RULE_REGISTRY: dict[str, RuleEvaluator] = {
     "Weekly 20% plus gainers": _scan_weekly_gainer,
     "Near 52W High": _scan_near_52w_high,
     "Three Weeks Tight": _scan_three_weeks_tight,
+    "VCP 3T": _scan_vcp_3t,
     "RS Acceleration": _scan_rs_acceleration,
     "Sustained Leadership": _scan_sustained_leadership,
     "Trend Reversal Setup": _scan_trend_reversal_setup,

@@ -30,3 +30,12 @@ indicators:
   resistance_zone_width_atr: 0.5
   resistance_test_count_window: 20
   power_gap_threshold: 10.0
+  vcp_prior_uptrend_lookback: 126
+  vcp_t1_window: 20
+  vcp_t1_shift: 16
+  vcp_t2_window: 10
+  vcp_t2_shift: 6
+  vcp_t3_window: 5
+  vcp_t3_shift: 1
+  vcp_pivot_lookback: 20
+  vcp_tight_daily_range_pct: 3.0

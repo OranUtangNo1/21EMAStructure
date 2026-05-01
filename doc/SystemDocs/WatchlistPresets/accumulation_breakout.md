@@ -13,7 +13,7 @@
 
 ```yaml
 preset_name: Accumulation Breakout
-selected_scan_names: [VCS 52 High, PP Count, Volume Accumulation, Pocket Pivot, 4% bullish]
+selected_scan_names: [VCS 52 High, PP Count, Volume Accumulation, Pocket Pivot, 4% bullish, VCP 3T]
 selected_annotation_filters: []
 selected_duplicate_subfilters: []
 duplicate_threshold: 1
@@ -25,7 +25,7 @@ duplicate_rule:
     scans: [PP Count, Volume Accumulation]
     min_hits: 1
   - group_name: Breakout Trigger
-    scans: [Pocket Pivot, 4% bullish]
+    scans: [Pocket Pivot, 4% bullish, VCP 3T]
     min_hits: 1
 preset_status: enabled
 ```
@@ -39,6 +39,7 @@ preset_status: enabled
 | `Volume Accumulation` | [../Scan/scan_15_volume_accumulation.md](../Scan/scan_15_volume_accumulation.md) |
 | `Pocket Pivot` | [../Scan/scan_07_pocket_pivot.md](../Scan/scan_07_pocket_pivot.md) |
 | `4% bullish` | [../Scan/scan_02_4pct_bullish.md](../Scan/scan_02_4pct_bullish.md) |
+| `VCP 3T` | [../Scan/scan_29_vcp_3t.md](../Scan/scan_29_vcp_3t.md) |
 
 ## Post-Scan And Duplicate Settings
 
@@ -47,4 +48,4 @@ preset_status: enabled
 - duplicate rule: `grouped_threshold`
   - required: `VCS 52 High`
   - optional group `Accumulation Evidence`: min 1 of 2
-  - optional group `Breakout Trigger`: min 1 of 2
+  - optional group `Breakout Trigger`: min 1 of 3

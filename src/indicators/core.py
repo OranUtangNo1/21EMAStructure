@@ -43,6 +43,15 @@ class IndicatorConfig:
     resistance_zone_width_atr: float = 0.5
     resistance_test_count_window: int = 20
     power_gap_threshold: float = 10.0
+    vcp_prior_uptrend_lookback: int = 126
+    vcp_t1_window: int = 20
+    vcp_t1_shift: int = 16
+    vcp_t2_window: int = 10
+    vcp_t2_shift: int = 6
+    vcp_t3_window: int = 5
+    vcp_t3_shift: int = 1
+    vcp_pivot_lookback: int = 20
+    vcp_tight_daily_range_pct: float = 3.0
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> "IndicatorConfig":
@@ -141,6 +150,8 @@ class IndicatorCalculator:
         df["weekly_return"] = df["close"].pct_change(5, fill_method=None) * 100.0
         df["monthly_return"] = df["close"].pct_change(21, fill_method=None) * 100.0
         df["quarterly_return"] = df["close"].pct_change(63, fill_method=None) * 100.0
+        df["rolling_5d_low"] = df["low"].rolling(5).min()
+        df["rolling_10d_low"] = df["low"].rolling(10).min()
         df["rolling_20d_close_high"] = df["close"].rolling(20).max()
         df["drawdown_from_20d_high_pct"] = (
             (df["rolling_20d_close_high"] - df["close"]) / df["rolling_20d_close_high"].replace(0, np.nan) * 100.0
@@ -155,6 +166,9 @@ class IndicatorCalculator:
             min_periods=self.config.resistance_test_count_window,
         ).sum()
         df["breakout_body_ratio"] = (df["close"] - df["open"]) / range_width
+        vcp_fields = self._calculate_vcp_3t_fields(df)
+        for column_name, values in vcp_fields.items():
+            df[column_name] = values
 
         atr = df["atr"].replace(0, np.nan)
         df["atr_21ema_zone"] = (df["close"] - df["ema21_close"]) / atr
@@ -238,6 +252,52 @@ class IndicatorCalculator:
         prior_volume_high = df["volume"].rolling(self.config.pocket_pivot_lookback).max().shift(1)
         green_candle = df["close"] > df["open"]
         return (green_candle & (df["volume"] > prior_volume_high)).fillna(False)
+
+    def _calculate_vcp_3t_fields(self, df: pd.DataFrame) -> dict[str, pd.Series]:
+        high = df["high"].astype(float)
+        low = df["low"].astype(float)
+        close = df["close"].astype(float)
+        volume = df["volume"].astype(float)
+
+        t1_high = high.shift(self.config.vcp_t1_shift).rolling(self.config.vcp_t1_window).max()
+        t1_low = low.shift(self.config.vcp_t1_shift).rolling(self.config.vcp_t1_window).min()
+        t2_high = high.shift(self.config.vcp_t2_shift).rolling(self.config.vcp_t2_window).max()
+        t2_low = low.shift(self.config.vcp_t2_shift).rolling(self.config.vcp_t2_window).min()
+        t3_high = high.shift(self.config.vcp_t3_shift).rolling(self.config.vcp_t3_window).max()
+        t3_low = low.shift(self.config.vcp_t3_shift).rolling(self.config.vcp_t3_window).min()
+
+        t1_depth = (t1_high - t1_low) / t1_high.replace(0, np.nan) * 100.0
+        t2_depth = (t2_high - t2_low) / t2_high.replace(0, np.nan) * 100.0
+        t3_depth = (t3_high - t3_low) / t3_high.replace(0, np.nan) * 100.0
+
+        base_start_shift = self.config.vcp_t1_shift + self.config.vcp_t1_window
+        prior_low = low.shift(base_start_shift).rolling(self.config.vcp_prior_uptrend_lookback).min()
+        prior_uptrend = (t1_high / prior_low.replace(0, np.nan) - 1.0) * 100.0
+
+        pivot_price = high.shift(1).rolling(self.config.vcp_pivot_lookback).max()
+        pivot_proximity = (close - pivot_price) / pivot_price.replace(0, np.nan) * 100.0
+        previous_close = close.shift(1)
+        pivot_breakout = (close > pivot_price) & (previous_close <= pivot_price)
+
+        daily_range_pct = (high - low) / close.replace(0, np.nan) * 100.0
+        tight_day = daily_range_pct.shift(1) <= self.config.vcp_tight_daily_range_pct
+        tight_days = tight_day.rolling(self.config.vcp_t3_window).sum()
+        dryup_ratio = (
+            volume.shift(1).rolling(self.config.vcp_t3_window).mean()
+            / volume.shift(1).rolling(self.config.vcp_pivot_lookback).mean().replace(0, np.nan)
+        )
+
+        return {
+            "vcp_t1_depth_pct": t1_depth,
+            "vcp_t2_depth_pct": t2_depth,
+            "vcp_t3_depth_pct": t3_depth,
+            "vcp_prior_uptrend_pct": prior_uptrend,
+            "vcp_pivot_price": pivot_price,
+            "vcp_pivot_proximity_pct": pivot_proximity,
+            "vcp_pivot_breakout": pivot_breakout.fillna(False),
+            "vcp_tight_days": tight_days,
+            "vcp_volume_dryup_ratio": dryup_ratio,
+        }
 
     def _calculate_structure_pivot_snapshot(self, df: pd.DataFrame) -> dict[str, float | bool]:
         long_state = self._detect_structure_pivot_state(df, is_long=True)

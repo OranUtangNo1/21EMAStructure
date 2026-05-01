@@ -173,7 +173,7 @@ The current default config sets this to `false`, so sample fallback is inactive 
 - fundamental cache under `data_cache/`
 - user preferences under `data_cache/user_preferences.yaml`
 - weekly universe snapshots under `data_runs/universe_snapshots/`
-- run artifacts under file-type folders keyed by trade-date date key, such as `data_runs/run_metadata/YYYYMMDD.json`, `data_runs/watchlist/YYYYMMDD.csv`, `data_runs/market_summary/YYYYMMDD.json`, and `data_runs/radar_summary/YYYYMMDD.json`
+- run artifacts under file-type folders keyed by trade-date date key, such as `data_runs/run_metadata/YYYYMMDD.json`, `data_runs/eligible_snapshot/YYYYMMDD.csv`, `data_runs/watchlist/YYYYMMDD.csv`, `data_runs/market_summary/YYYYMMDD.json`, and `data_runs/radar_summary/YYYYMMDD.json`
 - scan-hit history and preset-hit tracking under `data_runs/tracking.db`
 
 ### 4.2 Current TTLs
@@ -284,6 +284,7 @@ Analysis views:
 
 When `data.persist_research_snapshots` is true, the pipeline saves:
 
+- `eligible_snapshot/YYYYMMDD.csv`
 - `watchlist.csv`
 - `run_metadata/YYYYMMDD.json`
 - `market_summary/YYYYMMDD.json`
@@ -308,7 +309,7 @@ Run metadata currently includes:
 - `universe_mode`
 - `universe_snapshot_path`
 
-The current same-day saved-run restore path is intentionally compact. It restores the saved watchlist, scan hits from SQLite, market summary, radar summary, and metadata, then builds a minimal snapshot carrying the saved trade date. Full `snapshot`, `eligible_snapshot`, and `fetch_status` CSV restoration is not active in the current store implementation.
+The current same-day saved-run restore path restores the saved `eligible_snapshot`, `watchlist`, scan hits from SQLite, market summary, radar summary, and metadata. It still does not restore full `snapshot` or `fetch_status` CSVs; when those are unavailable, the pipeline builds a minimal snapshot carrying the saved trade date.
 
 ## 6. Active Provider Modules
 

@@ -109,7 +109,7 @@ Current role:
 Current behavior:
 
 - full pipeline recompute registers new detections and refreshes returns
-- same-day saved-run restore refreshes existing returns but does not register new detections
+- same-day saved-run restore also registers export-enabled preset detections from saved watchlist and scan-hit artifacts, then refreshes returns
 - scan-hit history is inserted into `scan_hits`
 - tracking health counts are saved into Streamlit session state for diagnostics
 

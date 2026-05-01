@@ -2,13 +2,13 @@
 
 ## Project Summary
 
-- The active product is a screening and candidate extraction platform.
-- The active scope is limited to Market Dashboard, RS Radar, and Today's Watchlist.
-- Entry evaluation, position sizing, trade execution, and exit management are out of scope for the active system.
+- The active product is a screening, candidate extraction, and entry evaluation platform.
+- The active scope includes Market Dashboard, RS Radar, Today's Watchlist, and Entry Signal evaluation.
+- Final discretionary chart review, position sizing, trade execution, and exit management are out of scope for the active system.
 - Those out-of-scope notes belong in `archived/`.
-- The top priority is to keep the screening workflow reliable, inspectable, and easy to change.
+- The top priority is to keep the screening and entry-evaluation workflow reliable, inspectable, and easy to change.
 - The top priority is not adding trade management features.
-- The top priority is preserving correct scan behavior, data lineage, and dashboard outputs.
+- The top priority is preserving correct scan behavior, data lineage, entry-signal outputs, and dashboard outputs.
 
 ## Source Of Truth
 

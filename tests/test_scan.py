@@ -425,6 +425,52 @@ def test_three_weeks_tight_scan_uses_indicator_flag_vcs_and_trend() -> None:
     assert result["Three Weeks Tight"] is True
 
 
+def test_vcp_3t_scan_requires_contracting_depth_dryup_and_pivot_breakout() -> None:
+    row = pd.Series(
+        {
+            "vcp_t1_depth_pct": 20.0,
+            "vcp_t2_depth_pct": 12.0,
+            "vcp_t3_depth_pct": 5.0,
+            "vcp_prior_uptrend_pct": 60.0,
+            "vcp_tight_days": 4.0,
+            "vcp_volume_dryup_ratio": 0.55,
+            "vcp_pivot_breakout": True,
+            "vcp_pivot_proximity_pct": 2.0,
+            "volume_ratio_20d": 1.6,
+            "dcr_percent": 82.0,
+            "rs21": 75.0,
+        }
+    )
+    config = ScanConfig(enabled_scan_rules=("VCP 3T",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["VCP 3T"] is True
+
+
+def test_vcp_3t_scan_rejects_non_contracting_depths() -> None:
+    row = pd.Series(
+        {
+            "vcp_t1_depth_pct": 20.0,
+            "vcp_t2_depth_pct": 18.0,
+            "vcp_t3_depth_pct": 9.0,
+            "vcp_prior_uptrend_pct": 60.0,
+            "vcp_tight_days": 4.0,
+            "vcp_volume_dryup_ratio": 0.55,
+            "vcp_pivot_breakout": True,
+            "vcp_pivot_proximity_pct": 2.0,
+            "volume_ratio_20d": 1.6,
+            "dcr_percent": 82.0,
+            "rs21": 75.0,
+        }
+    )
+    config = ScanConfig(enabled_scan_rules=("VCP 3T",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["VCP 3T"] is False
+
+
 def test_rs_acceleration_scan_uses_rs_fields_not_rsi_fields() -> None:
     row = pd.Series({"rs21": 75.0, "rs63": 70.0, "rsi21": 10.0, "rsi63": 90.0, "trend_base": True})
     config = ScanConfig(enabled_scan_rules=("RS Acceleration",))

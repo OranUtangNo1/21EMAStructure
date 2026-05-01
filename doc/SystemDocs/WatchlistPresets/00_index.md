@@ -37,6 +37,7 @@ To change built-in preset behavior, edit `config/default/scan.yaml`.
 | [early_cycle_recovery.md](early_cycle_recovery.md) | `Early Cycle Recovery` |
 | [base_breakout.md](base_breakout.md) | `Base Breakout` |
 | [accumulation_breakout.md](accumulation_breakout.md) | `Accumulation Breakout` |
+| [vcp_3t_breakout.md](vcp_3t_breakout.md) | `VCP 3T Breakout` |
 | [trend_pullback.md](trend_pullback.md) | `Trend Pullback` |
 | [resilient_leader.md](resilient_leader.md) | `Resilient Leader` |
 | [early_recovery.md](early_recovery.md) | `Early Recovery` |

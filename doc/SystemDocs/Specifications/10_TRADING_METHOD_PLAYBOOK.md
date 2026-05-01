@@ -4,7 +4,7 @@
 
 This document explains the current workflow supported by the active OraTek application. It is written from the implementation as it exists today.
 
-The active product is a screening and candidate extraction platform. It supports:
+The active product is a screening, candidate extraction, and entry evaluation platform. It supports:
 
 1. market environment review
 2. sector and industry RS review
@@ -240,4 +240,4 @@ The following remain outside the active product workflow:
 - stop management
 - trade exits
 
-Those topics are not part of the active screening workflow and are not product behavior.
+Those topics are not part of the active screening and entry-evaluation workflow and are not product behavior.

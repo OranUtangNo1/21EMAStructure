@@ -172,8 +172,8 @@ Manual selected-preset export CSV behavior:
 Preset tracking behavior:
 
 - each full pipeline recompute writes preset CSV files when `scan.preset_csv_export.enabled` is true
-- each full pipeline recompute syncs export-enabled preset detections into `data_runs/tracking.db`
-- same-day saved-run restore refreshes existing tracking prices but does not register new detections
+- each artifact load syncs export-enabled preset detections into `data_runs/tracking.db`, including same-day saved-run restores
+- same-day saved-run restore uses the saved watchlist and scan-hit artifacts for idempotent detection registration
 - tracking sync is automatic and separate from manual CSV actions
 - Analysis reads from the SQLite tracking database and renders analysis tables
 

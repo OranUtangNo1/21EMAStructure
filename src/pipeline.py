@@ -41,6 +41,18 @@ from src.scoring.industry import IndustryScoreConfig, IndustryScorer
 from src.scoring.rs import RSConfig, RSScorer
 from src.scoring.vcs import VCSCalculator, VCSConfig
 
+VCP_3T_ARTIFACT_COLUMNS = (
+    "vcp_t1_depth_pct",
+    "vcp_t2_depth_pct",
+    "vcp_t3_depth_pct",
+    "vcp_prior_uptrend_pct",
+    "vcp_pivot_price",
+    "vcp_pivot_proximity_pct",
+    "vcp_volume_dryup_ratio",
+    "vcp_pivot_breakout",
+    "vcp_tight_days",
+)
+
 
 @dataclass(slots=True)
 class PlatformArtifacts:
@@ -255,6 +267,8 @@ class ResearchPlatform:
         expected_trade_date = self._expected_trade_date()
         if trade_date is None or expected_trade_date is None or trade_date.normalize() != expected_trade_date.normalize():
             return None
+        if not self._saved_run_has_required_scan_columns(loaded.watchlist, loaded.eligible_snapshot):
+            return None
 
         market_result = self._restore_market_result(loaded.market_metadata, loaded.market_frames)
         radar_result = self._restore_radar_result(loaded.radar_metadata, loaded.radar_frames)
@@ -262,7 +276,7 @@ class ResearchPlatform:
             return None
 
         minimal_snapshot = self._minimal_snapshot_for_saved_run(loaded.watchlist.index.tolist(), trade_date)
-        eligible_snapshot = minimal_snapshot.copy()
+        eligible_snapshot = loaded.eligible_snapshot.copy() if loaded.eligible_snapshot is not None else minimal_snapshot.copy()
 
         duplicate_tickers = self.watchlist_builder.build_duplicate_tickers(
             loaded.watchlist,
@@ -317,6 +331,19 @@ class ResearchPlatform:
         if not isinstance(saved_manual_symbols, list):
             return False
         return self._normalize_symbols(saved_manual_symbols) == manual_symbols
+
+    def _saved_run_has_required_scan_columns(
+        self,
+        watchlist: pd.DataFrame,
+        eligible_snapshot: pd.DataFrame | None,
+    ) -> bool:
+        if "VCP 3T" not in self.scan_config.enabled_scan_rules:
+            return True
+        frames = [watchlist]
+        if eligible_snapshot is not None:
+            frames.append(eligible_snapshot)
+        required = set(VCP_3T_ARTIFACT_COLUMNS)
+        return all(required.issubset(set(frame.columns)) for frame in frames)
 
     def _expected_trade_date(self) -> pd.Timestamp:
         now_eastern = datetime.now(ZoneInfo("America/New_York"))

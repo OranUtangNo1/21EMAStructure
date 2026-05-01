@@ -11,7 +11,7 @@ Column meaning:
 - `Inactive scans`: selected scans that are currently disabled. Any non-empty value forces runtime `Status` to `disabled`.
 
 Current totals:
-- enabled: 9
+- enabled: 10
 - hidden_enabled: 0
 - disabled: 7
 
@@ -24,6 +24,7 @@ Current totals:
 | `Early Cycle Recovery` | `enabled` | `yes` | `yes` | `-` |
 | `Base Breakout` | `disabled` | `no` | `no` | `97 Club`, `Three Weeks Tight` |
 | `Accumulation Breakout` | `enabled` | `yes` | `yes` | `-` |
+| `VCP 3T Breakout` | `enabled` | `yes` | `yes` | `-` |
 | `50SMA Defense` | `enabled` | `yes` | `yes` | `-` |
 | `Power Gap Pullback` | `enabled` | `yes` | `yes` | `-` |
 | `RS Breakout Setup` | `enabled` | `yes` | `yes` | `-` |

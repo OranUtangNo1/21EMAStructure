@@ -1,0 +1,249 @@
+十分な情報が揃いました。全ドキュメントを突き合わせて、設計レビューを実施します。
+
+---
+
+## 1. 総評
+
+**pool型 Entry Signal は、個々の設計としては高い完成度を持つが、システム全体として「依存チェーンの断絶」と「市場環境の盲点」という2つの構造的欠陥を抱えている。** 最も深刻なのは、6本中1本（`orderly_pullback_entry`）が依存チェーンの断絶により完全に機能停止しているにもかかわらず status が `enabled` のまま放置されている点。また、6本すべてが市場全体の breadth / market_score を一切参照せずにスコアリングを行っているため、下落相場での偽シグナル抑制が個別銘柄のフィルターのみに依存している。
+
+---
+
+## 2. 致命的な問題点（最優先）
+
+### 2-1. `orderly_pullback_entry` の依存チェーン完全断絶
+
+**該当 signal**: `orderly_pullback_entry`
+
+`preset_sources` に指定された `Orderly Pullback` と `Trend Pullback` は**いずれも `disabled`** である。原因は両 preset が `RS Acceleration` scan を含んでおり、`RS Acceleration` が現在 `disabled` であるため、runtime で preset status が強制的に `disabled` に切り替わっている。
+
+`scan_preset_entry_signal_workflow_ja.md` にも「現在の built-in runtime ではこの経路は実質停止中です」と明記されている。にもかかわらず、Entry Signal の status_matrix では `orderly_pullback_entry` は `enabled: yes / startup: yes` のまま残っている。
+
+**なぜ致命的か**: ユーザーは Entry Signal 画面で `orderly_pullback_entry` が有効だと思って運用しているが、実際には pool に候補が一切流れない。最も基本的な pullback エントリ戦略が「定義上は存在するが実行上は死んでいる」というサイレント障害が発生している。しかも `RS Acceleration` という**単一の scan の disable** が2つの preset を同時に殺し、signal 全体を停止させているため、典型的な単一障害点（SPOF）構造。
+
+**修正方針**: 2段階で対応する。
+
+短期: `orderly_pullback_entry` の `preset_sources` を、既に enabled な `Pullback Trigger` に切り替える。`Pullback Trigger` は `Pullback Quality scan`（required）+ `21EMA Pattern H/L`（trigger group）+ `Volume Accumulation / Pocket Pivot`（demand group）という構成で、`Orderly Pullback` preset と設計思想が非常に近い。`RS Acceleration` への依存を排除できる。
+
+中長期: `RS Acceleration` scan 自体の有効化を検討するか、またはこの scan が本当に必要かを再評価する。仮に `RS Acceleration` を復活させる場合でも、required ではなく optional group に配置することで SPOF を回避する。
+
+### 2-2. 全6本の signal が市場環境指標を一切参照していない
+
+**該当 signal**: 全6本
+
+`data_inputs_and_derivable_metrics_inventory.md` によれば、`% above SMA50`、`market_score`、`vix_score`、`safe_haven_score` は現在のシステムで算出済み。しかし6本すべての Entry Signal のスコアリング軸定義を確認すると、3軸（setup_maturity / timing / risk_reward）のいずれにも market-level 指標は含まれていない。guardrail にも含まれていない。
+
+**なぜ致命的か**: 下落相場（`% above SMA50 < 30%` 等）でも、個別銘柄が pullback / reclaim 条件を満たせば `Signal Detected` まで到達する。具体的な失敗シナリオとして、bear market rally の短期反発で `pullback_resumption_entry` が `Reclaim Trigger` 経由で候補を拾い、当日の `rel_volume` と `dcr_percent` が高ければ timing 軸が高スコアを出し、`entry_strength >= 48` で `Signal Detected` になる。しかし市場全体が下落トレンドにあるため、数日後に全体の売り圧力で損切りになる確率が大幅に上がる。
+
+**修正方針**: 2つのアプローチを併用する。
+
+(A) guardrail に market-level ゲートを追加: `market_score < 30` の場合、全 signal の `entry_strength` を `Approaching` 以下に cap する。これにより下落相場では「監視対象」止まりになり、強気の `Signal Detected` 表示を抑制。
+
+(B) timing 軸にオプション指標として `market_tailwind` を追加: `% above SMA50` をベースに、追い風がある場合にボーナス（+5〜+10）、逆風がある場合にペナルティ（-10〜-15）を timing 軸に反映。weight は `0.10` 程度で、主要なタイミング指標を支配しない範囲に抑える。
+
+---
+
+## 3. 構造的な問題（設計レベル）
+
+### 3-1. custom evaluator のブラックボックス化
+
+**該当 signal**: `momentum_acceleration_entry`（`acceleration_event`, `follow_through`）、`accumulation_breakout_entry`（`breakout_event`, `follow_through`, `rs_leadership`）、`early_cycle_recovery_entry`（`structure_reversal_quality`, `pivot_trigger`）
+
+これらの指標は「custom evaluator, weight X」と記述されているだけで、入力値→スコア 0/25/50/75/100 の breakpoints が明示されていない。設計プロセス標準（`entry_signal_design_process.md`）の Step 3 では「スコアリングの方向性（線形、ベル型、閾値型）」の決定を求めているが、これらの custom evaluator についてはドキュメント上の対応が不完全。
+
+**影響範囲**: 再現性の原則に抵触する。同じ enriched snapshot を渡しても、custom evaluator の内部ロジックが不明なため「なぜこのスコアになったか」を第三者が検証できない。特に `acceleration_event` は「4% bullish move with sufficient relative volume, or falls back to PP density / hit-scan evidence」と自然言語で記述されているが、「sufficient relative volume」の閾値、フォールバック時のスコア配分が不明。
+
+**修正方針**: 各 custom evaluator について、最低限以下を明文化する。
+
+```
+acceleration_event:
+  score_100: daily_change_pct >= 5.0 AND rel_volume >= 2.0
+  score_75:  daily_change_pct >= 4.0 AND rel_volume >= 1.5
+  score_50:  pp_count_window >= 3 OR (hit_scans contains '4% bullish')
+  score_25:  pp_count_window >= 2
+  score_0:   above conditions not met
+```
+
+この形式にすれば、evaluator の Python コードと1対1で照合でき、再現性が保証される。
+
+### 3-2. signal 間の排他制御と優先度ルールが未定義
+
+**該当 signal**: 全6本（特に pullback 系3本）
+
+同一銘柄が `pullback_resumption_entry` と `power_gap_pullback_entry` の両方の pool に同時登録されるシナリオがある。具体例: power gap 後に pullback が発生し、`Power Gap Pullback` preset と `Pullback Trigger` preset の両方を通過した場合。この銘柄は2つの signal pool に別々に存在し、それぞれ独立にスコアリングされ、Entry Signal 画面に2行として表示される可能性がある。
+
+ドキュメント上、signal 間の優先度ルール（例: 同一銘柄は最も entry_strength が高い signal のみ表示する）は定義されていない。`entry_signal_design_process.md` の Step 5 チェックリスト（7.5 UI 整合性）に「同一銘柄が複数 signal に出現する場合の表示方針が決まっているか」という項目があるが、6本の signal ドキュメントにはこの方針の記載がない。
+
+**影響範囲**: ユーザーが同一銘柄を見て「2つの signal が出ている」ことを strength と解釈する可能性がある一方、実際にはリスクが2倍にカウントされるわけではない。また、entry_strength の値が signal 間で異なる閾値基準で算出されているため、`orderly_pullback` で 50 と `accumulation_breakout` で 55 のどちらが「より強い signal か」が直接比較できない。
+
+**修正方針**: 以下のいずれかを明文化する。
+
+(A) 非排他: 複数表示を許容し、UI に signal 名のラベルを表示。ユーザーは文脈に応じて判断する。ただし entry_strength は signal 間で比較不可であることを UI 上に明示。
+
+(B) 排他: 同一ティッカーは `max(entry_strength)` の signal のみ表示。ただしこの場合、閾値の正規化が先に必要。
+
+### 3-3. R/R 軸のターゲット設定が構造的に弱い
+
+**該当 signal**: `momentum_acceleration_entry`、`early_cycle_recovery_entry`
+
+`momentum_acceleration_entry` の TP は primary が `entry + 2R`、secondary fallback が `entry * 1.08`。`entry + 2R` は SL から機械的に逆算した値であり、価格構造（レジスタンス、52w high、直近高値）を反映していない。`entry * 1.08` は固定 8% であり、ATR が小さい低ボラ銘柄では過大、高ボラ銘柄では過小になる。
+
+`early_cycle_recovery_entry` の TP は primary が `entry + 2R`、secondary が `rolling_20d_close_high`。recovery 型のセットアップでは、直近20日高値はまだ下落トレンドの途中の高値である可能性があり、真のリワード目標としては不十分。
+
+対照的に、`orderly_pullback_entry` は `snapshot_rolling_20d_close_high → high_52w → measured_move` という3段階の優先度付き TP を持ち、`power_gap_pullback_entry` も `rolling_20d_close_high → entry + 2R → high_52w` と構造的な参照を優先している。これは良い設計。
+
+**修正方針**: 
+
+`momentum_acceleration_entry`: `entry * 1.08` のフォールバックを `snapshot.high + 1.0 ATR` に変更。acceleration の文脈では直近高値更新が自然なターゲットであり、ATR バッファを付けることでボラティリティに適応する。
+
+`early_cycle_recovery_entry`: secondary を `sma200` または `dist_from_52w_high` ベースの中間目標に変更。recovery 銘柄にとって SMA200 回復は構造的なマイルストーンであり、`rolling_20d_close_high` よりも意味のあるターゲットになる。
+
+### 3-4. earnings proximity が全 signal で未考慮
+
+**該当 signal**: 全6本
+
+`data_inputs_and_derivable_metrics_inventory.md` のセクション3-3に「earnings までの日数」「earnings 直前 / 直後フラグ」が算出可能な指標として挙げられている。しかし、6本すべての signal で earnings_date を R/R 評価やガードレールに一切使用していない。
+
+**影響範囲**: earnings 発表3日前に `Signal Detected` が出た場合、gap risk（決算ギャップリスク）が非常に高いにもかかわらず、それを考慮せずにエントリを推奨することになる。決算跨ぎは SL を大幅に超える損失が発生する可能性があり、R/R 計算の前提が根底から崩れる。
+
+**修正方針**: guardrail に `earnings_proximity` ゲートを追加。例: `earnings_days_until <= 5` の場合、全 signal の `entry_strength` を `Approaching` 以下に cap。合わせて `timing_detail` に `earnings_warning` キーを書き込み、UI 上で「決算直前」であることを明示する。
+
+---
+
+## 4. 軽微な問題（改善レベル）
+
+### 4-1. Display Threshold の不統一と根拠不明
+
+Signal Detected / Approaching の閾値が signal ごとに異なる: `50/35`、`48/32`、`55/40`、`55/38`、`52/35`、`52/35`。設計プロセス標準では「初期値は 50/35/0 を基本とし、検証データに基づいて調整する」とあるが、調整の根拠がドキュメント化されていない。
+
+**改善案**: 各 signal の閾値調整根拠（検証時の precision/recall データ等）をドキュメントに追記する。もし検証データがなく「感覚的に調整した」のであれば、まず全 signal を `52/35` に統一し、遡及検証で個別調整する。
+
+### 4-2. ATR バッファ `0.25` の画一性
+
+5本の signal で SL の ATR バッファが一律 `0.25`。`momentum_acceleration_entry` の minimum stop distance は `0.25 ATR`、他は `0.50 ATR`。バッファ `0.25 ATR` は中ボラ銘柄（ATR が株価の2〜3%）では妥当だが、低ボラ銘柄（ATR が株価の0.5%未満）ではバッファが極めて小さく、日中のノイズでストップに引っかかる。高ボラ銘柄（ATR が株価の5%以上）では逆にバッファが大きすぎてリスクが肥大化する。
+
+**改善案**: ATR バッファを `max(0.25 * atr, close * 0.003)` のように最低額を設定するか、ボラティリティレジーム（`atr / close` の percentile）に応じて `0.15〜0.35` の範囲で動的に調整する。
+
+### 4-3. `pullback_resumption_entry` の floor gate が甘い
+
+`min_axis_threshold = 15`、`capped_strength = 30`。他の signal は `min_axis_threshold = 20`（orderly_pullback）。15 は非常に低い閾値であり、例えば timing 軸が 15（ほぼタイミングが合っていない）でも floor gate を通過する。
+
+**改善案**: `min_axis_threshold` を `20` に引き上げ、他 signal と合わせる。`pullback_resumption` は3つの preset source を持つため候補が多く流れやすく、floor gate の甘さが低品質 signal の通過を許す構造になっている。
+
+### 4-4. `momentum_acceleration_entry` の `detection_window_days = 3` の短さ
+
+3営業日は非常にタイトで、acceleration 当日と翌2日しか評価チャンスがない。acceleration 後に1日調整し、3日目に follow-through を確認する戦略では、3日目が window の最終日になるため、pool から expire する寸前でしか `follow_through` が効かない。
+
+**改善案**: `detection_window_days = 5` に延長。acceleration 後の follow-through 確認により余裕を持たせる。ただし invalidation rule の `weekly_return_rank < 80.0` が厳しいため、window を延ばしても低品質候補が残り続けるリスクは低い。
+
+---
+
+## 5. 良い点（維持すべき）
+
+### 5-1. 3軸分離とセットアップ特性に応じた重み配分
+
+各 signal が setup_maturity / timing / risk_reward を独立に評価し、signal の性質に応じて重みを変えている設計は優れている。例えば `momentum_acceleration_entry` は timing に `0.45`（最重量）を置き、acceleration イベントの即時性を反映。`early_cycle_recovery_entry` は setup_maturity に `0.35` を置き、構造転換の確認を重視。この設計思想は正しく、維持すべき。
+
+### 5-2. guardrail による climax warning の仕組み
+
+特に `momentum_acceleration_entry` と `power_gap_pullback_entry` の climax guard は実践的。`rel_volume >= 5.0` や `dist_from_52w_high >= -1.0 AND daily_change_pct >= 6.0` で exhaustion move を検知し、`Signal Detected` を抑制する仕組みは、過熱エントリを機械的に回避する安全装置として有効。
+
+### 5-3. `power_gap_pullback_entry` の `days_since_power_gap <= 1.0` ガードレール
+
+gap 当日のチェイスエントリを明示的に禁止する設計は、behavioral bias（FOMO）を排除する設計として模範的。`gap_chase_warning` としてログに残る仕組みも追跡性が高い。
+
+### 5-4. `pullback_resumption_entry` の depth_adaptive SL 参照
+
+SL を preset source ごとに異なる参照点（`50SMA Defense → Reclaim Trigger → Pullback Trigger`）から選択する設計は、セットアップの深さに応じてリスクを適応させる良いアプローチ。`50SMA Defense` 経由の候補は50SMA付近に SL を置くのが構造的に正しく、`Pullback Trigger` 経由なら21EMA付近が適切、という文脈を反映している。
+
+### 5-5. pool lifecycle の明確な状態遷移
+
+`active → invalidated / expired / orphaned` の4状態は十分。invalidation rules が signal ごとに異なる点も、セットアップの崩壊条件がセットアップ特性に依存するという事実を正しく反映している。
+
+---
+
+## 6. 理想的な Entry Signal 構造
+
+現行の pool 型アーキテクチャを前提として、あるべき構造は以下の通り。
+
+**Layer 1: Pool Gate（候補資格の維持）**
+pool 登録後の毎日の評価前に、候補がまだ「このセットアップの文脈内にいる」かを判定するレイヤー。現行の invalidation rules がこれに相当するが、市場環境ゲート（market_score 閾値）と earnings proximity ゲートをここに統合すべき。pool gate を通過しない候補は評価をスキップし、`entry_strength = 0` を記録する。
+
+**Layer 2: 3軸スコアリング（セットアップ固有の評価）**
+現行の setup_maturity / timing / risk_reward の3軸構造は維持。ただし各 custom evaluator の breakpoints を YAML ベースで外部定義可能にし、再現性を完全に保証する。全指標は `field_name → score` の mapping table として定義され、Python コード内にハードコードしない。
+
+**Layer 3: Context Modifier（文脈補正）**
+3軸の加重平均で算出した raw_entry_strength に対して、市場環境・セクター強度・earnings proximity に基づく補正を加えるレイヤー。例: `adjusted_strength = raw_strength * market_modifier * sector_modifier`。modifier は `0.7〜1.1` の範囲で、追い風では微増、逆風では大幅減。
+
+**Layer 4: Guardrail（安全装置）**
+現行の climax warning / risk_cap を維持。ここは「スコアが高くても入ってはいけない」ケースを強制的に抑制する最終防衛線。
+
+**Layer 5: Display Bucket + Cross-Signal Resolution**
+entry_strength を正規化（全 signal 共通の 0-100 スケールに揃える）したうえで、同一ティッカーが複数 signal に出現する場合の解決ルール（最高スコア優先、または全表示+ラベル付き）を適用。
+
+---
+
+## 7. 具体的な改善例: `orderly_pullback_entry` の再設計
+
+### 現行定義の問題
+
+```yaml
+preset_sources: [Orderly Pullback, Trend Pullback]  # 両方 disabled → signal 死亡
+detection_window_days: 10
+# 市場環境ゲート: なし
+# earnings proximity: なし
+```
+
+### 改善案
+
+```yaml
+# Pool Definition
+preset_sources: [Pullback Trigger]
+  # Pullback Trigger は enabled
+  # required: Pullback Quality scan
+  # optional: 21EMA Pattern H/L (trigger), Volume Accumulation / Pocket Pivot (demand)
+  # RS Acceleration 依存を排除
+
+detection_window_days: 8
+  # 10 → 8 に短縮。orderly pullback は通常 3-7 営業日で
+  # エントリ適期が来るか崩壊するため、10 日は長すぎる。
+  # 8 日で 90 パーセンタイルをカバーし、鮮度を維持。
+
+# Invalidation Rules（現行維持 + 1つ追加）
+invalidation_rules:
+  - close < sma50
+  - drawdown_from_20d_high_pct > 20.0
+  - rs21 < 40.0
+  - sma50_slope_10d_pct <= 0.0
+  - earnings_days_until <= 3  # 追加: 決算3営業日前で無効化
+
+# Guardrails（現行 + market gate + earnings warning）
+guardrails:
+  - condition: market_score < 30
+    action: cap_below_signal_detected
+    reason_key: weak_market_warning
+  - condition: earnings_days_until <= 5
+    action: cap_below_signal_detected
+    reason_key: earnings_warning
+  # 既存 guardrails は維持
+
+# Scoring - timing 軸に market_tailwind を追加
+timing:
+  ema_reclaim_event:   weight 0.30  # 0.35 → 0.30 に微減
+  volume_confirmation: weight 0.25  # 維持
+  close_quality:       weight 0.20  # 維持
+  micro_structure_breakout: weight 0.15  # 維持
+  market_tailwind:     weight 0.10  # 新規追加
+    # breakpoints:
+    #   pct_above_sma50 >= 70: score 100
+    #   pct_above_sma50 >= 55: score 75
+    #   pct_above_sma50 >= 40: score 50
+    #   pct_above_sma50 >= 25: score 25
+    #   pct_above_sma50 <  25: score 0
+
+# Display Thresholds: 52/35 に統一（現行 50/35 から微調整）
+display_thresholds:
+  signal_detected: 52
+  approaching: 35
+```
+
+この改善により、(1) SPOF の解消、(2) 市場環境の統合、(3) earnings gap risk の考慮、(4) detection window の最適化、の4点が同時に達成される。他の5本の signal にも同じパターン（market gate + earnings gate + market_tailwind 指標）を横展開すれば、システム全体の実運用適合性が大幅に向上する。

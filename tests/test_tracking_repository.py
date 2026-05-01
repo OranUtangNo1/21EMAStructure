@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pandas as pd
-
 from src.data.tracking_db import connect_tracking_db
 from src.data.tracking_repository import (
     read_detection_detail,
@@ -15,6 +13,8 @@ from src.data.tracking_repository import (
     read_scan_combo_performance,
     read_scan_hits,
     read_scan_hits_for_watchlist,
+    read_signal_evaluations,
+    read_signal_pool_entries,
 )
 
 
@@ -136,3 +136,94 @@ def test_tracking_repository_reads_tracking_views(tmp_path: Path) -> None:
     assert "21EMA Pattern H, VCS" in set(combo["scan_combo"])
     assert list(overlap["ticker"]) == ["AAA"]
     assert int(overlap.loc[0, "preset_count"]) == 2
+
+
+def test_tracking_repository_reads_signal_tracking_tables(tmp_path: Path) -> None:
+    conn = connect_tracking_db(root_dir=tmp_path)
+    try:
+        pool_cur = conn.execute(
+            """
+            INSERT INTO signal_pool_entry (
+                signal_name,
+                ticker,
+                preset_sources,
+                first_detected_date,
+                latest_detected_date,
+                detection_count,
+                pool_status,
+                snapshot_at_detection,
+                low_since_detection,
+                high_since_detection
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "orderly_pullback_entry",
+                "AAA",
+                "[\"Orderly Pullback\"]",
+                "2026-04-17",
+                "2026-04-20",
+                2,
+                "active",
+                "{\"close\":100.0}",
+                97.5,
+                103.0,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO signal_evaluation (
+                pool_entry_id,
+                signal_name,
+                ticker,
+                eval_date,
+                signal_version,
+                setup_maturity_score,
+                timing_score,
+                risk_reward_score,
+                entry_strength,
+                maturity_detail,
+                timing_detail,
+                stop_price,
+                reward_target,
+                rr_ratio,
+                risk_in_atr,
+                reward_in_atr,
+                stop_adjusted
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(pool_cur.lastrowid),
+                "orderly_pullback_entry",
+                "AAA",
+                "2026-04-20",
+                "1.0",
+                70.0,
+                80.0,
+                60.0,
+                72.0,
+                "{\"volume_exhaustion\":80.0}",
+                "{\"ema_reclaim_event\":100.0}",
+                96.0,
+                112.0,
+                2.0,
+                1.0,
+                2.5,
+                0,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    pool_entries = read_signal_pool_entries(root_dir=tmp_path, signal_name="orderly_pullback_entry", ticker="aaa")
+    evaluations = read_signal_evaluations(root_dir=tmp_path, eval_date="2026-04-20")
+
+    assert list(pool_entries["ticker"]) == ["AAA"]
+    assert pool_entries.loc[0, "latest_detected_date"] == "2026-04-20"
+    assert int(pool_entries.loc[0, "detection_count"]) == 2
+    assert float(pool_entries.loc[0, "low_since_detection"]) == 97.5
+    assert list(evaluations["signal_version"]) == ["1.0"]
+    assert float(evaluations.loc[0, "entry_strength"]) == 72.0
+    assert float(evaluations.loc[0, "rr_ratio"]) == 2.0

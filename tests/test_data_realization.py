@@ -14,6 +14,7 @@ from src.data.quality import append_data_quality, summarize_data_source_label
 from src.data.results import FetchStatus, FundamentalBatchResult, PriceHistoryBatch, ProfileBatchResult
 from src.data.store import DataSnapshotStore
 from src.pipeline import ResearchPlatform
+from src.scan.rules import ScanConfig
 
 
 def test_cache_layer_allows_stale_reads() -> None:
@@ -76,6 +77,7 @@ def test_snapshot_store_persists_run_outputs() -> None:
         run_dir = store.save_run(snapshot, eligible_snapshot, watchlist, fetch_status, {"data_source_label": "live"})
         assert run_dir.suffix == ".json"
         date_key = run_dir.stem
+        assert (Path(tmp_dir) / "eligible_snapshot" / f"{date_key}.csv").exists()
         assert (Path(tmp_dir) / "watchlist" / f"{date_key}.csv").exists()
         assert (Path(tmp_dir) / "run_metadata" / f"{date_key}.json").exists()
 
@@ -192,6 +194,7 @@ def test_snapshot_store_loads_latest_run_with_dashboard_payloads() -> None:
         loaded = store.load_latest_run()
 
         assert loaded.path is not None
+        assert loaded.eligible_snapshot is not None
         assert loaded.scan_hits is not None
         assert loaded.market_metadata is not None
         assert loaded.radar_metadata is not None
@@ -200,6 +203,41 @@ def test_snapshot_store_loads_latest_run_with_dashboard_payloads() -> None:
         assert "market_snapshot" in loaded.market_metadata
         assert "sector_leaders" in loaded.radar_metadata
         assert list(loaded.scan_hits["ticker"]) == ["AAA"]
+
+
+def test_snapshot_store_preserves_eligible_snapshot_columns_for_saved_run() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        store = DataSnapshotStore(tmp_dir)
+        trade_date = pd.Timestamp("2026-04-08")
+        snapshot = pd.DataFrame({"trade_date": [trade_date]}, index=["AAA"])
+        eligible_snapshot = pd.DataFrame(
+            {
+                "trade_date": [trade_date],
+                "close": [101.5],
+                "rs21": [88.0],
+                "atr": [2.5],
+                "rel_volume": [1.8],
+                "daily_change_pct": [4.2],
+                "volume_ratio_20d": [1.4],
+            },
+            index=["AAA"],
+        )
+        watchlist = pd.DataFrame({"vcs": [88.0], "atr_21ema_zone": [0.35]}, index=["AAA"])
+
+        store.save_run(
+            snapshot,
+            eligible_snapshot,
+            watchlist,
+            pd.DataFrame(),
+            {"data_source_label": "live", "config_path": "config/default.yaml", "requested_symbols": ["AAA"]},
+        )
+
+        loaded = store.load_latest_run()
+
+        assert loaded.eligible_snapshot is not None
+        assert float(loaded.eligible_snapshot.loc["AAA", "close"]) == 101.5
+        assert float(loaded.eligible_snapshot.loc["AAA", "rs21"]) == 88.0
+        assert float(loaded.eligible_snapshot.loc["AAA", "volume_ratio_20d"]) == 1.4
 
 
 def test_snapshot_store_does_not_read_legacy_scan_hits_csv(tmp_path: Path) -> None:
@@ -248,6 +286,23 @@ def test_research_platform_reuses_same_day_saved_run(tmp_path: Path) -> None:
         index=["AAA"],
     )
     eligible_snapshot = snapshot.copy()
+    eligible_snapshot["rs21"] = [87.0]
+    eligible_snapshot["atr"] = [2.0]
+    eligible_snapshot["volume_ratio_20d"] = [1.3]
+    eligible_snapshot["daily_change_pct"] = [3.5]
+    vcp_fields = {
+        "vcp_t1_depth_pct": 20.0,
+        "vcp_t2_depth_pct": 12.0,
+        "vcp_t3_depth_pct": 5.0,
+        "vcp_prior_uptrend_pct": 60.0,
+        "vcp_pivot_price": 100.0,
+        "vcp_pivot_proximity_pct": 2.0,
+        "vcp_volume_dryup_ratio": 0.55,
+        "vcp_pivot_breakout": True,
+        "vcp_tight_days": 4.0,
+    }
+    for column, value in vcp_fields.items():
+        eligible_snapshot[column] = [value]
     watchlist = pd.DataFrame(
         {
             "name": ["AAA Corp"],
@@ -256,6 +311,7 @@ def test_research_platform_reuses_same_day_saved_run(tmp_path: Path) -> None:
             "vcs": [88.0],
             "duplicate_ticker": [True],
             "earnings_in_7d": [True],
+            **{column: [value] for column, value in vcp_fields.items()},
         },
         index=["AAA"],
     )
@@ -293,8 +349,20 @@ def test_research_platform_reuses_same_day_saved_run(tmp_path: Path) -> None:
     assert reused.artifact_origin == "same_day_saved_run"
     assert reused.market_result.label == "Positive"
     assert reused.radar_result.top_daily.iloc[0]["TICKER"] == "QQQ"
+    assert float(reused.eligible_snapshot.loc["AAA", "close"]) == 10.0
+    assert float(reused.eligible_snapshot.loc["AAA", "rs21"]) == 87.0
     assert reused.earnings_today.empty
     assert platform.load_latest_run_artifacts(symbols=["MSFT"], force_universe_refresh=False) is None
+
+
+def test_research_platform_rejects_saved_run_missing_vcp_columns() -> None:
+    platform = ResearchPlatform()
+    platform.scan_config = ScanConfig(enabled_scan_rules=("VCP 3T",))
+
+    assert platform._saved_run_has_required_scan_columns(
+        pd.DataFrame({"close": [10.0]}, index=["AAA"]),
+        pd.DataFrame({"close": [10.0]}, index=["AAA"]),
+    ) is False
 
 
 def test_research_platform_passes_force_price_refresh_to_price_provider() -> None:

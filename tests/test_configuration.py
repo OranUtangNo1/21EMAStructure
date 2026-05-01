@@ -76,7 +76,7 @@ def test_default_settings_include_builtin_watchlist_presets() -> None:
     presets = settings["scan"]["watchlist_presets"]
     preset_names = [preset["preset_name"] for preset in presets]
 
-    assert len(presets) == 16
+    assert len(presets) == 17
     assert preset_names == [
         "Leader Breakout",
         "Orderly Pullback",
@@ -85,6 +85,7 @@ def test_default_settings_include_builtin_watchlist_presets() -> None:
         "Early Cycle Recovery",
         "Base Breakout",
         "Accumulation Breakout",
+        "VCP 3T Breakout",
         "50SMA Defense",
         "Power Gap Pullback",
         "RS Breakout Setup",
@@ -120,7 +121,14 @@ def test_default_watchlist_presets_use_expected_duplicate_rules() -> None:
             ("VCS 52 High",),
             (
                 ("Accumulation Evidence", ("PP Count", "Volume Accumulation"), 1),
-                ("Breakout Trigger", ("Pocket Pivot", "4% bullish"), 1),
+                ("Breakout Trigger", ("Pocket Pivot", "4% bullish", "VCP 3T"), 1),
+            ),
+        ),
+        "VCP 3T Breakout": (
+            ("VCP 3T",),
+            (
+                ("Leadership / High Tightness", ("VCS 52 High", "RS New High"), 1),
+                ("Demand Confirmation", ("Pocket Pivot", "Volume Accumulation"), 1),
             ),
         ),
         "50SMA Defense": (
@@ -227,8 +235,15 @@ def test_default_settings_include_annotation_and_entry_signal_status_maps() -> N
 
     annotation_status_map = settings["scan"]["annotation_filter_status_map"]
     signal_status_map = settings["entry_signals"]["signal_status_map"]
+    context_guard = settings["entry_signals"]["context_guard"]
+    orderly_pool = settings["entry_signals"]["definitions"]["orderly_pullback_entry"]["pool"]
 
     assert annotation_status_map["Trend Base"] == "enabled"
     assert annotation_status_map["Recent Power Gap"] == "enabled"
-    assert signal_status_map["Pocket Pivot Entry"] == "enabled"
-    assert signal_status_map["Resistance Breakout Entry"] == "enabled"
+    assert signal_status_map["orderly_pullback_entry"] == "enabled"
+    assert signal_status_map["pullback_resumption_entry"] == "enabled"
+    assert context_guard["enabled"] is True
+    assert context_guard["weak_market_score_threshold"] == 30.0
+    assert context_guard["signal_overrides"]["momentum_acceleration_entry"]["weak_market_score_threshold"] == 40.0
+    assert context_guard["signal_overrides"]["early_cycle_recovery_entry"]["weak_market_score_threshold"] == 20.0
+    assert orderly_pool["preset_sources"] == ["Pullback Trigger"]

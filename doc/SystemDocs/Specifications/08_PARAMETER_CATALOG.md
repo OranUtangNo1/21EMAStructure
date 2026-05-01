@@ -6,7 +6,7 @@ The active implementation keeps thresholds, weights, universes, and modes rooted
 That entry file is a manifest which includes section-level files under `config/default/`.
 This catalog lists the parameters that are active in the current codebase and calls out shipped keys that are currently inactive.
 
-Archived final chart-structure execution, sizing, and trade-management parameters are out of scope for this file. The implemented `entry_signals` timing layer and Analysis database behavior are documented because they are present in the active config and UI.
+Archived final discretionary execution, sizing, and trade-management parameters are out of scope for this file. The implemented `entry_signals` timing layer and Analysis database behavior are documented because they are present in the active config and UI.
 
 ## 2. App and persistence
 
@@ -213,6 +213,17 @@ Archived final chart-structure execution, sizing, and trade-management parameter
 ### indicators.resistance_test_count_window
 - current default: `20`
 
+### indicators.vcp_* fields
+- `vcp_prior_uptrend_lookback`: `126`
+- `vcp_t1_window`: `20`
+- `vcp_t1_shift`: `16`
+- `vcp_t2_window`: `10`
+- `vcp_t2_shift`: `6`
+- `vcp_t3_window`: `5`
+- `vcp_t3_shift`: `1`
+- `vcp_pivot_lookback`: `20`
+- `vcp_tight_daily_range_pct`: `3.0`
+
 ## 6. Scoring
 
 ### scoring.rs
@@ -277,6 +288,17 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 - `near_52w_high_threshold_pct`: `5.0`
 - `near_52w_high_hybrid_min`: `70.0`
 - `three_weeks_tight_vcs_min`: `50.0`
+- `vcp3t_prior_uptrend_min_pct`: `30.0`
+- `vcp3t_t1_min_depth_pct`: `10.0`
+- `vcp3t_t2_to_t1_max_ratio`: `0.85`
+- `vcp3t_t3_to_t2_max_ratio`: `0.75`
+- `vcp3t_t3_max_depth_pct`: `7.0`
+- `vcp3t_tight_days_min`: `3`
+- `vcp3t_volume_dryup_max_ratio`: `0.8`
+- `vcp3t_pivot_extension_max_pct`: `5.0`
+- `vcp3t_breakout_volume_ratio_min`: `1.0`
+- `vcp3t_dcr_min`: `55.0`
+- `vcp3t_rs21_min`: `60.0`
 - `rs_acceleration_rs21_min`: `70.0`
 - `sustained_rs21_min`: `80.0`
 - `sustained_rs63_min`: `70.0`
@@ -339,6 +361,13 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 
 The `entry_signals` section controls the Entry Signals tab.
 
+- `context_guard`: optional cross-signal safety layer applied after the signal-specific evaluator
+  - `enabled`: turn the shared guard on or off
+  - `weak_market_score_threshold`: cap detected signals below `Signal Detected` when `market_score` is below this value
+  - `signal_overrides`: optional per-signal lower-bound override for `weak_market_score_threshold`
+  - `cap_below_signal_detected`: keep guarded rows visible but force their display bucket below `Signal Detected`
+  - `earnings.warning_field`: boolean row field used for near-term earnings warning, currently `earnings_in_7d`
+  - `earnings.today_field`: boolean row field used for same-day earnings warning, currently `earnings_today`
 - `signal_status_map`: per-entry-signal runtime status map
   - `enabled`: keep the signal available for UI selection and evaluation
   - `disabled`: keep the logic in code but remove it from UI selection and evaluation
@@ -347,11 +376,12 @@ The `entry_signals` section controls the Entry Signals tab.
 
 Current built-in entry signal names:
 
-- `Pocket Pivot Entry`
-- `Structure Pivot Breakout Entry`
-- `Pullback Low-Risk Zone`
-- `Volume Reclaim Entry`
-- `Resistance Breakout Entry`
+- `orderly_pullback_entry`
+- `pullback_resumption_entry`
+- `momentum_acceleration_entry`
+- `accumulation_breakout_entry`
+- `early_cycle_recovery_entry`
+- `power_gap_pullback_entry`
 
 ## 9. Market Dashboard
 
