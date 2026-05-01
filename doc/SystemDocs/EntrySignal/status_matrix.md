@@ -9,14 +9,15 @@ Column meaning:
 - `Startup`: selected by default on the Entry Signal page.
 
 Current totals:
-- enabled: 5
+- enabled: 6
 - disabled: 0
-- startup selected: 5
+- startup selected: 6
 
 | Entry signal | Status | Startup |
 | --- | --- | --- |
-| `Pocket Pivot Entry` | `enabled` | `yes` |
-| `Structure Pivot Breakout Entry` | `enabled` | `yes` |
-| `Pullback Low-Risk Zone` | `enabled` | `yes` |
-| `Volume Reclaim Entry` | `enabled` | `yes` |
-| `Resistance Breakout Entry` | `enabled` | `yes` |
+| `orderly_pullback_entry` | `enabled` | `yes` |
+| `pullback_resumption_entry` | `enabled` | `yes` |
+| `momentum_acceleration_entry` | `enabled` | `yes` |
+| `accumulation_breakout_entry` | `enabled` | `yes` |
+| `early_cycle_recovery_entry` | `enabled` | `yes` |
+| `power_gap_pullback_entry` | `enabled` | `yes` |

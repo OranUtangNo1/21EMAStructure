@@ -46,6 +46,7 @@ Use the per-scan files for boolean logic. Use the status matrix for the current 
 | [scan_09_weekly20pct.md](scan_09_weekly20pct.md) | `Weekly 20% plus gainers` |
 | [scan_10_near_52w_high.md](scan_10_near_52w_high.md) | `Near 52W High` |
 | [scan_11_three_weeks_tight.md](scan_11_three_weeks_tight.md) | `Three Weeks Tight` |
+| [scan_29_vcp_3t.md](scan_29_vcp_3t.md) | `VCP 3T` |
 | [scan_12_rs_acceleration.md](scan_12_rs_acceleration.md) | `RS Acceleration` |
 | [scan_13_vcs_52_high.md](scan_13_vcs_52_high.md) | `VCS 52 High` |
 | [scan_14_vcs_52_low.md](scan_14_vcs_52_low.md) | `VCS 52 Low` |

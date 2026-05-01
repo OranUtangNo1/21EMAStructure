@@ -237,6 +237,8 @@ The Watchlist page exposes a `Preset Hits` panel that lists tickers that satisfy
 
 `preset_details.csv` uses one row per preset and preserves the legacy wide format with `Duplicate Tickers` and `<display_name> Hit Tickers` columns.
 
+The preset export contract treats `preset_summary.csv` as the user-facing aggregate and `preset_hits.csv` as normalized hit detail for analysis. `preset_hits.csv` is not deprecated because it preserves the preset-level lineage needed for later AI analysis and tracking joins. `preset_details.csv` is legacy-compatible wide output and should not be treated as the primary analysis artifact.
+
 Automatic preset CSV export runs after a full pipeline recompute and writes under `scan.preset_csv_export.output_dir` using the trade-date folder. Saved-run restore does not create new preset CSV files. The Watchlist page also has a manual `Write preset CSV files` action that writes the same files.
 
 ### 3.5 Preset tracking database

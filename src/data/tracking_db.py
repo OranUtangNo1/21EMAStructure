@@ -13,6 +13,61 @@ DETECTION_COLUMN_MIGRATIONS = {
     "close_at_10d": "REAL",
     "close_at_20d": "REAL",
 }
+SIGNAL_POOL_ENTRY_COLUMN_MIGRATIONS = {
+    "preset_sources": "TEXT NOT NULL DEFAULT '[]'",
+    "latest_detected_date": "TEXT",
+    "detection_count": "INTEGER NOT NULL DEFAULT 1",
+    "pool_status": "TEXT NOT NULL DEFAULT 'active'",
+    "invalidated_date": "TEXT",
+    "invalidated_reason": "TEXT",
+    "snapshot_at_detection": "TEXT NOT NULL DEFAULT '{}'",
+    "low_since_detection": "REAL",
+    "high_since_detection": "REAL",
+    "updated_at": "TEXT",
+}
+SIGNAL_EVALUATION_COLUMN_MIGRATIONS = {
+    "signal_version": "TEXT NOT NULL DEFAULT '1.0'",
+    "setup_maturity_score": "REAL",
+    "timing_score": "REAL",
+    "risk_reward_score": "REAL",
+    "entry_strength": "REAL",
+    "maturity_detail": "TEXT",
+    "timing_detail": "TEXT",
+    "stop_price": "REAL",
+    "reward_target": "REAL",
+    "rr_ratio": "REAL",
+    "risk_in_atr": "REAL",
+    "reward_in_atr": "REAL",
+    "stop_adjusted": "INTEGER DEFAULT 0",
+    "plan_status": "TEXT",
+    "plan_type": "TEXT",
+    "entry_type": "TEXT",
+    "entry_price": "REAL",
+    "current_price": "REAL",
+    "entry_zone_low": "REAL",
+    "entry_zone_high": "REAL",
+    "max_entry_price": "REAL",
+    "distance_to_entry_zone_pct": "REAL",
+    "stop_loss": "REAL",
+    "tp1": "REAL",
+    "tp2": "TEXT",
+    "rr_tp1": "REAL",
+    "rr_current": "REAL",
+    "rr_ideal": "REAL",
+    "tp2_plan": "TEXT",
+    "trigger_condition": "TEXT",
+    "plan_verdict": "TEXT",
+    "plan_reject_codes": "TEXT",
+    "plan_reject_reason": "TEXT",
+    "sl_quality": "TEXT",
+    "sl_source": "TEXT",
+    "sl_basis": "TEXT",
+    "sl_safety": "TEXT",
+    "tp1_source": "TEXT",
+    "plan_invalidation": "TEXT",
+    "plan_note": "TEXT",
+    "plan_detail": "TEXT",
+}
 
 
 def resolve_tracking_db_path(
@@ -48,19 +103,71 @@ def initialize_tracking_db(conn: sqlite3.Connection) -> None:
     if VIEW_SCHEMA_START in schema:
         table_schema, view_schema = schema.split(VIEW_SCHEMA_START, maxsplit=1)
         conn.executescript(table_schema)
-        _ensure_detection_columns(conn)
+        _ensure_tracking_columns(conn)
         conn.executescript(f"{VIEW_SCHEMA_START}{view_schema}")
     else:
         conn.executescript(schema)
-        _ensure_detection_columns(conn)
+        _ensure_tracking_columns(conn)
     conn.commit()
 
 
-def _ensure_detection_columns(conn: sqlite3.Connection) -> None:
+def _ensure_tracking_columns(conn: sqlite3.Connection) -> None:
+    _ensure_table_columns(conn, "detection", DETECTION_COLUMN_MIGRATIONS)
+    _ensure_table_columns(conn, "signal_pool_entry", SIGNAL_POOL_ENTRY_COLUMN_MIGRATIONS)
+    _ensure_table_columns(conn, "signal_evaluation", SIGNAL_EVALUATION_COLUMN_MIGRATIONS)
+    _deduplicate_signal_evaluations(conn)
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_signal_evaluation_unique_day
+        ON signal_evaluation(signal_name, ticker, eval_date)
+        """
+    )
+
+
+def _ensure_table_columns(
+    conn: sqlite3.Connection,
+    table_name: str,
+    column_migrations: dict[str, str],
+) -> None:
     existing_columns = {
         str(row["name"] if isinstance(row, sqlite3.Row) else row[1])
-        for row in conn.execute("PRAGMA table_info(detection)").fetchall()
+        for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()
     }
-    for column_name, column_type in DETECTION_COLUMN_MIGRATIONS.items():
+    for column_name, column_type in column_migrations.items():
         if column_name not in existing_columns:
-            conn.execute(f"ALTER TABLE detection ADD COLUMN {column_name} {column_type}")
+            conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
+
+
+def _deduplicate_signal_evaluations(conn: sqlite3.Connection) -> None:
+    existing_tables = {
+        str(row["name"] if isinstance(row, sqlite3.Row) else row[0])
+        for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
+    }
+    if "signal_evaluation" not in existing_tables:
+        return
+    duplicate_groups = conn.execute(
+        """
+        SELECT signal_name, ticker, eval_date
+        FROM signal_evaluation
+        GROUP BY signal_name, ticker, eval_date
+        HAVING COUNT(*) > 1
+        """
+    ).fetchall()
+    for group in duplicate_groups:
+        rows = conn.execute(
+            """
+            SELECT id
+            FROM signal_evaluation
+            WHERE signal_name = ? AND ticker = ? AND eval_date = ?
+            ORDER BY id DESC
+            """,
+            (group["signal_name"], group["ticker"], group["eval_date"]),
+        ).fetchall()
+        if len(rows) <= 1:
+            continue
+        obsolete_ids = [int(row["id"]) for row in rows[1:]]
+        placeholders = ", ".join("?" for _ in obsolete_ids)
+        conn.execute(
+            f"DELETE FROM signal_evaluation WHERE id IN ({placeholders})",
+            obsolete_ids,
+        )

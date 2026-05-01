@@ -20,6 +20,17 @@
   near_52w_high_threshold_pct: 5.0
   near_52w_high_hybrid_min: 70.0
   three_weeks_tight_vcs_min: 50.0
+  vcp3t_prior_uptrend_min_pct: 30.0
+  vcp3t_t1_min_depth_pct: 10.0
+  vcp3t_t2_to_t1_max_ratio: 0.85
+  vcp3t_t3_to_t2_max_ratio: 0.75
+  vcp3t_t3_max_depth_pct: 7.0
+  vcp3t_tight_days_min: 3
+  vcp3t_volume_dryup_max_ratio: 0.8
+  vcp3t_pivot_extension_max_pct: 5.0
+  vcp3t_breakout_volume_ratio_min: 1.0
+  vcp3t_dcr_min: 55.0
+  vcp3t_rs21_min: 60.0
   rs_acceleration_rs21_min: 70.0
   sustained_rs21_min: 80.0
   sustained_rs63_min: 70.0
@@ -61,6 +72,7 @@
     Weekly 20% plus gainers: enabled
     Near 52W High: disabled
     Three Weeks Tight: disabled
+    VCP 3T: enabled
     RS Acceleration: disabled
     Sustained Leadership: disabled
     Trend Reversal Setup: enabled
@@ -84,6 +96,7 @@
   - Pocket Pivot
   - PP Count
   - Weekly 20% plus gainers
+  - VCP 3T
   - Trend Reversal Setup
   - LL-HL Structure 1st Pivot
   - LL-HL Structure 2nd Pivot
@@ -106,6 +119,7 @@
   - Weekly 20% plus gainers
   - Near 52W High
   - Three Weeks Tight
+  - VCP 3T
   - RS Acceleration
   - Sustained Leadership
   - Trend Reversal Setup
@@ -214,7 +228,7 @@
       optional_min_hits: 1
     preset_status: disabled
   - preset_name: Accumulation Breakout
-    selected_scan_names: [VCS 52 High, PP Count, Volume Accumulation, Pocket Pivot, 4% bullish]
+    selected_scan_names: [VCS 52 High, PP Count, Volume Accumulation, Pocket Pivot, 4% bullish, VCP 3T]
     selected_annotation_filters: []
     selected_duplicate_subfilters: []
     duplicate_threshold: 1
@@ -226,7 +240,23 @@
         scans: [PP Count, Volume Accumulation]
         min_hits: 1
       - group_name: Breakout Trigger
-        scans: [Pocket Pivot, 4% bullish]
+        scans: [Pocket Pivot, 4% bullish, VCP 3T]
+        min_hits: 1
+    preset_status: enabled
+  - preset_name: VCP 3T Breakout
+    selected_scan_names: [VCP 3T, VCS 52 High, Pocket Pivot, Volume Accumulation, RS New High]
+    selected_annotation_filters: []
+    selected_duplicate_subfilters: []
+    duplicate_threshold: 1
+    duplicate_rule:
+      mode: grouped_threshold
+      required_scans: [VCP 3T]
+      optional_groups:
+      - group_name: Leadership / High Tightness
+        scans: [VCS 52 High, RS New High]
+        min_hits: 1
+      - group_name: Demand Confirmation
+        scans: [Pocket Pivot, Volume Accumulation]
         min_hits: 1
     preset_status: enabled
   - preset_name: 50SMA Defense
@@ -393,6 +423,8 @@
     display_name: Near 52W High
   - scan_name: Three Weeks Tight
     display_name: 3WT
+  - scan_name: VCP 3T
+    display_name: VCP 3T
   - scan_name: RS Acceleration
     display_name: RS Accel
   - scan_name: Sustained Leadership

@@ -187,7 +187,7 @@ Current concrete implementations:
 
 `ResearchPlatform.run(symbols=None, force_universe_refresh=False, force_price_refresh=False)` returns `PlatformArtifacts`.
 
-`ResearchPlatform.load_latest_run_artifacts(symbols=None, force_universe_refresh=False)` can also return `PlatformArtifacts` by reusing the latest same-day saved run when the current request matches the saved config path, manual-symbol input, and expected trade date.
+`ResearchPlatform.load_latest_run_artifacts(symbols=None, force_universe_refresh=False)` can also return `PlatformArtifacts` by reusing the latest same-day saved run when the current request matches the saved config path, manual-symbol input, expected trade date, and required scan artifact columns. In that restore path, the saved `eligible_snapshot` is reused so Entry Signal evaluation can read the same enriched row fields without a full pipeline recompute. When `VCP 3T` is enabled, saved runs that do not contain the VCP artifact columns are rejected so the app recomputes the run with current indicators and scan hits.
 
 The pipeline contract is:
 
@@ -251,11 +251,13 @@ The active app also builds preset-hit exports from built-in and saved custom pre
 
 `EntrySignalRunner` currently exposes:
 
-- `build_universe(watchlist, hits, selected_scan_names, duplicate_threshold, selected_annotation_filters, selected_duplicate_subfilters, duplicate_rule, universe_mode, eligible_snapshot)`
-- `build_default_universe(watchlist, hits, selected_scan_names, duplicate_threshold, selected_annotation_filters, selected_duplicate_subfilters, duplicate_rule)`
-- `evaluate(universe, selected_signal_names)`
+- `sync_tracking(artifacts, root_dir=None)`
+- `evaluate_active_pools(artifacts, selected_signal_names, root_dir=None)`
+- `sync_and_evaluate(artifacts, selected_signal_names, root_dir=None)`
 
-The entry signal layer can evaluate preset duplicates, current-selection duplicates, their union, Today's Watchlist, or the eligible universe. `build_default_universe()` remains the duplicate-focused compatibility path for the preset-plus-current union.
+The entry signal layer builds active signal pools from preset duplicate detections, then evaluates active pool entries. Presets provide the candidate source; EntrySignals own pool state, setup/timing scoring, invalidation, and the generated Entry Plan. Result rows include decision-oriented fields such as `Action Bucket`, `Action Reason`, `Missing Piece`, `Entry Strength`, `Timing`, `Risk/Reward`, legacy diagnostic `R/R Ratio`, `Stop Price`, and `Reward Target`.
+
+Result rows also include a mechanical entry plan for user review: `Plan Status`, `Plan Type`, `Entry Type`, `Entry Price`, `Current Price`, `Entry Zone Low`, `Entry Zone High`, `Max Entry Price`, `Distance To Entry Zone %`, `Stop Loss`, `TP1`, `TP2`, `R/R TP1`, `R/R Current`, `R/R Ideal`, `TP2 Plan`, `Trigger Condition`, `Plan Verdict`, `Plan Reject Codes`, `Plan Reject Reason`, `SL Quality`, `SL Source`, `SL Basis`, `SL Safety`, `TP1 Source`, `Plan Invalidation`, `Plan Note`, and `Plan Detail`. `Entry Ready` rows are marked `Ready` only when the plan type is `Ready Now` and the plan is valid. `Wait Pullback` and `Wait Trigger` rows stay in `Watch Setup`; `Poor R/R` and `Invalid` rows are downgraded to review while retaining reject codes and detail JSON. Automated order placement is out of scope.
 
 ### 3.8 Tracking Interface
 
@@ -265,6 +267,10 @@ Current public functions:
 
 - `sync_preset_effectiveness_logs(config_path, artifacts, root_dir=None, register_detections=True)`
 - `refresh_tracking_detection_prices(config_path, root_dir=None, trade_date=None)`
+
+Preset-effectiveness writes normalize market labels into the Analysis buckets `bull`, `neutral`, `weak`, and `bear` before inserting `detection.market_env`.
+
+EntrySignal evaluation writes persist the Entry Plan fields in `signal_evaluation` so rejected or downgraded entries can be audited later by plan verdict, plan type, reject code, SL quality, entry-zone, and TP1/RR details. When an evaluation is `Ready Now` and valid, `signal_entry_event` records a distinct entry event keyed by `signal_name x ticker x event_date` for later forward-return, SL-hit, and TP1-hit analysis.
 
 Current read functions in `src/data/tracking_repository.py`:
 
@@ -277,6 +283,9 @@ Current read functions in `src/data/tracking_repository.py`:
 - `read_preset_summary(...)`
 - `read_scan_combo_performance(...)`
 - `read_preset_overlap(...)`
+- `read_signal_pool_entries(...)`
+- `read_signal_evaluations(...)`
+- `read_signal_entry_events(...)`
 
 Current database helper functions in `src/data/tracking_db.py`:
 
@@ -358,6 +367,7 @@ The active pipeline bundle includes:
 - `breadth_summary`
 - `performance_overview`
 - `high_vix_summary`
+- `risk_on_ratio_summary`
 - `market_snapshot`
 - `leadership_snapshot`
 - `external_snapshot`
@@ -394,7 +404,7 @@ The active pipeline bundle includes:
 ## 5. Implementation Rules
 
 - keep config, calculation, and result concerns separate
-- keep the active scope limited to screening outputs
+- keep the active scope limited to screening and entry-evaluation outputs
 - keep fetch status and data-quality fields as product behavior
 - keep watchlist generation scan-driven
 - keep page-local UI projection in the dashboard layer, not the scan engine

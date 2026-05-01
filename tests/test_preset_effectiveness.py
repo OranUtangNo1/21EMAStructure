@@ -95,7 +95,7 @@ def test_sync_preset_effectiveness_logs_creates_db_detection_records(tmp_path: P
 
     result = sync_preset_effectiveness_logs(
         str(config_path),
-        _build_artifacts("2026-04-09", close=100.0),
+        _build_artifacts("2026-04-09", close=100.0, market_label="Positive"),
         root_dir=tmp_path,
     )
 
@@ -121,6 +121,7 @@ def test_sync_preset_effectiveness_logs_creates_db_detection_records(tmp_path: P
     assert detections[0]["hit_date"] == "2026-04-09"
     assert detections[0]["preset_name"] == "Momentum Core"
     assert detections[0]["ticker"] == "AAA"
+    assert detections[0]["market_env"] == "bull"
     assert detections[0]["close_at_hit"] == 100.0
     assert len(scan_hits) == 2
     assert {row["scan_name"] for row in detection_scans} == {"21EMA Pattern H", "VCS"}

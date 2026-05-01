@@ -21,7 +21,15 @@ def test_tracking_db_initializes_schema(tmp_path) -> None:
             ).fetchall()
         }
 
-        assert {"detection", "detection_scans", "detection_filters", "scan_hits"}.issubset(tables)
+        assert {
+            "detection",
+            "detection_scans",
+            "detection_filters",
+            "scan_hits",
+            "signal_pool_entry",
+            "signal_evaluation",
+            "signal_entry_event",
+        }.issubset(tables)
         detection_columns = {
             row["name"]
             for row in conn.execute("PRAGMA table_info(detection)").fetchall()
@@ -35,6 +43,40 @@ def test_tracking_db_initializes_schema(tmp_path) -> None:
             "v_preset_overlap",
         }.issubset(views)
         assert {"close_at_1d", "close_at_5d", "close_at_10d", "close_at_20d"}.issubset(detection_columns)
+        pool_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(signal_pool_entry)").fetchall()
+        }
+        evaluation_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(signal_evaluation)").fetchall()
+        }
+        assert {"snapshot_at_detection", "low_since_detection", "high_since_detection"}.issubset(pool_columns)
+        assert {
+            "maturity_detail",
+            "timing_detail",
+            "stop_price",
+            "reward_target",
+            "rr_ratio",
+            "risk_in_atr",
+            "reward_in_atr",
+            "stop_adjusted",
+            "plan_status",
+            "plan_type",
+            "entry_price",
+            "entry_zone_low",
+            "entry_zone_high",
+            "max_entry_price",
+            "stop_loss",
+            "tp1",
+            "rr_tp1",
+            "rr_current",
+            "rr_ideal",
+            "plan_verdict",
+            "plan_reject_codes",
+            "plan_reject_reason",
+            "plan_detail",
+        }.issubset(evaluation_columns)
         assert (tmp_path / "data_runs" / "tracking.db").exists()
     finally:
         conn.close()

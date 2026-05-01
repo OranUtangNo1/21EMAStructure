@@ -117,6 +117,10 @@ class MarketConditionConfig:
     safe_haven_risk_off_symbol: str = "TLT"
     safe_haven_window: int = 20
     safe_haven_score_scale: float = 4.0
+    risk_on_ratio_numerator_symbol: str = "IWO"
+    risk_on_ratio_denominator_symbol: str = "IWN"
+    risk_on_ratio_high_window: int = 756
+    risk_on_ratio_ma_windows: tuple[int, ...] = (20, 50, 200)
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> "MarketConditionConfig":
@@ -141,6 +145,14 @@ class MarketConditionConfig:
             raise ValueError("Market blend weights must be non-negative.")
         if calculation_mode == "blended" and (etf_weight + active_symbols_weight) <= 0:
             raise ValueError("Blended market calculation_mode requires a positive total weight.")
+        risk_on_ratio_ma_windows_raw = payload.get("risk_on_ratio_ma_windows", [20, 50, 200])
+        risk_on_ratio_ma_windows = tuple(
+            int(value)
+            for value in risk_on_ratio_ma_windows_raw
+            if int(value) > 0
+        )
+        if not risk_on_ratio_ma_windows:
+            risk_on_ratio_ma_windows = (20, 50, 200)
         return cls(
             condition_etfs=condition_items,
             leadership_etfs=leadership_items,
@@ -160,6 +172,10 @@ class MarketConditionConfig:
             safe_haven_risk_off_symbol=str(payload.get("safe_haven_risk_off_symbol", "TLT")).strip().upper() or "TLT",
             safe_haven_window=int(payload.get("safe_haven_window", 20)),
             safe_haven_score_scale=float(payload.get("safe_haven_score_scale", 4.0)),
+            risk_on_ratio_numerator_symbol=str(payload.get("risk_on_ratio_numerator_symbol", "IWO")).strip().upper() or "IWO",
+            risk_on_ratio_denominator_symbol=str(payload.get("risk_on_ratio_denominator_symbol", "IWN")).strip().upper() or "IWN",
+            risk_on_ratio_high_window=int(payload.get("risk_on_ratio_high_window", 756)),
+            risk_on_ratio_ma_windows=risk_on_ratio_ma_windows,
         )
 
 
@@ -182,6 +198,7 @@ class MarketConditionResult:
     breadth_summary: dict[str, float]
     performance_overview: dict[str, float]
     high_vix_summary: dict[str, float]
+    risk_on_ratio_summary: dict[str, float]
     market_snapshot: pd.DataFrame
     leadership_snapshot: pd.DataFrame
     external_snapshot: pd.DataFrame
@@ -303,7 +320,15 @@ class MarketConditionScorer:
             item.ticker
             for item in [*self.config.condition_etfs, *self.config.leadership_etfs, *self.config.external_etfs, *self.config.factor_etfs]
         ]
-        symbols.extend(["^VIX", self.config.safe_haven_risk_on_symbol, self.config.safe_haven_risk_off_symbol])
+        symbols.extend(
+            [
+                "^VIX",
+                self.config.safe_haven_risk_on_symbol,
+                self.config.safe_haven_risk_off_symbol,
+                self.config.risk_on_ratio_numerator_symbol,
+                self.config.risk_on_ratio_denominator_symbol,
+            ]
+        )
         return list(dict.fromkeys(symbols))
 
     def score(
@@ -330,6 +355,7 @@ class MarketConditionScorer:
         external_snapshot = self.snapshot_builder.build(market_histories, self.config.external_etfs)
         factors_vs_sp500 = self.factor_calculator.build(market_histories, benchmark_history)
         s5th_series = self._build_s5th_series(stock_histories)
+        risk_on_ratio_summary = self._risk_on_ratio_summary(market_histories)
 
         return MarketConditionResult(
             trade_date=self._latest_trade_date(benchmark_history),
@@ -351,6 +377,7 @@ class MarketConditionScorer:
                 "VIX": round(vix_close, 2) if vix_close is not None else np.nan,
                 "SAFE HAVEN %": round(self._safe_haven_spread(market_histories, 0), 2),
             },
+            risk_on_ratio_summary={key: round(value, 3) for key, value in risk_on_ratio_summary.items()},
             market_snapshot=market_snapshot,
             leadership_snapshot=leadership_snapshot,
             external_snapshot=external_snapshot,
@@ -378,6 +405,7 @@ class MarketConditionScorer:
             breadth_summary={},
             performance_overview={},
             high_vix_summary={},
+            risk_on_ratio_summary={},
             market_snapshot=empty,
             leadership_snapshot=empty,
             external_snapshot=empty,
@@ -567,6 +595,71 @@ class MarketConditionScorer:
         if risk_on_return is None or risk_off_return is None:
             return 0.0
         return float(risk_on_return - risk_off_return)
+
+    def _risk_on_ratio_summary(self, market_histories: dict[str, pd.DataFrame]) -> dict[str, float]:
+        numerator_history = market_histories.get(self.config.risk_on_ratio_numerator_symbol, pd.DataFrame())
+        denominator_history = market_histories.get(self.config.risk_on_ratio_denominator_symbol, pd.DataFrame())
+        if numerator_history.empty or denominator_history.empty:
+            return {}
+        if "close" not in numerator_history.columns or "close" not in denominator_history.columns:
+            return {}
+
+        aligned = pd.concat(
+            [
+                numerator_history["close"].astype(float),
+                denominator_history["close"].astype(float),
+            ],
+            axis=1,
+            join="inner",
+        ).dropna()
+        if aligned.empty:
+            return {}
+        aligned = aligned.loc[aligned.iloc[:, 1] != 0]
+        if aligned.empty:
+            return {}
+
+        ratio = aligned.iloc[:, 0] / aligned.iloc[:, 1]
+        latest_ratio = ratio.iloc[-1]
+        if pd.isna(latest_ratio):
+            return {}
+
+        above_count = 0
+        available_ma_count = 0
+        for window in self.config.risk_on_ratio_ma_windows:
+            if len(ratio) < window:
+                continue
+            moving_average = ratio.rolling(window).mean().iloc[-1]
+            if pd.isna(moving_average):
+                continue
+            available_ma_count += 1
+            if float(latest_ratio) >= float(moving_average):
+                above_count += 1
+
+        high_window = max(1, min(self.config.risk_on_ratio_high_window, len(ratio)))
+        rolling_high = ratio.tail(high_window).max()
+        high_distance_pct = np.nan
+        if pd.notna(rolling_high) and float(rolling_high) != 0.0:
+            high_distance_pct = float((float(latest_ratio) / float(rolling_high) - 1.0) * 100.0)
+
+        return {
+            "RATIO": float(latest_ratio),
+            "REL 1W %": self._ratio_return(ratio, 5),
+            "REL 1M %": self._ratio_return(ratio, 21),
+            "REL 3M %": self._ratio_return(ratio, 63),
+            "HIGH DIST %": high_distance_pct,
+            "HIGH LOOKBACK DAYS": float(high_window),
+            "ABOVE MA COUNT": float(above_count),
+            "MA COUNT": float(available_ma_count),
+        }
+
+    def _ratio_return(self, ratio: pd.Series, periods: int) -> float:
+        if len(ratio) <= periods:
+            return float("nan")
+        previous = ratio.iloc[-1 - periods]
+        latest = ratio.iloc[-1]
+        if pd.isna(previous) or pd.isna(latest) or float(previous) == 0.0:
+            return float("nan")
+        return float((float(latest) / float(previous) - 1.0) * 100.0)
 
     def _score_from_components(self, components: dict[str, float]) -> float:
         return float(sum(components.get(name, 50.0) * weight for name, weight in self.config.component_weights.items()))

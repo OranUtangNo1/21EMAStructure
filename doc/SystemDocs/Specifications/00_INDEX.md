@@ -2,7 +2,7 @@
 
 ## Scope Definition
 
-This system is a screening and candidate extraction platform.
+This system is a screening, candidate extraction, and entry evaluation platform.
 Its active responsibility ends at six app outputs:
 
 1. Watchlist
@@ -12,7 +12,7 @@ Its active responsibility ends at six app outputs:
 5. Analysis
 6. Setting
 
-Entry Signal is an implemented downstream timing-review layer over selected candidate universes. Analysis is an implemented preset-hit performance analysis layer. Setting currently exposes tracking-store diagnostics and is the future home for app-wide settings. Full chart-based structure review, position sizing, trade execution, and trade management remain out of scope and archived.
+Entry Signal is an implemented downstream timing-review layer over selected candidate universes and is part of the active product scope. Analysis is an implemented preset-hit performance analysis layer. Setting currently exposes tracking-store diagnostics and is the future home for app-wide settings. Final discretionary chart review, position sizing, trade execution, and trade management remain out of scope and archived.
 
 ---
 

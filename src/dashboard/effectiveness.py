@@ -309,7 +309,7 @@ def _insert_detection(
                 trade_date.strftime("%Y-%m-%d"),
                 preset_name,
                 ticker,
-                str(market_label).strip() if market_label is not None else None,
+                _normalize_market_env(market_label),
                 _to_float(row.get("close")),
                 _to_float(row.get("rs21")),
                 _to_float(row.get("vcs")),
@@ -340,6 +340,23 @@ def _matched_annotation_filters(row: pd.Series, selected_annotation_filters: tup
         if bool(row.get(column_name, False)):
             matched.append(filter_name)
     return matched
+
+
+def _normalize_market_env(label: object) -> str | None:
+    if label is None:
+        return None
+    value = str(label).strip().lower()
+    if not value or value == "no data":
+        return None
+    if value in {"bull", "bullish", "positive"}:
+        return "bull"
+    if value in {"neutral"}:
+        return "neutral"
+    if value in {"weak", "negative"}:
+        return "weak"
+    if value in {"bear", "bearish"}:
+        return "bear"
+    return value
 
 
 def _tickers_due_for_detection_update(conn: sqlite3.Connection, trade_date: pd.Timestamp) -> list[str]:

@@ -259,6 +259,57 @@ def test_pocket_pivot_uses_highest_total_volume_in_prior_10_days() -> None:
     assert bool(result.iloc[-1]["pocket_pivot"]) is False
 
 
+def test_vcp_3t_fields_capture_contracting_depths_dryup_and_breakout() -> None:
+    dates = pd.date_range("2025-01-01", periods=162, freq="B")
+    close = [50.0 + index * 0.2 for index in range(126)]
+    high = [value * 1.01 for value in close]
+    low = [value * 0.99 for value in close]
+    volume = [1_000_000.0] * len(close)
+
+    # T1: about 20% depth, then T2: about 12%, then T3: about 5%.
+    close.extend([90.0] * 20)
+    high.extend([100.0] * 20)
+    low.extend([80.0] * 20)
+    volume.extend([1_000_000.0] * 20)
+    close.extend([92.0] * 10)
+    high.extend([98.0] * 10)
+    low.extend([86.0] * 10)
+    volume.extend([1_000_000.0] * 10)
+    close.extend([95.0] * 5)
+    high.extend([97.0, 96.5, 96.0, 95.5, 95.0])
+    low.extend([95.0, 94.5, 94.0, 93.5, 92.5])
+    volume.extend([500_000.0] * 5)
+    close.append(102.0)
+    high.append(103.0)
+    low.append(96.2)
+    volume.append(1_500_000.0)
+
+    frame = pd.DataFrame(
+        {
+            "open": [value * 0.995 for value in close],
+            "high": high,
+            "low": low,
+            "close": close,
+            "adjusted_close": close,
+            "volume": volume,
+        },
+        index=dates,
+    )
+    calculator = IndicatorCalculator(IndicatorConfig(sma_short_period=2, sma_long_period=2, relvol_period=20, enable_3wt=False))
+
+    result = calculator.calculate(frame)
+    latest = result.iloc[-1]
+
+    assert round(float(latest["vcp_t1_depth_pct"]), 2) == 20.0
+    assert round(float(latest["vcp_t2_depth_pct"]), 2) == round((98.0 - 86.0) / 98.0 * 100.0, 2)
+    assert round(float(latest["vcp_t3_depth_pct"]), 2) == round((97.0 - 92.5) / 97.0 * 100.0, 2)
+    assert float(latest["vcp_prior_uptrend_pct"]) > 30.0
+    assert bool(latest["vcp_pivot_breakout"]) is True
+    assert 0.0 < float(latest["vcp_pivot_proximity_pct"]) < 5.0
+    assert float(latest["vcp_tight_days"]) == 5.0
+    assert float(latest["vcp_volume_dryup_ratio"]) < 0.8
+
+
 def test_pocket_pivot_flags_green_candle_when_volume_breaks_prior_10_day_high() -> None:
     dates = pd.date_range("2025-02-01", periods=11, freq="D")
     frame = pd.DataFrame(
@@ -408,6 +459,8 @@ def test_indicator_calculator_adds_pullback_and_reclaim_fields() -> None:
     previous = result.iloc[-2]
 
     expected_rolling_high = frame["close"].iloc[-20:].max()
+    expected_rolling_5d_low = frame["low"].iloc[-5:].min()
+    expected_rolling_10d_low = frame["low"].iloc[-10:].min()
     expected_drawdown = ((expected_rolling_high - frame["close"].iloc[-1]) / expected_rolling_high) * 100.0
     expected_ema_slope = ((latest["ema21_close"] / result.iloc[-6]["ema21_close"]) - 1.0) * 100.0
     expected_sma_slope = ((latest["sma50"] / result.iloc[-11]["sma50"]) - 1.0) * 100.0
@@ -420,6 +473,8 @@ def test_indicator_calculator_adds_pullback_and_reclaim_fields() -> None:
     )
     expected_min_atr_21ema_zone_5d = result["atr_21ema_zone"].iloc[-5:].min()
 
+    assert round(float(latest["rolling_5d_low"]), 6) == round(float(expected_rolling_5d_low), 6)
+    assert round(float(latest["rolling_10d_low"]), 6) == round(float(expected_rolling_10d_low), 6)
     assert round(float(latest["rolling_20d_close_high"]), 6) == round(float(expected_rolling_high), 6)
     assert round(float(latest["drawdown_from_20d_high_pct"]), 6) == round(float(expected_drawdown), 6)
     assert round(float(latest["ema21_slope_5d_pct"]), 6) == round(float(expected_ema_slope), 6)
