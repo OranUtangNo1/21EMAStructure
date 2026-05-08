@@ -108,12 +108,22 @@ Risk/reward weight in entry strength: `0.35`
 
 Risk/reward behavior:
 - Entry reference: current `close`
-- Stop reference: adaptive max of breakout-day low, EMA21-buffer stop, and low-since-detection stop
+- Runtime owner: `src/signals/risk_plan_policy.py`
+- Policy builder: `build_accumulation_breakout_risk_plan`
+- Evaluator R/R and Entry Plan SL/TP both use the same policy result.
+- Stop source priority:
+  - primary: `max(snapshot.low, resistance_level_lookback) - 0.25 ATR`
+  - fallback: `ema21_close - 0.25 ATR` when primary risk is too tight or unusable
+  - fallback: `low_since_detection - 0.25 ATR`
+  - fallback: `vcp_pivot_price - 0.25 ATR` when VCP fields are available
 - ATR buffer: `0.25`
 - Minimum stop distance: `0.50 ATR`
-- Primary target: `entry + 2R`
-- Secondary target: `high_52w` when it is sufficiently above entry
+- TP1 priority: `high_52w -> measured_move -> vcp_measured_move -> rr_validation_target`
+- `high_52w` is skipped as TP1 when `dist_from_52w_high > -2.0`.
+- Structural TP1 candidates must provide at least `1.5R`; otherwise the policy falls back to the minimum-R/R validation target.
+- Entry Ready uses `rr_ratio_min = 1.8`.
 - R/R score is capped when risk exceeds `2.0 ATR` or reward is less than `1.5 ATR`.
+- TP2 plan is 10-day low trailing after TP1, or from pool day 3 when no structural TP1 is available.
 
 ## Guardrails
 

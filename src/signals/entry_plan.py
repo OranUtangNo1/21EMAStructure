@@ -7,6 +7,14 @@ import pandas as pd
 
 from src.data.signal_tracking import ACTIVE_POOL_STATUS
 from src.signals.pool import SignalPoolEntry
+from src.signals.risk_plan_policy import (
+    build_accumulation_breakout_risk_plan,
+    build_early_cycle_recovery_risk_plan,
+    build_momentum_acceleration_risk_plan,
+    build_orderly_pullback_risk_plan,
+    build_power_gap_pullback_risk_plan,
+    build_pullback_resumption_risk_plan,
+)
 from src.signals.risk_reward import calculate_buffered_stop
 from src.signals.rules import EntrySignalDefinition
 
@@ -113,69 +121,120 @@ def build_entry_plan(
             plan_invalidation="entry price or ATR unavailable",
         )
 
-    sl_candidates = _build_sl_candidates(
-        entry_price=entry_price,
-        atr=atr,
-        row=row,
-        pool_entry=pool_entry,
-        definition=definition,
-    )
-    selected_sl = _select_stop(sl_candidates)
-    tp1_candidates = _build_tp1_candidates(
-        entry_price=entry_price,
-        atr=atr,
-        row=row,
-        pool_entry=pool_entry,
-        definition=definition,
-        selected_sl=selected_sl,
-    )
-    selected_tp1 = _select_tp1(tp1_candidates)
-
     reject_codes: list[str] = []
-    if selected_sl is None:
-        reject_codes.append("sl_unavailable")
-    if selected_tp1 is None:
-        reject_codes.append("tp1_unavailable")
-
-    rr_current = None
-    rr_ideal = None
-    max_entry_price = None
-    entry_zone_low = None
-    entry_zone_high = None
-    distance_to_entry_zone_pct = None
-    if selected_sl is not None and selected_tp1 is not None:
-        risk = entry_price - selected_sl["price"]
-        reward = selected_tp1["price"] - entry_price
-        if risk <= 0.0:
-            reject_codes.append("sl_not_below_entry")
-        elif reward <= 0.0:
-            reject_codes.append("tp1_not_above_entry")
+    if definition.signal_key in {
+        "accumulation_breakout_entry",
+        "orderly_pullback_entry",
+        "momentum_acceleration_entry",
+        "power_gap_pullback_entry",
+        "early_cycle_recovery_entry",
+        "pullback_resumption_entry",
+    }:
+        if definition.signal_key == "momentum_acceleration_entry":
+            risk_plan = build_momentum_acceleration_risk_plan(row, pool_entry, definition)
+        elif definition.signal_key == "accumulation_breakout_entry":
+            risk_plan = build_accumulation_breakout_risk_plan(row, pool_entry, definition)
+        elif definition.signal_key == "orderly_pullback_entry":
+            risk_plan = build_orderly_pullback_risk_plan(row, pool_entry, definition)
+        elif definition.signal_key == "power_gap_pullback_entry":
+            risk_plan = build_power_gap_pullback_risk_plan(row, pool_entry, definition)
+        elif definition.signal_key == "early_cycle_recovery_entry":
+            risk_plan = build_early_cycle_recovery_risk_plan(row, pool_entry, definition)
         else:
-            rr_current = reward / risk
-            max_entry_price = _max_entry_for_rr(
-                stop_loss=float(selected_sl["price"]),
-                tp1=float(selected_tp1["price"]),
-                min_rr=definition.action.entry_ready_rr_ratio_min,
-            )
-            if max_entry_price is not None and max_entry_price > float(selected_sl["price"]):
-                entry_zone_high = min(max_entry_price, float(selected_tp1["price"]))
-                entry_zone_low = max(float(selected_sl["price"]) + atr, entry_zone_high - atr * 0.75)
-                if entry_zone_low > entry_zone_high:
-                    entry_zone_low = entry_zone_high
-                ideal_entry = entry_price if entry_price <= entry_zone_high else entry_zone_high
-                rr_ideal = _rr_for_entry(ideal_entry, float(selected_sl["price"]), float(selected_tp1["price"]))
-                if entry_price > entry_zone_high:
-                    distance_to_entry_zone_pct = (entry_price / entry_zone_high - 1.0) * 100.0
+            risk_plan = build_pullback_resumption_risk_plan(row, pool_entry, definition)
+        sl_candidates = risk_plan.sl_candidates
+        selected_sl = risk_plan.selected_sl
+        tp1_candidates = risk_plan.tp1_candidates
+        selected_tp1 = risk_plan.selected_tp1
+        reject_codes.extend(risk_plan.reject_codes)
+        rr_current = risk_plan.rr_current
+        rr_ideal = risk_plan.rr_ideal
+        max_entry_price = risk_plan.max_entry_price
+        entry_zone_low = risk_plan.entry_zone_low
+        entry_zone_high = risk_plan.entry_zone_high
+        distance_to_entry_zone_pct = risk_plan.distance_to_entry_zone_pct
+        risk_in_atr = risk_plan.risk_in_atr
+        sl_quality = risk_plan.sl_quality
+        tp2_plan = risk_plan.tp2_plan
+    else:
+        sl_candidates = _build_sl_candidates(
+            entry_price=entry_price,
+            atr=atr,
+            row=row,
+            pool_entry=pool_entry,
+            definition=definition,
+        )
+        selected_sl = _select_stop(sl_candidates)
+        tp1_candidates = _build_tp1_candidates(
+            entry_price=entry_price,
+            atr=atr,
+            row=row,
+            pool_entry=pool_entry,
+            definition=definition,
+            selected_sl=selected_sl,
+        )
+        selected_tp1 = _select_tp1(tp1_candidates)
 
-    risk_in_atr = None
-    if selected_sl is not None:
-        risk_in_atr = (entry_price - selected_sl["price"]) / atr
-        if risk_in_atr > 3.0:
-            reject_codes.append("sl_too_wide")
+        if selected_sl is None:
+            reject_codes.append("sl_unavailable")
+        if selected_tp1 is None:
+            reject_codes.append("tp1_unavailable")
 
-    sl_quality = _sl_quality(selected_sl, risk_in_atr)
-    if sl_quality == "Weak":
-        reject_codes.append("sl_quality_weak")
+        rr_current = None
+        rr_ideal = None
+        max_entry_price = None
+        entry_zone_low = None
+        entry_zone_high = None
+        distance_to_entry_zone_pct = None
+        if selected_sl is not None and selected_tp1 is not None:
+            risk = entry_price - selected_sl["price"]
+            reward = selected_tp1["price"] - entry_price
+            if risk <= 0.0:
+                reject_codes.append("sl_not_below_entry")
+            elif reward <= 0.0:
+                reject_codes.append("tp1_not_above_entry")
+            else:
+                rr_current = reward / risk
+                max_entry_price = _max_entry_for_rr(
+                    stop_loss=float(selected_sl["price"]),
+                    tp1=float(selected_tp1["price"]),
+                    min_rr=definition.action.entry_ready_rr_ratio_min,
+                )
+                if max_entry_price is not None and max_entry_price > float(selected_sl["price"]):
+                    entry_zone_high = min(max_entry_price, float(selected_tp1["price"]))
+                    entry_zone_low = max(float(selected_sl["price"]) + atr, entry_zone_high - atr * 0.75)
+                    if entry_zone_low > entry_zone_high:
+                        entry_zone_low = entry_zone_high
+                    ideal_entry = entry_price if entry_price <= entry_zone_high else entry_zone_high
+                    rr_ideal = _rr_for_entry(ideal_entry, float(selected_sl["price"]), float(selected_tp1["price"]))
+                    if entry_price > entry_zone_high:
+                        distance_to_entry_zone_pct = (entry_price / entry_zone_high - 1.0) * 100.0
+
+        risk_in_atr = None
+        if selected_sl is not None:
+            risk_in_atr = (entry_price - selected_sl["price"]) / atr
+            if risk_in_atr > 3.0:
+                reject_codes.append("sl_too_wide")
+
+        sl_quality = _sl_quality(selected_sl, risk_in_atr)
+        if sl_quality == "Weak":
+            reject_codes.append("sl_quality_weak")
+        tp2_plan = "Trailing stop later"
+
+    if selected_sl is not None and selected_tp1 is not None and rr_current is None:
+        stop_price = _to_float(selected_sl.get("price"))
+        tp1_price = _to_float(selected_tp1.get("price"))
+        if stop_price is None:
+            reject_codes.append("sl_unavailable")
+        elif tp1_price is None:
+            reject_codes.append("tp1_unavailable")
+        else:
+            rr_current = _rr_for_entry(entry_price, stop_price, tp1_price)
+            if rr_current is None:
+                if stop_price >= entry_price:
+                    reject_codes.append("sl_not_below_entry")
+                elif tp1_price <= entry_price:
+                    reject_codes.append("tp1_not_above_entry")
 
     plan_type, plan_reject_codes = _classify_plan_type(
         action_bucket=action_bucket,
@@ -204,10 +263,23 @@ def build_entry_plan(
     reject_codes_tuple = tuple(dict.fromkeys(reject_codes))
     reject_reason = _reject_reason(reject_codes_tuple)
     sl_basis = selected_sl["source"] if selected_sl else definition.risk_reward.stop.reference
-    sl_safety = (
-        f"ATR buffer {definition.risk_reward.stop.atr_buffer:g}; "
-        "minimum 1 ATR; round-number buffer"
-    )
+    if definition.signal_key == "momentum_acceleration_entry":
+        sl_safety = "Momentum policy: acceleration-day low buffer; max risk 2 ATR; DCR quality check"
+    elif definition.signal_key == "accumulation_breakout_entry":
+        sl_safety = "Breakout policy: breakout support buffer; max risk 2 ATR; resistance support quality check"
+    elif definition.signal_key == "orderly_pullback_entry":
+        sl_safety = "Orderly pullback policy: pullback low buffer; max risk 1.8 ATR; 21EMA fallback"
+    elif definition.signal_key == "power_gap_pullback_entry":
+        sl_safety = "Power gap policy: pullback/21EMA-low support buffer; max risk 2 ATR; gap low proxy fallback"
+    elif definition.signal_key == "early_cycle_recovery_entry":
+        sl_safety = "Early recovery policy: structure-pivot HL buffer; max risk 2.25 ATR; current low fallback"
+    elif definition.signal_key == "pullback_resumption_entry":
+        sl_safety = "Pullback policy: preset-specific support buffer; max risk 2.5 ATR; reclaim/defense quality check"
+    else:
+        sl_safety = (
+            f"ATR buffer {definition.risk_reward.stop.atr_buffer:g}; "
+            "minimum 1 ATR; round-number buffer"
+        )
     plan_note = _plan_note(entry_price, selected_sl, selected_tp1, rr_current, rr_ideal, plan_type, reject_reason)
     detail = {
         "entry": entry_price,
@@ -242,7 +314,7 @@ def build_entry_plan(
         rr_tp1=rr_current,
         rr_current=rr_current,
         rr_ideal=rr_ideal,
-        tp2_plan="Trailing stop later",
+        tp2_plan=tp2_plan,
         trigger_condition=_trigger_condition(definition.signal_key, plan_type),
         plan_verdict=plan_verdict,
         plan_reject_codes=reject_codes_tuple,
@@ -604,6 +676,8 @@ def _reject_reason(codes: tuple[str, ...]) -> str:
         "entry_zone_too_far": "required entry zone is too far below current price",
         "sl_too_wide": "SL is too wide in ATR terms",
         "sl_quality_weak": "SL support quality is weak",
+        "entry_zone_invalid": "entry zone is invalid",
+        "reward_too_small": "reward room is too small",
     }
     return "; ".join(labels.get(code, code) for code in codes)
 

@@ -1382,6 +1382,7 @@ def render_watchlist_controls(config_path: str) -> WatchlistControlState:
     threshold_defaults_key = "watchlist_duplicate_threshold_defaults"
     duplicate_rule_key = "watchlist_duplicate_rule"
     preset_select_key = "watchlist_selected_preset_name"
+    preset_select_pending_key = "watchlist_selected_preset_name_pending"
     preset_name_key = "watchlist_preset_name"
     preset_name_pending_key = "watchlist_preset_name_pending"
     preset_feedback_key = "watchlist_preset_feedback"
@@ -1492,6 +1493,12 @@ def render_watchlist_controls(config_path: str) -> WatchlistControlState:
         st.session_state[preset_name_key] = st.session_state.pop(preset_name_pending_key)
 
     preset_options = [""] + list(watchlist_presets)
+    if preset_select_pending_key in st.session_state:
+        pending_preset_name = _resolve_selected_watchlist_preset_name(
+            st.session_state.pop(preset_select_pending_key),
+            watchlist_presets,
+        )
+        st.session_state[preset_select_key] = pending_preset_name
     preset_columns = st.columns([2.4, 0.9, 0.9])
     with preset_columns[0]:
         selected_preset_name = st.selectbox(
@@ -1572,7 +1579,7 @@ def render_watchlist_controls(config_path: str) -> WatchlistControlState:
             watchlist_preferences_namespace,
             selected_preset_name,
         )
-        st.session_state[preset_select_key] = ""
+        st.session_state[preset_select_pending_key] = ""
         st.session_state[preset_name_pending_key] = ""
         st.session_state[preset_feedback_key] = f"Deleted preset '{selected_preset_name}'."
         st.rerun()
@@ -1858,7 +1865,7 @@ def render_watchlist_controls(config_path: str) -> WatchlistControlState:
                 preset_name,
                 _build_watchlist_preset_record(current_watchlist_controls),
             )
-            st.session_state[preset_select_key] = preset_name
+            st.session_state[preset_select_pending_key] = preset_name
             st.session_state[preset_name_pending_key] = preset_name
             st.session_state[preset_feedback_key] = f"Saved preset '{preset_name}'."
             st.rerun()

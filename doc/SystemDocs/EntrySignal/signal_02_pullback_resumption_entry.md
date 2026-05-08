@@ -18,6 +18,7 @@ Signal key: `pullback_resumption_entry`
   - `atr_21ema_zone`
   - `atr_50sma_zone`
   - `rolling_20d_close_high`
+  - `high_52w`
   - `high`
 
 ## Invalidation
@@ -39,9 +40,14 @@ Signal key: `pullback_resumption_entry`
   - `volume_confirmation`
   - `demand_footprint`
 - `risk_reward`
-  - stop reference: `depth_adaptive`
-  - stop source priority: `50SMA Defense -> Reclaim Trigger -> Pullback Trigger`
-  - reward priority: `snapshot_rolling_20d_close_high -> rolling_20d_close_high -> high_52w -> measured_move`
+  - runtime owner: `src/signals/risk_plan_policy.py`
+  - policy builder: `build_pullback_resumption_risk_plan`
+  - evaluator R/R and Entry Plan SL/TP both use the same policy result.
+  - stop source priority:
+    - `50SMA Defense`: `sma50_defense - 0.50 ATR`, then `pullback_low - 0.25 ATR`
+    - `Reclaim Trigger`: `reclaim_pullback_low - 0.35 ATR`, then `ema21_reclaim - 0.35 ATR`
+    - `Pullback Trigger`: `pullback_low - 0.25 ATR`, then `ema21_support - 0.50 ATR`
+  - reward priority: `snapshot_rolling_20d_close_high -> rolling_20d_close_high -> high_since_detection -> high_52w -> rr_validation_target`
 
 ## Integrated Output
 
@@ -60,4 +66,9 @@ Signal key: `pullback_resumption_entry`
 ## R/R Guardrails
 
 - `50SMA Defense` receives the highest pullback-depth score only when the current row confirms positive SMA50 slope, a 50SMA reclaim event, strong close quality, and an ATR zone near the 50SMA.
+- Structural TP1 candidates must provide at least `1.5R`; otherwise the policy falls back to the minimum-R/R validation target.
+- Entry Ready uses `rr_ratio_min = 1.8`.
+- SL risk above `2.5 ATR` is rejected.
+- `50SMA Defense` SL quality requires positive `sma50_slope_10d_pct` and strong close quality; pullback-low SL quality weakens when `dcr_percent < 45.0`.
+- Entry zone lower bound is `SL + 0.5 ATR`; upper bound is the maximum entry price that still satisfies the signal's minimum R/R to TP1.
 - Candidates with less than `1.5 ATR` of reward room have their risk/reward score capped, which prevents low-upside pullbacks from reaching `Signal Detected`.

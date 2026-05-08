@@ -29,6 +29,8 @@ Pool snapshot fields:
 - `daily_change_pct`
 - `dcr_percent`
 - `dist_from_52w_high`
+- `rolling_20d_close_high`
+- `high_52w`
 - `pp_count_window`
 
 Pool tracking fields:
@@ -76,11 +78,17 @@ Custom timing evaluator summary:
 Risk/reward weight in entry strength: `0.35`
 
 Risk/reward behavior:
-- Stop reference: acceleration-day snapshot `low`
-- ATR buffer: `0.25`
-- Minimum stop distance: `0.25 ATR`
-- Target priority: `rolling_20d_close_high -> high_52w -> entry + 2R -> entry * 1.08`
-- Structural targets must be above entry and normally provide at least `1.5R`; otherwise the evaluator falls back to `entry + 2R`.
+- Runtime owner: `src/signals/risk_plan_policy.py`
+- The evaluator and Entry Plan use the same Momentum-specific SL/TP policy.
+- Primary SL: acceleration-day low minus `0.25 ATR`.
+- Alternative SL: a detected higher low minus `0.15 ATR` when a higher low is available.
+- SL quality is weakened when risk exceeds `2.0 ATR` or `dcr_percent < 50`.
+- Structural TP1 candidates: `rolling_20d_close_high`, `high_since_detection`, `high_52w`.
+- TP1 selection: nearest structural candidate above entry that provides at least `1.5R`.
+- If no structural TP1 qualifies, the plan uses an `rr_validation_target` for R/R math and flags TP2 as a 10-day-low trailing management plan.
+- Minimum Entry Ready R/R: `1.8R`.
+- Entry Zone lower bound: selected SL plus `0.5 ATR`.
+- Entry Zone upper bound: maximum entry price that still satisfies the signal R/R threshold.
 - R/R score is capped at `35` when risk exceeds `2.0 ATR`.
 
 ## Climax Guard

@@ -6,7 +6,8 @@ import numpy as np
 import pandas as pd
 
 from src.signals.pool import SignalPoolEntry
-from src.signals.risk_reward import RiskRewardResult, evaluate_risk_reward
+from src.signals.risk_plan_policy import build_orderly_pullback_risk_plan
+from src.signals.risk_reward import RiskRewardResult, score_rr
 from src.signals.rules import EntrySignalDefinition
 from src.signals.scoring import composite_score, piecewise_linear_score
 
@@ -38,7 +39,7 @@ def evaluate_orderly_pullback(
     current = _series_to_dict(row)
     setup = evaluate_setup_maturity(current, pool_entry, definition, eval_date=eval_date)
     timing = evaluate_timing(current, definition)
-    risk_reward = evaluate_risk_reward(current, pool_entry, definition.risk_reward)
+    risk_reward = evaluate_policy_risk_reward(current, pool_entry, definition)
     entry_strength = calculate_entry_strength(
         setup.score,
         timing.score,
@@ -53,6 +54,25 @@ def evaluate_orderly_pullback(
         maturity_detail=setup.detail,
         timing_detail=timing.detail,
         risk_reward=risk_reward,
+    )
+
+
+def evaluate_policy_risk_reward(
+    row: dict[str, object],
+    pool_entry: SignalPoolEntry,
+    definition: EntrySignalDefinition,
+) -> RiskRewardResult:
+    risk_plan = build_orderly_pullback_risk_plan(row, pool_entry, definition)
+    stop_price = _to_float(risk_plan.selected_sl.get("price")) if risk_plan.selected_sl else None
+    reward_target = _to_float(risk_plan.selected_tp1.get("price")) if risk_plan.selected_tp1 else None
+    return RiskRewardResult(
+        score=score_rr(risk_plan.rr_current, risk_plan.stop_adjusted, definition.risk_reward),
+        stop_price=stop_price,
+        reward_target=reward_target,
+        rr_ratio=risk_plan.rr_current,
+        risk_in_atr=risk_plan.risk_in_atr,
+        reward_in_atr=risk_plan.reward_in_atr,
+        stop_adjusted=risk_plan.stop_adjusted,
     )
 
 

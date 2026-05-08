@@ -82,12 +82,16 @@ Risk/reward weight in entry strength: `0.30`
 
 Risk/reward behavior:
 - Entry reference: current `close`
-- Stop reference: `min(low_since_detection, ema21_low) - 0.25 ATR`
+- Runtime policy owner: `src/signals/risk_plan_policy.py::build_power_gap_pullback_risk_plan`
+- Stop reference: `max(low_since_detection, ema21_low) - 0.25 ATR`
+- Stop fallback: detection `low - 0.15 ATR` as a gap-day-low proxy when the primary support is unusable
 - Minimum stop distance: `0.50 ATR`
-- Primary target: `rolling_20d_close_high` when it gives sufficient reward
-- Secondary target: `entry + 2R`
-- Fallback target: `high_52w`
-- R/R score is capped when `risk_in_atr > 2.0`.
+- Maximum practical risk: `2.0 ATR`
+- TP1 priority: max of `rolling_20d_close_high`, `high_since_detection`, and detection `high`
+- TP1 fallback: `high_52w`, then `rr_validation_target`
+- Minimum structural TP1 R/R: `1.5R`
+- TP2 plan: after TP1, trail with 21EMA close; exit on two consecutive closes below 21EMA
+- Evaluator R/R, Entry Plan SL/TP, entry zone, and plan rejection codes use the same policy.
 
 ## Guardrails
 

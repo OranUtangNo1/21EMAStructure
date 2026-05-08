@@ -7,7 +7,8 @@ import pandas as pd
 
 from src.signals.evaluators.orderly_pullback import AxisResult, calculate_entry_strength
 from src.signals.pool import SignalPoolEntry
-from src.signals.risk_reward import RiskRewardResult, calculate_buffered_stop, calculate_rr_ratio, score_rr
+from src.signals.risk_plan_policy import build_accumulation_breakout_risk_plan
+from src.signals.risk_reward import RiskRewardResult, score_rr
 from src.signals.rules import EntrySignalDefinition
 from src.signals.scoring import composite_score, piecewise_linear_score
 
@@ -106,20 +107,18 @@ def evaluate_breakout_risk_reward(
 ) -> RiskRewardResult:
     entry_price = _to_float(row.get("close"))
     atr = _to_float(row.get("atr"))
-    stop_price, risk_in_atr, stop_adjusted = _breakout_stop(row, pool_entry, definition)
-    reward_target = _reward_target(row, entry_price, stop_price)
-    rr_ratio = calculate_rr_ratio(entry_price, stop_price, reward_target)
-    reward_in_atr = None
-    if entry_price is not None and reward_target is not None and atr is not None and atr > 0.0:
-        reward_in_atr = max(0.0, (reward_target - entry_price) / atr)
+    risk_plan = build_accumulation_breakout_risk_plan(row, pool_entry, definition)
+    stop_price = _to_float(risk_plan.selected_sl.get("price")) if risk_plan.selected_sl else None
+    reward_target = _to_float(risk_plan.selected_tp1.get("price")) if risk_plan.selected_tp1 else None
+    _ = entry_price, atr
     return RiskRewardResult(
-        score=score_rr(rr_ratio, stop_adjusted, definition.risk_reward),
+        score=score_rr(risk_plan.rr_current, risk_plan.stop_adjusted, definition.risk_reward),
         stop_price=stop_price,
         reward_target=reward_target,
-        rr_ratio=rr_ratio,
-        risk_in_atr=risk_in_atr,
-        reward_in_atr=reward_in_atr,
-        stop_adjusted=stop_adjusted,
+        rr_ratio=risk_plan.rr_current,
+        risk_in_atr=risk_plan.risk_in_atr,
+        reward_in_atr=risk_plan.reward_in_atr,
+        stop_adjusted=risk_plan.stop_adjusted,
     )
 
 
@@ -213,56 +212,6 @@ def _follow_through_score(
     if pool_entry.high_since_detection is not None and snapshot_high is not None and pool_entry.high_since_detection > snapshot_high:
         return 75.0
     return 30.0 if days_in_pool == 2 else 15.0
-
-
-def _breakout_stop(
-    row: dict[str, object],
-    pool_entry: SignalPoolEntry,
-    definition: EntrySignalDefinition,
-) -> tuple[float | None, float | None, bool]:
-    entry_price = _to_float(row.get("close"))
-    atr = _to_float(row.get("atr"))
-    snapshot_low = _to_float(pool_entry.snapshot_at_detection.get("low"))
-    ema21_close = _to_float(row.get("ema21_close"))
-    if ema21_close is None:
-        ema21_close = _to_float(pool_entry.snapshot_at_detection.get("ema21_close"))
-    if entry_price is None or atr is None or atr <= 0.0:
-        return None, None, False
-
-    candidates = []
-    if snapshot_low is not None:
-        candidates.append(snapshot_low - atr * 0.25)
-    if ema21_close is not None:
-        candidates.append(ema21_close - atr * 0.50)
-    if pool_entry.low_since_detection is not None:
-        candidates.append(pool_entry.low_since_detection - atr * 0.25)
-    if not candidates:
-        return None, None, False
-
-    min_distance = atr * definition.risk_reward.stop.min_distance_atr
-    valid_candidates = [candidate for candidate in candidates if candidate < entry_price]
-    reference_stop = max(valid_candidates) if valid_candidates else entry_price - min_distance
-    stop_result = calculate_buffered_stop(
-        entry_price,
-        atr,
-        reference_stop,
-        definition.risk_reward,
-        atr_buffer=0.0,
-    )
-    return stop_result.stop_price, stop_result.risk_in_atr, stop_result.stop_adjusted
-
-
-def _reward_target(row: dict[str, object], entry_price: float | None, stop_price: float | None) -> float | None:
-    if entry_price is None or stop_price is None:
-        return None
-    risk = entry_price - stop_price
-    if risk <= 0.0:
-        return None
-    rr_2x = entry_price + risk * 2.0
-    high_52w = _to_float(row.get("high_52w"))
-    if high_52w is not None and high_52w > entry_price and (high_52w - entry_price) >= risk * 1.5:
-        return min(high_52w, rr_2x) if high_52w < rr_2x else rr_2x
-    return rr_2x
 
 
 def _guard_reason(

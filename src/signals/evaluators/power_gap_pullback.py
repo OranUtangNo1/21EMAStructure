@@ -6,7 +6,8 @@ import pandas as pd
 
 from src.signals.evaluators.orderly_pullback import AxisResult, calculate_entry_strength
 from src.signals.pool import SignalPoolEntry
-from src.signals.risk_reward import RiskRewardResult, calculate_buffered_stop, calculate_rr_ratio, score_rr
+from src.signals.risk_plan_policy import build_power_gap_pullback_risk_plan
+from src.signals.risk_reward import RiskRewardResult, score_rr
 from src.signals.rules import EntrySignalDefinition
 from src.signals.scoring import composite_score, piecewise_linear_score
 
@@ -82,21 +83,18 @@ def evaluate_gap_pullback_risk_reward(
     pool_entry: SignalPoolEntry,
     definition: EntrySignalDefinition,
 ) -> RiskRewardResult:
-    entry_price = _to_float(row.get("close"))
-    atr = _to_float(row.get("atr"))
-    stop_price, risk_in_atr, stop_adjusted = _gap_pullback_stop(row, pool_entry, definition)
-    reward_target = _reward_target(row, entry_price, stop_price)
-    rr_ratio = calculate_rr_ratio(entry_price, stop_price, reward_target)
-    reward_in_atr = None
-    if entry_price is not None and reward_target is not None and atr is not None and atr > 0.0:
-        reward_in_atr = max(0.0, (reward_target - entry_price) / atr)
+    risk_plan = build_power_gap_pullback_risk_plan(row, pool_entry, definition)
+    stop_price = _to_float(risk_plan.selected_sl.get("price")) if risk_plan.selected_sl else None
+    reward_target = _to_float(risk_plan.selected_tp1.get("price")) if risk_plan.selected_tp1 else None
+    rr_ratio = risk_plan.rr_current
+    stop_adjusted = risk_plan.stop_adjusted
     return RiskRewardResult(
         score=score_rr(rr_ratio, stop_adjusted, definition.risk_reward),
         stop_price=stop_price,
         reward_target=reward_target,
         rr_ratio=rr_ratio,
-        risk_in_atr=risk_in_atr,
-        reward_in_atr=reward_in_atr,
+        risk_in_atr=risk_plan.risk_in_atr,
+        reward_in_atr=risk_plan.reward_in_atr,
         stop_adjusted=stop_adjusted,
     )
 
@@ -158,48 +156,6 @@ def _timing_logic_score(indicator_name: str, row: dict[str, object]) -> float:
     if indicator_name == "pullback_age":
         return piecewise_linear_score(_to_float(row.get("days_since_power_gap")), [(0, 5), (1, 20), (3, 80), (5, 100), (12, 100), (16, 55), (20, 20)])
     raise ValueError(f"unsupported power gap pullback timing indicator: {indicator_name}")
-
-
-def _gap_pullback_stop(
-    row: dict[str, object],
-    pool_entry: SignalPoolEntry,
-    definition: EntrySignalDefinition,
-) -> tuple[float | None, float | None, bool]:
-    entry_price = _to_float(row.get("close"))
-    atr = _to_float(row.get("atr"))
-    if entry_price is None or atr is None or atr <= 0.0:
-        return None, None, False
-    candidates = []
-    if pool_entry.low_since_detection is not None:
-        candidates.append(pool_entry.low_since_detection)
-    ema21_low = _to_float(row.get("ema21_low"))
-    if ema21_low is not None:
-        candidates.append(ema21_low)
-    if not candidates:
-        snapshot_low = _to_float(pool_entry.snapshot_at_detection.get("low"))
-        if snapshot_low is not None:
-            candidates.append(snapshot_low)
-    if not candidates:
-        return None, None, False
-    reference = min(candidates)
-    stop_result = calculate_buffered_stop(entry_price, atr, reference, definition.risk_reward)
-    return stop_result.stop_price, stop_result.risk_in_atr, stop_result.stop_adjusted
-
-
-def _reward_target(row: dict[str, object], entry_price: float | None, stop_price: float | None) -> float | None:
-    if entry_price is None or stop_price is None:
-        return None
-    risk = entry_price - stop_price
-    if risk <= 0.0:
-        return None
-    rr_2x = entry_price + risk * 2.0
-    rolling_high = _to_float(row.get("rolling_20d_close_high"))
-    if rolling_high is not None and rolling_high > entry_price and (rolling_high - entry_price) >= risk * 1.5:
-        return rolling_high
-    high_52w = _to_float(row.get("high_52w"))
-    if high_52w is not None and high_52w > entry_price and (high_52w - entry_price) >= risk * 2.0:
-        return min(high_52w, rr_2x)
-    return rr_2x
 
 
 def _guard_reason(row: dict[str, object], pool_entry: SignalPoolEntry, risk_reward: RiskRewardResult) -> str:

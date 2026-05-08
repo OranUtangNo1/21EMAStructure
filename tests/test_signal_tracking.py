@@ -126,6 +126,54 @@ def test_signal_pool_upsert_creates_new_row_after_invalidation(tmp_path) -> None
         conn.close()
 
 
+def test_signal_pool_upsert_reactivates_same_day_inactive_entry(tmp_path) -> None:
+    conn = connect_tracking_db(root_dir=tmp_path)
+    try:
+        first = upsert_signal_pool_entry(
+            conn,
+            signal_name="momentum_acceleration_entry",
+            ticker="AAA",
+            detected_date="2026-05-06",
+            preset_sources=["Momentum Ignition"],
+            snapshot_at_detection={"close": 100.0, "low": 96.0, "high": 104.0},
+        )
+        transition_signal_pool_entries(
+            conn,
+            signal_name="momentum_acceleration_entry",
+            tickers=["AAA"],
+            to_status=INVALIDATED_POOL_STATUS,
+            changed_date="2026-05-06",
+            reason="close_below_sma50",
+        )
+        second = upsert_signal_pool_entry(
+            conn,
+            signal_name="momentum_acceleration_entry",
+            ticker="AAA",
+            detected_date="2026-05-06",
+            preset_sources=["Momentum Ignition"],
+            snapshot_at_detection={"close": 101.0, "low": 97.0, "high": 105.0},
+        )
+        rows = conn.execute(
+            """
+            SELECT id, pool_status, invalidated_date, invalidated_reason, detection_count, snapshot_at_detection
+            FROM signal_pool_entry
+            WHERE signal_name = ? AND ticker = ?
+            """,
+            ("momentum_acceleration_entry", "AAA"),
+        ).fetchall()
+
+        assert second.action == "updated"
+        assert first.pool_entry_id == second.pool_entry_id
+        assert len(rows) == 1
+        assert rows[0]["pool_status"] == ACTIVE_POOL_STATUS
+        assert rows[0]["invalidated_date"] is None
+        assert rows[0]["invalidated_reason"] is None
+        assert int(rows[0]["detection_count"]) == 1
+        assert json.loads(rows[0]["snapshot_at_detection"]) == {"close": 101.0, "high": 105.0, "low": 97.0}
+    finally:
+        conn.close()
+
+
 def test_signal_pool_entries_can_be_marked_orphaned(tmp_path) -> None:
     conn = connect_tracking_db(root_dir=tmp_path)
     try:

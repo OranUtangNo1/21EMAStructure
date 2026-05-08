@@ -23,6 +23,7 @@
 ## Current Status Matrix
 
 - [status_matrix.md](status_matrix.md)
+- [risk_plan_policy_matrix.md](risk_plan_policy_matrix.md)
 
 ## Active Entry Signals
 

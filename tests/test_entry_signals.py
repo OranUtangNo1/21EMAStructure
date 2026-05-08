@@ -240,6 +240,58 @@ def test_entry_signal_plan_tracks_reject_reason_when_tp1_rr_is_too_low() -> None
     assert "rr_current_below_min" in plan.to_row()["Plan Detail"]
 
 
+def test_orderly_pullback_plan_uses_ema21_fallback_when_pullback_low_is_too_wide() -> None:
+    signal_config = EntrySignalConfig.from_dict(
+        {"definitions": {"orderly_pullback_entry": _definition_payload("Orderly Pullback Entry")}}
+    )
+    definition = signal_config.definition_for("orderly_pullback_entry")
+    pool_entry = SignalPoolEntry(
+        id=1,
+        signal_name="orderly_pullback_entry",
+        ticker="AAA",
+        preset_sources=("Pullback Trigger",),
+        first_detected_date=pd.Timestamp("2026-04-24"),
+        latest_detected_date=pd.Timestamp("2026-04-24"),
+        detection_count=1,
+        pool_status="active",
+        invalidated_date=None,
+        invalidated_reason=None,
+        snapshot_at_detection={"low": 90.0, "rolling_20d_close_high": 112.0},
+        low_since_detection=90.0,
+        high_since_detection=103.0,
+    )
+
+    plan = build_entry_plan(
+        action_bucket=ENTRY_ACTION_ENTRY_READY,
+        entry_ready_bucket=ENTRY_ACTION_ENTRY_READY,
+        watch_setup_bucket=ENTRY_ACTION_WATCH_SETUP,
+        needs_review_bucket=ENTRY_ACTION_NEEDS_REVIEW,
+        definition=definition,
+        pool_entry=pool_entry,
+        current_row=pd.Series(
+            {
+                "close": 101.0,
+                "atr": 4.0,
+                "low": 100.0,
+                "ema21_low": 99.0,
+                "ema21_close": 99.5,
+                "sma50": 95.0,
+                "sma50_slope_10d_pct": 0.12,
+                "dcr_percent": 70.0,
+                "rolling_20d_close_high": 112.0,
+                "high_52w": 120.0,
+            }
+        ),
+        pool_status="active",
+        pool_transition="",
+    )
+
+    assert plan.plan_verdict == "Valid"
+    assert plan.sl_source == "ema21_low"
+    assert float(plan.plan_detail["risk_in_atr"]) <= 1.8
+    assert "sl_too_wide" not in plan.plan_reject_codes
+
+
 def test_entry_signal_runner_builds_pool_and_persists_evaluation(tmp_path) -> None:
     scan_config = ScanConfig.from_dict(
         {
@@ -273,6 +325,7 @@ def test_entry_signal_runner_builds_pool_and_persists_evaluation(tmp_path) -> No
                 "high": [114.0],
                 "low": [97.5],
                 "ema21_close": [99.5],
+                "ema21_low": [98.8],
                 "sma50": [95.0],
                 "rs21": [76.0],
                 "atr": [4.0],
@@ -322,7 +375,12 @@ def test_entry_signal_runner_builds_pool_and_persists_evaluation(tmp_path) -> No
     assert float(result.iloc[0]["TP1"]) > float(result.iloc[0]["Entry Price"])
     assert float(result.iloc[0]["R/R TP1"]) >= 2.0
     assert result.iloc[0]["TP2"] == "Future trailing stop"
-    assert "round-number buffer" in str(result.iloc[0]["SL Safety"])
+    assert float(result.iloc[0]["Stop Price"]) == float(result.iloc[0]["Stop Loss"])
+    assert float(result.iloc[0]["Reward Target"]) == float(result.iloc[0]["TP1"])
+    assert round(float(result.iloc[0]["R/R Ratio"]), 4) == round(float(result.iloc[0]["R/R Current"]), 4)
+    assert result.iloc[0]["SL Source"] == "low_since_detection"
+    assert result.iloc[0]["TP1 Source"] == "snapshot_rolling_20d_close_high"
+    assert "Orderly pullback policy" in str(result.iloc[0]["SL Safety"])
     assert "Ready Now" in str(result.iloc[0]["Plan Note"])
     assert "rr_tp1_below_min" not in str(result.iloc[0]["Plan Reject Codes"])
 
@@ -410,6 +468,7 @@ def test_entry_signal_runner_syncs_same_day_saved_run_idempotently(tmp_path) -> 
                 "high": [103.0],
                 "low": [97.5],
                 "ema21_close": [99.5],
+                "ema21_low": [98.8],
                 "sma50": [95.0],
                 "rs21": [76.0],
                 "atr": [4.0],
@@ -806,6 +865,12 @@ def test_pullback_resumption_runner_scores_50sma_defense_depth_and_rr(tmp_path) 
     assert result.iloc[0]["Display Bucket"] == "Signal Detected"
     assert float(result.iloc[0]["Setup Maturity"]) >= 75.0
     assert float(result.iloc[0]["R/R Ratio"]) >= 2.0
+    assert float(result.iloc[0]["Stop Price"]) == float(result.iloc[0]["Stop Loss"])
+    assert float(result.iloc[0]["Reward Target"]) == float(result.iloc[0]["TP1"])
+    assert round(float(result.iloc[0]["R/R Ratio"]), 4) == round(float(result.iloc[0]["R/R Current"]), 4)
+    assert result.iloc[0]["SL Source"] == "sma50_defense"
+    assert result.iloc[0]["TP1 Source"] == "snapshot_rolling_20d_close_high"
+    assert "Pullback policy" in str(result.iloc[0]["SL Safety"])
 
 
 def test_momentum_acceleration_runner_scores_ignition_event_and_rr(tmp_path) -> None:
@@ -850,6 +915,8 @@ def test_momentum_acceleration_runner_scores_ignition_event_and_rr(tmp_path) -> 
                 "daily_change_pct": [4.5],
                 "dcr_percent": [85.0],
                 "dist_from_52w_high": [-5.0],
+                "rolling_20d_close_high": [108.0],
+                "high_52w": [112.0],
                 "pp_count_window": [3.0],
                 "hit_scans": ["Momentum 97, 4% bullish, VCS 52 High, PP Count"],
             },
@@ -878,6 +945,12 @@ def test_momentum_acceleration_runner_scores_ignition_event_and_rr(tmp_path) -> 
     assert result.iloc[0]["Display Bucket"] == "Signal Detected"
     assert float(result.iloc[0]["R/R Ratio"]) >= 2.0
     assert float(result.iloc[0]["Risk In ATR"]) <= 2.0
+    assert float(result.iloc[0]["Stop Price"]) == float(result.iloc[0]["Stop Loss"])
+    assert float(result.iloc[0]["Reward Target"]) == float(result.iloc[0]["TP1"])
+    assert round(float(result.iloc[0]["R/R Ratio"]), 4) == round(float(result.iloc[0]["R/R Current"]), 4)
+    assert result.iloc[0]["SL Source"] == "acceleration_day_low"
+    assert result.iloc[0]["TP1 Source"] == "rolling_20d_close_high"
+    assert "10-day low" in str(result.iloc[0]["TP2 Plan"])
 
 
 def test_momentum_acceleration_climax_warning_caps_detected_signal(tmp_path) -> None:
@@ -984,6 +1057,8 @@ def test_saved_run_artifacts_preserve_entry_signal_evaluation_fields(tmp_path) -
             "daily_change_pct": [4.5],
             "dcr_percent": [85.0],
             "dist_from_52w_high": [-5.0],
+            "rolling_20d_close_high": [108.0],
+            "high_52w": [112.0],
             "pp_count_window": [3.0],
             "volume_ratio_20d": [1.6],
             "drawdown_from_20d_high_pct": [1.2],
@@ -1045,6 +1120,8 @@ def test_saved_run_artifacts_preserve_entry_signal_evaluation_fields(tmp_path) -
     assert float(result.iloc[0]["RS21"]) == 91.0
     assert float(result.iloc[0]["R/R Ratio"]) >= 2.0
     assert float(result.iloc[0]["Risk In ATR"]) <= 2.0
+    assert float(result.iloc[0]["Stop Price"]) == float(result.iloc[0]["Stop Loss"])
+    assert float(result.iloc[0]["Reward Target"]) == float(result.iloc[0]["TP1"])
 
 
 def test_accumulation_breakout_runner_scores_breakout_and_rr(tmp_path) -> None:
@@ -1128,8 +1205,14 @@ def test_accumulation_breakout_runner_scores_breakout_and_rr(tmp_path) -> None:
     assert result.iloc[0]["Signal"] == "Accumulation Breakout Entry"
     assert result.iloc[0]["Preset Sources"] == "Accumulation Breakout"
     assert result.iloc[0]["Display Bucket"] == "Signal Detected"
-    assert float(result.iloc[0]["R/R Ratio"]) >= 2.0
+    assert float(result.iloc[0]["R/R Ratio"]) >= 1.8
     assert float(result.iloc[0]["Risk In ATR"]) <= 2.0
+    assert float(result.iloc[0]["Stop Price"]) == float(result.iloc[0]["Stop Loss"])
+    assert float(result.iloc[0]["Reward Target"]) == float(result.iloc[0]["TP1"])
+    assert round(float(result.iloc[0]["R/R Ratio"]), 4) == round(float(result.iloc[0]["R/R Current"]), 4)
+    assert result.iloc[0]["SL Source"] == "breakout_support"
+    assert result.iloc[0]["TP1 Source"] == "high_52w"
+    assert "10-day low" in str(result.iloc[0]["TP2 Plan"])
     assert "breakout_event" in str(result.iloc[0]["Timing Detail"])
 
 
@@ -1352,6 +1435,12 @@ def test_early_cycle_recovery_runner_scores_structure_reclaim_and_rr(tmp_path) -
     assert result.iloc[0]["Preset Sources"] == "Early Cycle Recovery"
     assert result.iloc[0]["Display Bucket"] == "Signal Detected"
     assert float(result.iloc[0]["R/R Ratio"]) >= 2.0
+    assert result.iloc[0]["Stop Price"] == result.iloc[0]["Stop Loss"]
+    assert result.iloc[0]["Reward Target"] == result.iloc[0]["TP1"]
+    assert round(float(result.iloc[0]["R/R Ratio"]), 4) == round(float(result.iloc[0]["R/R Current"]), 4)
+    assert result.iloc[0]["SL Source"] == "structure_pivot_hl"
+    assert result.iloc[0]["TP1 Source"] == "rolling_20d_close_high"
+    assert "50%" in str(result.iloc[0]["TP2 Plan"])
     assert "pivot_trigger" in str(result.iloc[0]["Timing Detail"])
 
 
@@ -1475,6 +1564,12 @@ def test_power_gap_pullback_runner_scores_reclaim_and_rr(tmp_path) -> None:
     assert result.iloc[0]["Preset Sources"] == "Power Gap Pullback"
     assert result.iloc[0]["Display Bucket"] == "Signal Detected"
     assert float(result.iloc[0]["R/R Ratio"]) >= 2.0
+    assert result.iloc[0]["Stop Price"] == result.iloc[0]["Stop Loss"]
+    assert result.iloc[0]["Reward Target"] == result.iloc[0]["TP1"]
+    assert round(float(result.iloc[0]["R/R Ratio"]), 4) == round(float(result.iloc[0]["R/R Current"]), 4)
+    assert result.iloc[0]["SL Source"] == "gap_pullback_support"
+    assert result.iloc[0]["TP1 Source"] == "rolling_20d_close_high"
+    assert "21EMA" in str(result.iloc[0]["TP2 Plan"])
     assert "reclaim_trigger" in str(result.iloc[0]["Timing Detail"])
 
 
@@ -1603,6 +1698,7 @@ def _definition_payload(display_name: str) -> dict[str, object]:
             "snapshot_fields": [
                 "close",
                 "ema21_close",
+                "ema21_low",
                 "sma50",
                 "rs21",
                 "atr",
@@ -1611,6 +1707,7 @@ def _definition_payload(display_name: str) -> dict[str, object]:
                 "atr_21ema_zone",
                 "atr_50sma_zone",
                 "rolling_20d_close_high",
+                "high_52w",
                 "high",
             ],
             "pool_tracking": ["low_since_detection", "high_since_detection"],
@@ -1675,13 +1772,13 @@ def _definition_payload(display_name: str) -> dict[str, object]:
             "stop": {
                 "reference": "low_since_detection",
                 "atr_buffer": 0.25,
-                "min_distance_atr": 0.75,
+                "min_distance_atr": 0.40,
                 "structural_penalty": 0.80,
             },
             "reward": {
                 "primary": "snapshot_rolling_20d_close_high",
                 "secondary": "high_52w",
-                "fallback": "measured_move",
+                "fallback": "rr_validation_target",
             },
             "scoring": {
                 "breakpoints": [[0.5, 5], [1.0, 25], [1.5, 50], [2.0, 70], [2.5, 85], [3.0, 95]],
@@ -1721,6 +1818,7 @@ def _pullback_definition_payload() -> dict[str, object]:
                 "atr_21ema_zone",
                 "atr_50sma_zone",
                 "rolling_20d_close_high",
+                "high_52w",
                 "high",
             ],
             "pool_tracking": ["low_since_detection", "high_since_detection"],
@@ -1767,7 +1865,7 @@ def _pullback_definition_payload() -> dict[str, object]:
             "reward": {
                 "primary": "snapshot_rolling_20d_close_high",
                 "secondary": "high_52w",
-                "fallback": "measured_move",
+                "fallback": "rr_validation_target",
             },
             "scoring": {
                 "breakpoints": [[0.5, 5], [1.0, 25], [1.5, 50], [2.0, 70], [2.5, 85], [3.0, 95]],
@@ -1952,9 +2050,9 @@ def _accumulation_breakout_definition_payload() -> dict[str, object]:
                 "structural_penalty": 0.80,
             },
             "reward": {
-                "primary": "rr_2x",
-                "secondary": "high_52w",
-                "fallback": "measured_move",
+                "primary": "high_52w",
+                "secondary": "measured_move",
+                "fallback": "rr_validation_target",
             },
             "scoring": {
                 "breakpoints": [[0.5, 5], [1.0, 25], [1.5, 50], [2.0, 70], [2.5, 85], [3.0, 95]],
@@ -1966,6 +2064,16 @@ def _accumulation_breakout_definition_payload() -> dict[str, object]:
         },
         "display": {
             "thresholds": {"signal_detected": 55, "approaching": 38, "tracking": 0},
+        },
+        "action": {
+            "entry_ready": {
+                "entry_strength_min": 55,
+                "timing_min": 50,
+                "risk_reward_min": 50,
+                "rr_ratio_min": 1.8,
+                "setup_maturity_min": 45,
+            },
+            "watch_setup": {"setup_maturity_min": 50, "risk_reward_min": 35},
         },
     }
 
@@ -2000,6 +2108,7 @@ def _early_cycle_recovery_definition_payload() -> dict[str, object]:
                 "daily_change_pct",
                 "weekly_return_rank",
                 "quarterly_return_rank",
+                "rolling_20d_close_high",
                 "dist_from_52w_low",
                 "dist_from_52w_high",
                 "atr_21ema_zone",
@@ -2052,9 +2161,9 @@ def _early_cycle_recovery_definition_payload() -> dict[str, object]:
                 "structural_penalty": 0.80,
             },
             "reward": {
-                "primary": "rr_2x",
-                "secondary": "rolling_20d_close_high",
-                "fallback": "measured_move",
+                "primary": "rolling_20d_close_high",
+                "secondary": "sma50",
+                "fallback": "rr_validation_target",
             },
             "scoring": {
                 "breakpoints": [[0.5, 5], [1.0, 25], [1.5, 50], [2.0, 70], [2.5, 85], [3.0, 95]],
@@ -2065,6 +2174,16 @@ def _early_cycle_recovery_definition_payload() -> dict[str, object]:
             "floor_gate": {"min_axis_threshold": 18, "capped_strength": 30},
         },
         "display": {"thresholds": {"signal_detected": 52, "approaching": 35, "tracking": 0}},
+        "action": {
+            "entry_ready": {
+                "entry_strength_min": 52,
+                "timing_min": 50,
+                "risk_reward_min": 55,
+                "rr_ratio_min": 2.5,
+                "setup_maturity_min": 45,
+            },
+            "watch_setup": {"setup_maturity_min": 45, "risk_reward_min": 35},
+        },
     }
 
 
@@ -2087,6 +2206,7 @@ def _early_cycle_recovery_watchlist(*, close: float, dcr_percent: float, rs21: f
             "daily_change_pct": [3.0],
             "weekly_return_rank": [78.0],
             "quarterly_return_rank": [72.0],
+            "rolling_20d_close_high": [51.0],
             "dist_from_52w_low": [22.0],
             "dist_from_52w_high": [-35.0],
             "atr_21ema_zone": [0.5],
@@ -2186,8 +2306,8 @@ def _power_gap_pullback_definition_payload() -> dict[str, object]:
             },
             "reward": {
                 "primary": "rolling_20d_close_high",
-                "secondary": "rr_2x",
-                "fallback": "high_52w",
+                "secondary": "high_52w",
+                "fallback": "rr_validation_target",
             },
             "scoring": {
                 "breakpoints": [[0.5, 5], [1.0, 25], [1.5, 50], [2.0, 70], [2.5, 85], [3.0, 95]],
@@ -2198,6 +2318,16 @@ def _power_gap_pullback_definition_payload() -> dict[str, object]:
             "floor_gate": {"min_axis_threshold": 18, "capped_strength": 30},
         },
         "display": {"thresholds": {"signal_detected": 52, "approaching": 35, "tracking": 0}},
+        "action": {
+            "entry_ready": {
+                "entry_strength_min": 52,
+                "timing_min": 50,
+                "risk_reward_min": 50,
+                "rr_ratio_min": 1.5,
+                "setup_maturity_min": 45,
+            },
+            "watch_setup": {"setup_maturity_min": 45, "risk_reward_min": 35},
+        },
     }
 
 

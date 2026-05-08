@@ -6,7 +6,8 @@ import pandas as pd
 
 from src.signals.evaluators.orderly_pullback import AxisResult, calculate_entry_strength
 from src.signals.pool import SignalPoolEntry
-from src.signals.risk_reward import RiskRewardResult, calculate_buffered_stop, calculate_rr_ratio, score_rr
+from src.signals.risk_plan_policy import build_pullback_resumption_risk_plan
+from src.signals.risk_reward import RiskRewardResult, score_rr
 from src.signals.rules import EntrySignalDefinition
 from src.signals.scoring import composite_score, piecewise_linear_score
 
@@ -105,20 +106,20 @@ def evaluate_depth_adaptive_risk_reward(
 ) -> RiskRewardResult:
     entry_price = _to_float(row.get("close"))
     atr = _to_float(row.get("atr"))
-    stop_price, risk_in_atr, stop_adjusted = _depth_adaptive_stop(row, pool_entry, definition)
-    reward_target = _reward_target(row, pool_entry, stop_price)
-    rr_ratio = calculate_rr_ratio(entry_price, stop_price, reward_target)
-    reward_in_atr = None
-    if entry_price is not None and reward_target is not None and atr is not None and atr > 0.0:
-        reward_in_atr = max(0.0, (reward_target - entry_price) / atr)
+    risk_plan = build_pullback_resumption_risk_plan(row, pool_entry, definition)
+    stop_price = _to_float(risk_plan.selected_sl.get("price")) if risk_plan.selected_sl else None
+    reward_target = _to_float(risk_plan.selected_tp1.get("price")) if risk_plan.selected_tp1 else None
+    rr_ratio = risk_plan.rr_current
+    reward_in_atr = risk_plan.reward_in_atr
+    _ = entry_price, atr
     return RiskRewardResult(
-        score=score_rr(rr_ratio, stop_adjusted, definition.risk_reward),
+        score=score_rr(rr_ratio, risk_plan.stop_adjusted, definition.risk_reward),
         stop_price=stop_price,
         reward_target=reward_target,
         rr_ratio=rr_ratio,
-        risk_in_atr=risk_in_atr,
+        risk_in_atr=risk_plan.risk_in_atr,
         reward_in_atr=reward_in_atr,
-        stop_adjusted=stop_adjusted,
+        stop_adjusted=risk_plan.stop_adjusted,
     )
 
 
@@ -187,70 +188,6 @@ def _timing_logic_score(
             return 55.0
         return 20.0
     raise ValueError(f"unsupported pullback resumption timing indicator: {indicator_name}")
-
-
-def _depth_adaptive_stop(
-    row: dict[str, object],
-    pool_entry: SignalPoolEntry,
-    definition: EntrySignalDefinition,
-) -> tuple[float | None, float | None, bool]:
-    entry_price = _to_float(row.get("close"))
-    atr = _to_float(row.get("atr"))
-    if entry_price is None or atr is None or atr <= 0.0:
-        return None, None, False
-
-    source = _primary_source(pool_entry)
-    if source == FIFTY_SMA_DEFENSE_PRESET:
-        reference_price = _to_float(row.get("sma50"))
-        buffer_multiplier = 0.5
-    elif source == RECLAIM_TRIGGER_PRESET:
-        reference_price = pool_entry.low_since_detection
-        buffer_multiplier = 0.5
-    else:
-        reference_price = _to_float(row.get("ema21_close"))
-        buffer_multiplier = 0.75
-    if reference_price is None:
-        reference_price = pool_entry.low_since_detection
-    if reference_price is None:
-        return None, None, False
-
-    stop_result = calculate_buffered_stop(
-        entry_price,
-        atr,
-        reference_price,
-        definition.risk_reward,
-        atr_buffer=buffer_multiplier,
-    )
-    return stop_result.stop_price, stop_result.risk_in_atr, stop_result.stop_adjusted
-
-
-def _reward_target(
-    row: dict[str, object],
-    pool_entry: SignalPoolEntry,
-    stop_price: float | None,
-) -> float | None:
-    entry_price = _to_float(row.get("close"))
-    if entry_price is None:
-        return None
-    candidates = [
-        _to_float(pool_entry.snapshot_at_detection.get("rolling_20d_close_high")),
-        _to_float(row.get("rolling_20d_close_high")),
-        _to_float(row.get("high_52w")),
-        _measured_move_target(entry_price, stop_price),
-    ]
-    for candidate in candidates:
-        if candidate is not None and candidate > entry_price:
-            return candidate
-    return None
-
-
-def _measured_move_target(entry_price: float, stop_price: float | None) -> float | None:
-    if stop_price is None:
-        return None
-    risk = entry_price - stop_price
-    if risk <= 0.0:
-        return None
-    return entry_price + risk * 2.0
 
 
 def _primary_source(pool_entry: SignalPoolEntry) -> str:

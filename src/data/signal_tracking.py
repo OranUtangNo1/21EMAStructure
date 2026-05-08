@@ -76,6 +76,50 @@ def upsert_signal_pool_entry(
         )
         return SignalPoolUpsertResult(pool_entry_id=int(active_row["id"]), action="updated")
 
+    existing_row = conn.execute(
+        """
+        SELECT id, preset_sources, detection_count, latest_detected_date, low_since_detection, high_since_detection
+        FROM signal_pool_entry
+        WHERE signal_name = ? AND ticker = ? AND first_detected_date = ?
+        LIMIT 1
+        """,
+        (normalized_signal_name, normalized_ticker, detected_date_key),
+    ).fetchone()
+    if existing_row is not None:
+        merged_sources = _merge_json_text_lists(existing_row["preset_sources"], serialized_sources)
+        increment = 0 if str(existing_row["latest_detected_date"] or "") == detected_date_key else 1
+        low_at_detection = _to_float((snapshot_at_detection or {}).get("low"))
+        high_at_detection = _to_float((snapshot_at_detection or {}).get("high"))
+        merged_low = _merge_low(existing_row["low_since_detection"], low_at_detection)
+        merged_high = _merge_high(existing_row["high_since_detection"], high_at_detection)
+        conn.execute(
+            """
+            UPDATE signal_pool_entry
+            SET preset_sources = ?,
+                latest_detected_date = ?,
+                detection_count = ?,
+                pool_status = ?,
+                invalidated_date = NULL,
+                invalidated_reason = NULL,
+                snapshot_at_detection = ?,
+                low_since_detection = ?,
+                high_since_detection = ?,
+                updated_at = datetime('now')
+            WHERE id = ?
+            """,
+            (
+                _serialize_json(merged_sources),
+                detected_date_key,
+                int(existing_row["detection_count"] or 0) + increment,
+                ACTIVE_POOL_STATUS,
+                serialized_snapshot,
+                merged_low,
+                merged_high,
+                int(existing_row["id"]),
+            ),
+        )
+        return SignalPoolUpsertResult(pool_entry_id=int(existing_row["id"]), action="updated")
+
     low_at_detection = _to_float((snapshot_at_detection or {}).get("low"))
     high_at_detection = _to_float((snapshot_at_detection or {}).get("high"))
     cur = conn.execute(

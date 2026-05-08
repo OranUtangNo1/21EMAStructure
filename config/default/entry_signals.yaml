@@ -60,6 +60,7 @@ entry_signals:
         snapshot_fields:
         - close
         - ema21_close
+        - ema21_low
         - sma50
         - rs21
         - atr
@@ -68,6 +69,7 @@ entry_signals:
         - atr_21ema_zone
         - atr_50sma_zone
         - rolling_20d_close_high
+        - high_52w
         - high
         pool_tracking:
         - low_since_detection
@@ -176,12 +178,12 @@ entry_signals:
         stop:
           reference: low_since_detection
           atr_buffer: 0.25
-          min_distance_atr: 0.75
+          min_distance_atr: 0.40
           structural_penalty: 0.80
         reward:
           primary: snapshot_rolling_20d_close_high
           secondary: high_52w
-          fallback: measured_move
+          fallback: rr_validation_target
         scoring:
           method: system_default
           breakpoints:
@@ -248,6 +250,7 @@ entry_signals:
         - atr_21ema_zone
         - atr_50sma_zone
         - rolling_20d_close_high
+        - high_52w
         - high
         pool_tracking:
         - low_since_detection
@@ -310,7 +313,7 @@ entry_signals:
         reward:
           primary: snapshot_rolling_20d_close_high
           secondary: high_52w
-          fallback: measured_move
+          fallback: rr_validation_target
         scoring:
           method: system_default
           breakpoints:
@@ -375,6 +378,8 @@ entry_signals:
         - daily_change_pct
         - dcr_percent
         - dist_from_52w_high
+        - rolling_20d_close_high
+        - high_52w
         - pp_count_window
         pool_tracking:
         - low_since_detection
@@ -438,9 +443,9 @@ entry_signals:
           min_distance_atr: 0.25
           structural_penalty: 0.80
         reward:
-          primary: rr_2x
-          secondary: momentum_8pct
-          fallback: measured_move
+          primary: rolling_20d_close_high
+          secondary: high_52w
+          fallback: rr_validation_target
         scoring:
           method: system_default
           breakpoints:
@@ -585,9 +590,9 @@ entry_signals:
           min_distance_atr: 0.50
           structural_penalty: 0.80
         reward:
-          primary: rr_2x
-          secondary: high_52w
-          fallback: measured_move
+          primary: high_52w
+          secondary: measured_move
+          fallback: rr_validation_target
         scoring:
           method: system_default
           breakpoints:
@@ -615,7 +620,7 @@ entry_signals:
           entry_strength_min: 55
           timing_min: 50
           risk_reward_min: 50
-          rr_ratio_min: 2.0
+          rr_ratio_min: 1.8
           setup_maturity_min: 45
         watch_setup:
           setup_maturity_min: 50
@@ -659,6 +664,7 @@ entry_signals:
         - daily_change_pct
         - weekly_return_rank
         - quarterly_return_rank
+        - rolling_20d_close_high
         - dist_from_52w_low
         - dist_from_52w_high
         - atr_21ema_zone
@@ -722,9 +728,9 @@ entry_signals:
           min_distance_atr: 0.50
           structural_penalty: 0.80
         reward:
-          primary: rr_2x
-          secondary: rolling_20d_close_high
-          fallback: measured_move
+          primary: rolling_20d_close_high
+          secondary: sma50
+          fallback: rr_validation_target
         scoring:
           method: system_default
           breakpoints:
@@ -853,8 +859,8 @@ entry_signals:
           structural_penalty: 0.80
         reward:
           primary: rolling_20d_close_high
-          secondary: rr_2x
-          fallback: high_52w
+          secondary: high_52w
+          fallback: rr_validation_target
         scoring:
           method: system_default
           breakpoints:
@@ -882,7 +888,7 @@ entry_signals:
           entry_strength_min: 52
           timing_min: 50
           risk_reward_min: 50
-          rr_ratio_min: 2.0
+          rr_ratio_min: 1.5
           setup_maturity_min: 45
         watch_setup:
           setup_maturity_min: 45

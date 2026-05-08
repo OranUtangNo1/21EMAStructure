@@ -34,6 +34,7 @@ Pool snapshot fields:
 - `daily_change_pct`
 - `weekly_return_rank`
 - `quarterly_return_rank`
+- `rolling_20d_close_high`
 - `dist_from_52w_low`
 - `dist_from_52w_high`
 - `atr_21ema_zone`
@@ -106,11 +107,17 @@ Risk/reward weight in entry strength: `0.30`
 
 Risk/reward behavior:
 - Entry reference: current `close`
-- Stop reference: `structure_pivot_long_hl_price - 0.25 ATR`, falling back to `low_since_detection - 0.25 ATR`
+- Runtime policy owner: `src/signals/risk_plan_policy.py::build_early_cycle_recovery_risk_plan`
+- Stop reference: `structure_pivot_long_hl_price - 0.25 ATR`
+- Stop fallback: `low_since_detection - 0.25 ATR` when the pivot HL is unavailable or wider than `2.25 ATR`; final fallback is detection `low - 0.25 ATR`
 - Minimum stop distance: `0.50 ATR`
-- Primary target: `entry + 2R`
-- Secondary target: `rolling_20d_close_high` when sufficiently above entry
-- R/R score is capped when `risk_in_atr > 2.25`.
+- Maximum practical risk: `2.25 ATR`
+- TP1 priority: `rolling_20d_close_high`
+- TP1 fallback: `sma50`, then `rr_validation_target`
+- Minimum structural TP1 R/R: `1.5R`
+- Entry Ready R/R threshold: `2.5R`
+- TP2 plan: take 50% at TP1; before SMA50 reclaim trail 21EMA close, after SMA50 reclaim trail SMA50 close
+- Evaluator R/R, Entry Plan SL/TP, entry zone, and plan rejection codes use the same policy.
 
 ## Guardrails
 

@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 
 from src.signals.evaluators.orderly_pullback import AxisResult, calculate_entry_strength
 from src.signals.pool import SignalPoolEntry
-from src.signals.risk_reward import RiskRewardResult, calculate_buffered_stop, calculate_rr_ratio, score_rr
+from src.signals.risk_plan_policy import MOMENTUM_MAX_RISK_ATR, build_momentum_acceleration_risk_plan
+from src.signals.risk_reward import RiskRewardResult, score_rr
 from src.signals.rules import EntrySignalDefinition
 from src.signals.scoring import composite_score, piecewise_linear_score
 
@@ -34,8 +35,6 @@ def evaluate_momentum_acceleration(
     setup = evaluate_setup_maturity(current, definition)
     timing = evaluate_timing(current, pool_entry, definition, eval_date=eval_date)
     risk_reward = evaluate_acceleration_day_risk_reward(current, pool_entry, definition)
-    if risk_reward.risk_in_atr is not None and risk_reward.risk_in_atr > 2.0:
-        risk_reward = replace(risk_reward, score=min(risk_reward.score, 35.0))
 
     entry_strength = calculate_entry_strength(
         setup.score,
@@ -102,22 +101,20 @@ def evaluate_acceleration_day_risk_reward(
     pool_entry: SignalPoolEntry,
     definition: EntrySignalDefinition,
 ) -> RiskRewardResult:
-    entry_price = _to_float(row.get("close"))
-    atr = _to_float(row.get("atr"))
-    stop_price, risk_in_atr, stop_adjusted = _acceleration_day_stop(row, pool_entry, definition)
-    reward_target = _structural_target(row, entry_price, stop_price)
-    rr_ratio = calculate_rr_ratio(entry_price, stop_price, reward_target)
-    reward_in_atr = None
-    if entry_price is not None and reward_target is not None and atr is not None and atr > 0.0:
-        reward_in_atr = max(0.0, (reward_target - entry_price) / atr)
+    risk_plan = build_momentum_acceleration_risk_plan(row, pool_entry, definition)
+    stop_price = _candidate_price(risk_plan.selected_sl)
+    reward_target = _candidate_price(risk_plan.selected_tp1)
+    score = score_rr(risk_plan.rr_current, risk_plan.stop_adjusted, definition.risk_reward)
+    if risk_plan.risk_in_atr is not None and risk_plan.risk_in_atr > MOMENTUM_MAX_RISK_ATR:
+        score = min(score, 35.0)
     return RiskRewardResult(
-        score=score_rr(rr_ratio, stop_adjusted, definition.risk_reward),
+        score=score,
         stop_price=stop_price,
         reward_target=reward_target,
-        rr_ratio=rr_ratio,
-        risk_in_atr=risk_in_atr,
-        reward_in_atr=reward_in_atr,
-        stop_adjusted=stop_adjusted,
+        rr_ratio=risk_plan.rr_current,
+        risk_in_atr=risk_plan.risk_in_atr,
+        reward_in_atr=risk_plan.reward_in_atr,
+        stop_adjusted=risk_plan.stop_adjusted,
     )
 
 
@@ -176,54 +173,6 @@ def _follow_through_score(
     return 30.0 if days_in_pool == 2 else 15.0
 
 
-def _acceleration_day_stop(
-    row: dict[str, object],
-    pool_entry: SignalPoolEntry,
-    definition: EntrySignalDefinition,
-) -> tuple[float | None, float | None, bool]:
-    entry_price = _to_float(row.get("close"))
-    atr = _to_float(row.get("atr"))
-    reference_price = _to_float(pool_entry.snapshot_at_detection.get("low"))
-    if reference_price is None:
-        reference_price = pool_entry.low_since_detection
-    if entry_price is None or atr is None or atr <= 0.0 or reference_price is None:
-        return None, None, False
-
-    stop_result = calculate_buffered_stop(entry_price, atr, reference_price, definition.risk_reward)
-    return stop_result.stop_price, stop_result.risk_in_atr, stop_result.stop_adjusted
-
-
-def _rr_2x_target(entry_price: float | None, stop_price: float | None) -> float | None:
-    if entry_price is None or stop_price is None:
-        return None
-    risk = entry_price - stop_price
-    if risk <= 0.0:
-        return None
-    return entry_price + risk * 2.0
-
-
-def _structural_target(
-    row: dict[str, object],
-    entry_price: float | None,
-    stop_price: float | None,
-) -> float | None:
-    if entry_price is None:
-        return None
-    rr_2x = _rr_2x_target(entry_price, stop_price)
-    risk = None if stop_price is None else entry_price - stop_price
-    candidates = [
-        _to_float(row.get("rolling_20d_close_high")),
-        _to_float(row.get("high_52w")),
-        rr_2x,
-    ]
-    for candidate in candidates:
-        if candidate is None or candidate <= entry_price:
-            continue
-        if risk is None or risk <= 0.0 or candidate == rr_2x or (candidate - entry_price) >= risk * 1.5:
-            return candidate
-    return rr_2x if rr_2x is not None else entry_price * 1.08
-
-
 def _has_climax_warning(
     row: dict[str, object],
     pool_entry: SignalPoolEntry,
@@ -252,6 +201,12 @@ def _business_day_distance(left: pd.Timestamp, right: pd.Timestamp) -> int:
 def _hit_scan_set(row: dict[str, object]) -> set[str]:
     raw_value = str(row.get("hit_scans", "") or "")
     return {value.strip() for value in raw_value.split(",") if value.strip()}
+
+
+def _candidate_price(candidate: dict[str, object] | None) -> float | None:
+    if candidate is None:
+        return None
+    return _to_float(candidate.get("price"))
 
 
 def _series_to_dict(row: pd.Series | dict[str, object]) -> dict[str, object]:
