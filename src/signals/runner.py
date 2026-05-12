@@ -12,14 +12,14 @@ from src.dashboard.watchlist import WatchlistViewModelBuilder
 from src.data.signal_tracking import ACTIVE_POOL_STATUS, insert_signal_entry_event, insert_signal_evaluation
 from src.data.tracking_db import connect_tracking_db
 from src.pipeline import PlatformArtifacts
-from src.scan.rules import ScanConfig, WatchlistPresetConfig
+from src.scan.rules import ScanConfig, WatchlistPresetConfig, enrich_with_scan_context
 from src.signals.evaluators.accumulation_breakout import evaluate_accumulation_breakout
 from src.signals.evaluators.early_cycle_recovery import evaluate_early_cycle_recovery
 from src.signals.evaluators.momentum_acceleration import evaluate_momentum_acceleration
 from src.signals.evaluators.orderly_pullback import evaluate_orderly_pullback
 from src.signals.evaluators.power_gap_pullback import evaluate_power_gap_pullback
 from src.signals.evaluators.pullback_resumption import evaluate_pullback_resumption
-from src.signals.entry_plan import build_entry_plan
+from src.signals.entry_plan import RR_COMPARISON_TOLERANCE, build_entry_plan
 from src.signals.pool import (
     INVALIDATED_POOL_STATUS,
     SignalPoolEntry,
@@ -469,15 +469,26 @@ class EntrySignalRunner:
 
     def _build_current_row_lookup(self, artifacts: PlatformArtifacts) -> dict[str, pd.Series]:
         lookup: dict[str, pd.Series] = {}
-        for frame in [artifacts.eligible_snapshot, artifacts.entry_signal_watchlist, artifacts.watchlist]:
+        for frame in [artifacts.entry_signal_watchlist, artifacts.watchlist, artifacts.eligible_snapshot]:
             if frame is None or frame.empty:
                 continue
             working = frame.copy()
+            if (
+                "weekly_return" in working.columns
+                and "quarterly_return" in working.columns
+                and (
+                    "weekly_return_rank" not in working.columns
+                    or "quarterly_return_rank" not in working.columns
+                )
+            ):
+                working = enrich_with_scan_context(working)
             working.index = working.index.astype(str).str.upper()
             for ticker, row in working.iterrows():
                 normalized_ticker = str(ticker).upper()
                 if normalized_ticker not in lookup:
                     lookup[normalized_ticker] = row
+                else:
+                    lookup[normalized_ticker] = lookup[normalized_ticker].combine_first(row)
         return lookup
 
     def _update_active_pool_tracking(
@@ -883,7 +894,7 @@ class EntrySignalRunner:
             and float(timing_score) >= action.entry_ready_timing_min
             and float(risk_reward_score) >= action.entry_ready_risk_reward_min
             and rr_value is not None
-            and rr_value >= action.entry_ready_rr_ratio_min
+            and rr_value + RR_COMPARISON_TOLERANCE >= action.entry_ready_rr_ratio_min
             and float(setup_maturity_score) >= action.entry_ready_setup_maturity_min
             and not guard_reasons
         )
@@ -928,7 +939,7 @@ class EntrySignalRunner:
         rr_value = self._optional_float(rr_ratio)
         if rr_value is None:
             missing.append("R/R unavailable")
-        elif rr_value < action.entry_ready_rr_ratio_min:
+        elif rr_value + RR_COMPARISON_TOLERANCE < action.entry_ready_rr_ratio_min:
             missing.append(f"R/R below {action.entry_ready_rr_ratio_min:g}")
         if float(risk_reward_score) < action.entry_ready_risk_reward_min:
             missing.append("risk/reward score weak")

@@ -85,6 +85,10 @@ def test_market_dashboard_result_contains_expanded_sections() -> None:
     assert "pct_above_sma10" in result.component_scores
     assert "safe_haven_score" in result.component_scores
     assert "pct_above_sma200" in result.breadth_summary
+    assert "pct_positive_1m" in result.participation_summary
+    assert "1D" in result.metric_deltas["pct_above_sma20"]
+    assert "1W" in result.metric_deltas["VIX"]
+    assert "1M" in result.metric_deltas["risk_on:REL 1M %"]
     assert "% 1M" in result.performance_overview
     assert "S2W HIGH %" in result.high_vix_summary
     assert "SAFE HAVEN %" in result.high_vix_summary

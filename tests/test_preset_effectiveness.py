@@ -6,6 +6,8 @@ from types import SimpleNamespace
 
 import pandas as pd
 
+from src.data.signal_tracking import insert_signal_entry_event
+from src.data.tracking_db import connect_tracking_db
 from src.dashboard.effectiveness import refresh_tracking_detection_prices, sync_preset_effectiveness_logs
 from src.pipeline import PlatformArtifacts
 
@@ -357,3 +359,175 @@ def test_sync_preset_effectiveness_logs_updates_twenty_day_tracking_metrics(tmp_
     assert detection["hit_new_high_20d"] == 1
     assert detection["status"] == "closed"
     assert detection["closed_at"] == dates[-1].date().isoformat()
+
+
+def test_refresh_tracking_detection_prices_updates_signal_entry_event_outcome(tmp_path: Path, monkeypatch) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("scan:\n  watchlist_presets: []\n", encoding="utf-8")
+    conn = connect_tracking_db(root_dir=tmp_path)
+    try:
+        insert_signal_entry_event(
+            conn,
+            signal_name="orderly_pullback_entry",
+            ticker="AAA",
+            event_date="2026-04-09",
+            source_evaluation_id=None,
+            plan_type="Ready Now",
+            entry_price=100.0,
+            entry_zone_low=98.0,
+            entry_zone_high=100.0,
+            max_entry_price=100.0,
+            stop_loss=95.0,
+            tp1=110.0,
+            rr_current=2.0,
+            rr_ideal=2.0,
+            plan_verdict="Valid",
+            reject_codes="",
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    dates = pd.bdate_range("2026-04-09", periods=21)
+    close_values = [100.0, 101.0, 111.0, *([112.0] * 17), 115.0]
+    high_values = [100.0, 108.0, 111.0, *([120.0] * 17), 118.0]
+    low_values = [100.0, 96.0, 97.0, *([99.0] * 17), 105.0]
+    history = pd.DataFrame(
+        {
+            "open": close_values,
+            "high": high_values,
+            "low": low_values,
+            "close": close_values,
+            "adjusted_close": close_values,
+            "volume": [1_000_000] * len(dates),
+        },
+        index=dates,
+    )
+    monkeypatch.setattr(
+        "src.dashboard.effectiveness._load_tracking_price_histories",
+        lambda config_path, tickers, *, root_dir=None: {"AAA": history},
+    )
+
+    result = refresh_tracking_detection_prices(
+        str(config_path),
+        root_dir=tmp_path,
+        trade_date=dates[-1].strftime("%Y-%m-%d"),
+    )
+
+    assert result.updated_signal_entry_event_count == 1
+    assert result.filled_signal_event_return_5d_count == 1
+    assert result.filled_signal_event_outcome_count == 1
+
+    conn = sqlite3.connect(tmp_path / "data_runs" / "tracking.db")
+    conn.row_factory = sqlite3.Row
+    try:
+        event = conn.execute(
+            """
+            SELECT
+                return_1d,
+                return_20d,
+                hit_sl,
+                hit_tp1,
+                hit_sl_date,
+                hit_tp1_date,
+                first_outcome,
+                first_outcome_date,
+                days_to_first_outcome,
+                outcome_r,
+                max_gain_20d,
+                max_drawdown_20d
+            FROM signal_entry_event
+            WHERE signal_name = ? AND ticker = ?
+            """,
+            ("orderly_pullback_entry", "AAA"),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert round(float(event["return_1d"]), 4) == 1.0
+    assert round(float(event["return_20d"]), 4) == 15.0
+    assert event["hit_sl"] == 0
+    assert event["hit_tp1"] == 1
+    assert event["hit_sl_date"] is None
+    assert event["hit_tp1_date"] == dates[2].date().isoformat()
+    assert event["first_outcome"] == "tp1"
+    assert event["first_outcome_date"] == dates[2].date().isoformat()
+    assert event["days_to_first_outcome"] == 2
+    assert round(float(event["outcome_r"]), 4) == 1.0
+    assert round(float(event["max_gain_20d"]), 4) == 20.0
+    assert round(float(event["max_drawdown_20d"]), 4) == -4.0
+
+
+def test_signal_entry_event_hit_flags_are_not_closed_before_twenty_day_window(tmp_path: Path, monkeypatch) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("scan:\n  watchlist_presets: []\n", encoding="utf-8")
+    conn = connect_tracking_db(root_dir=tmp_path)
+    try:
+        insert_signal_entry_event(
+            conn,
+            signal_name="orderly_pullback_entry",
+            ticker="AAA",
+            event_date="2026-04-09",
+            source_evaluation_id=None,
+            plan_type="Ready Now",
+            entry_price=100.0,
+            entry_zone_low=98.0,
+            entry_zone_high=100.0,
+            max_entry_price=100.0,
+            stop_loss=95.0,
+            tp1=110.0,
+            rr_current=2.0,
+            rr_ideal=2.0,
+            plan_verdict="Valid",
+            reject_codes="",
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    dates = pd.bdate_range("2026-04-09", periods=3)
+    history = pd.DataFrame(
+        {
+            "open": [100.0, 101.0, 108.0],
+            "high": [100.0, 108.0, 111.0],
+            "low": [100.0, 96.0, 97.0],
+            "close": [100.0, 101.0, 111.0],
+            "adjusted_close": [100.0, 101.0, 111.0],
+            "volume": [1_000_000] * len(dates),
+        },
+        index=dates,
+    )
+    monkeypatch.setattr(
+        "src.dashboard.effectiveness._load_tracking_price_histories",
+        lambda config_path, tickers, *, root_dir=None: {"AAA": history},
+    )
+
+    refresh_tracking_detection_prices(str(config_path), root_dir=tmp_path, trade_date=dates[1].strftime("%Y-%m-%d"))
+    conn = sqlite3.connect(tmp_path / "data_runs" / "tracking.db")
+    conn.row_factory = sqlite3.Row
+    try:
+        interim = conn.execute(
+            "SELECT hit_sl, hit_tp1, first_outcome FROM signal_entry_event WHERE ticker = ?",
+            ("AAA",),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert interim["hit_sl"] is None
+    assert interim["hit_tp1"] is None
+    assert interim["first_outcome"] is None
+
+    refresh_tracking_detection_prices(str(config_path), root_dir=tmp_path, trade_date=dates[2].strftime("%Y-%m-%d"))
+    conn = sqlite3.connect(tmp_path / "data_runs" / "tracking.db")
+    conn.row_factory = sqlite3.Row
+    try:
+        final = conn.execute(
+            "SELECT hit_sl, hit_tp1, first_outcome FROM signal_entry_event WHERE ticker = ?",
+            ("AAA",),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert final["hit_sl"] is None
+    assert final["hit_tp1"] == 1
+    assert final["first_outcome"] == "tp1"

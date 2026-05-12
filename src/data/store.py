@@ -154,6 +154,8 @@ class DataSnapshotStore:
             "label_3m_ago": market_result.label_3m_ago,
             "component_scores": dict(market_result.component_scores),
             "breadth_summary": dict(market_result.breadth_summary),
+            "participation_summary": dict(getattr(market_result, "participation_summary", {})),
+            "metric_deltas": dict(getattr(market_result, "metric_deltas", {})),
             "performance_overview": dict(market_result.performance_overview),
             "high_vix_summary": dict(market_result.high_vix_summary),
             "risk_on_ratio_summary": dict(getattr(market_result, "risk_on_ratio_summary", {})),

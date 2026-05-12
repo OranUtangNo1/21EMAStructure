@@ -25,13 +25,18 @@ class PresetEffectivenessSyncResult:
     new_detection_count: int
     updated_detection_count: int
     closed_detection_count: int
+    signal_entry_event_count: int
+    updated_signal_entry_event_count: int
     scan_hit_count: int
     active_detection_count: int
+    pending_signal_entry_event_count: int
     missing_hit_close_count: int
     missing_close_1d_count: int
     missing_close_5d_count: int
     filled_return_1d_count: int
     filled_return_5d_count: int
+    filled_signal_event_return_5d_count: int
+    filled_signal_event_outcome_count: int
 
 
 @dataclass(slots=True)
@@ -40,12 +45,17 @@ class TrackingPriceRefreshResult:
     detection_count: int
     updated_detection_count: int
     closed_detection_count: int
+    signal_entry_event_count: int
+    updated_signal_entry_event_count: int
     active_detection_count: int
+    pending_signal_entry_event_count: int
     missing_hit_close_count: int
     missing_close_1d_count: int
     missing_close_5d_count: int
     filled_return_1d_count: int
     filled_return_5d_count: int
+    filled_signal_event_return_5d_count: int
+    filled_signal_event_outcome_count: int
 
 
 def sync_preset_effectiveness_logs(
@@ -116,17 +126,23 @@ def sync_preset_effectiveness_logs(
                     )
                     if inserted:
                         new_detection_count += 1
+        price_histories = _load_tracking_price_histories(
+            config_path,
+            [
+                *_tickers_due_for_detection_update(tracking_conn, trade_date),
+                *_tickers_due_for_signal_entry_event_update(tracking_conn, trade_date),
+            ],
+            root_dir=root_dir,
+        )
         updated_detection_count, closed_detection_count = _update_detection_returns(
             tracking_conn,
             trade_date,
-            _load_tracking_price_histories(
-                config_path,
-                _tickers_due_for_detection_update(tracking_conn, trade_date),
-                root_dir=root_dir,
-            ),
+            price_histories,
         )
+        updated_signal_entry_event_count = _update_signal_entry_event_returns(tracking_conn, trade_date, price_histories)
         tracking_conn.commit()
         detection_count = _count_rows(tracking_conn, "detection")
+        signal_entry_event_count = _count_rows(tracking_conn, "signal_entry_event")
         tracking_health = _tracking_health_counts(tracking_conn)
     finally:
         tracking_conn.close()
@@ -137,13 +153,18 @@ def sync_preset_effectiveness_logs(
         new_detection_count=new_detection_count,
         updated_detection_count=updated_detection_count,
         closed_detection_count=closed_detection_count,
+        signal_entry_event_count=signal_entry_event_count,
+        updated_signal_entry_event_count=updated_signal_entry_event_count,
         scan_hit_count=scan_hit_count,
         active_detection_count=tracking_health["active_detection_count"],
+        pending_signal_entry_event_count=tracking_health["pending_signal_entry_event_count"],
         missing_hit_close_count=tracking_health["missing_hit_close_count"],
         missing_close_1d_count=tracking_health["missing_close_1d_count"],
         missing_close_5d_count=tracking_health["missing_close_5d_count"],
         filled_return_1d_count=tracking_health["filled_return_1d_count"],
         filled_return_5d_count=tracking_health["filled_return_5d_count"],
+        filled_signal_event_return_5d_count=tracking_health["filled_signal_event_return_5d_count"],
+        filled_signal_event_outcome_count=tracking_health["filled_signal_event_outcome_count"],
     )
 
 
@@ -157,17 +178,27 @@ def refresh_tracking_detection_prices(
     tracking_conn = connect_tracking_db(root_dir=root_dir) if root_dir is not None else connect_tracking_db()
     tracking_db_path = str(_tracking_db_path(root_dir))
     try:
+        price_histories = _load_tracking_price_histories(
+            config_path,
+            [
+                *_tickers_due_for_detection_update(tracking_conn, current_trade_date),
+                *_tickers_due_for_signal_entry_event_update(tracking_conn, current_trade_date),
+            ],
+            root_dir=root_dir,
+        )
         updated_detection_count, closed_detection_count = _update_detection_returns(
             tracking_conn,
             current_trade_date,
-            _load_tracking_price_histories(
-                config_path,
-                _tickers_due_for_detection_update(tracking_conn, current_trade_date),
-                root_dir=root_dir,
-            ),
+            price_histories,
+        )
+        updated_signal_entry_event_count = _update_signal_entry_event_returns(
+            tracking_conn,
+            current_trade_date,
+            price_histories,
         )
         tracking_conn.commit()
         detection_count = _count_rows(tracking_conn, "detection")
+        signal_entry_event_count = _count_rows(tracking_conn, "signal_entry_event")
         tracking_health = _tracking_health_counts(tracking_conn)
     finally:
         tracking_conn.close()
@@ -176,12 +207,17 @@ def refresh_tracking_detection_prices(
         detection_count=detection_count,
         updated_detection_count=updated_detection_count,
         closed_detection_count=closed_detection_count,
+        signal_entry_event_count=signal_entry_event_count,
+        updated_signal_entry_event_count=updated_signal_entry_event_count,
         active_detection_count=tracking_health["active_detection_count"],
+        pending_signal_entry_event_count=tracking_health["pending_signal_entry_event_count"],
         missing_hit_close_count=tracking_health["missing_hit_close_count"],
         missing_close_1d_count=tracking_health["missing_close_1d_count"],
         missing_close_5d_count=tracking_health["missing_close_5d_count"],
         filled_return_1d_count=tracking_health["filled_return_1d_count"],
         filled_return_5d_count=tracking_health["filled_return_5d_count"],
+        filled_signal_event_return_5d_count=tracking_health["filled_signal_event_return_5d_count"],
+        filled_signal_event_outcome_count=tracking_health["filled_signal_event_outcome_count"],
     )
 
 
@@ -204,7 +240,7 @@ def _count_rows(conn: sqlite3.Connection, table_name: str) -> int:
 
 
 def _tracking_health_counts(conn: sqlite3.Connection) -> dict[str, int]:
-    row = conn.execute(
+    detection_row = conn.execute(
         """
         SELECT
             SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active_detection_count,
@@ -216,13 +252,25 @@ def _tracking_health_counts(conn: sqlite3.Connection) -> dict[str, int]:
         FROM detection
         """
     ).fetchone()
+    signal_row = conn.execute(
+        """
+        SELECT
+            SUM(CASE WHEN return_20d IS NULL THEN 1 ELSE 0 END) AS pending_signal_entry_event_count,
+            SUM(CASE WHEN return_5d IS NOT NULL THEN 1 ELSE 0 END) AS filled_signal_event_return_5d_count,
+            SUM(CASE WHEN first_outcome IS NOT NULL THEN 1 ELSE 0 END) AS filled_signal_event_outcome_count
+        FROM signal_entry_event
+        """
+    ).fetchone()
     return {
-        "active_detection_count": int(row["active_detection_count"] or 0),
-        "missing_hit_close_count": int(row["missing_hit_close_count"] or 0),
-        "missing_close_1d_count": int(row["missing_close_1d_count"] or 0),
-        "missing_close_5d_count": int(row["missing_close_5d_count"] or 0),
-        "filled_return_1d_count": int(row["filled_return_1d_count"] or 0),
-        "filled_return_5d_count": int(row["filled_return_5d_count"] or 0),
+        "active_detection_count": int(detection_row["active_detection_count"] or 0),
+        "pending_signal_entry_event_count": int(signal_row["pending_signal_entry_event_count"] or 0),
+        "missing_hit_close_count": int(detection_row["missing_hit_close_count"] or 0),
+        "missing_close_1d_count": int(detection_row["missing_close_1d_count"] or 0),
+        "missing_close_5d_count": int(detection_row["missing_close_5d_count"] or 0),
+        "filled_return_1d_count": int(detection_row["filled_return_1d_count"] or 0),
+        "filled_return_5d_count": int(detection_row["filled_return_5d_count"] or 0),
+        "filled_signal_event_return_5d_count": int(signal_row["filled_signal_event_return_5d_count"] or 0),
+        "filled_signal_event_outcome_count": int(signal_row["filled_signal_event_outcome_count"] or 0),
     }
 
 
@@ -397,6 +445,53 @@ def _tickers_due_for_detection_update(conn: sqlite3.Connection, trade_date: pd.T
     return list(dict.fromkeys(due_tickers))
 
 
+def _tickers_due_for_signal_entry_event_update(conn: sqlite3.Connection, trade_date: pd.Timestamp) -> list[str]:
+    event_rows = conn.execute(
+        """
+        SELECT
+            ticker,
+            event_date,
+            close_at_1d,
+            close_at_5d,
+            close_at_10d,
+            close_at_20d,
+            return_1d,
+            return_5d,
+            return_10d,
+            return_20d,
+            hit_sl,
+            hit_tp1,
+            first_outcome,
+            max_gain_20d,
+            max_drawdown_20d
+        FROM signal_entry_event
+        """
+    ).fetchall()
+    due_tickers: list[str] = []
+    current_trade_date = pd.Timestamp(trade_date).normalize()
+    for row in event_rows:
+        event_date = pd.to_datetime(row["event_date"], errors="coerce")
+        if pd.isna(event_date):
+            continue
+        normalized_event_date = pd.Timestamp(event_date).normalize()
+        if current_trade_date <= normalized_event_date:
+            continue
+        if row["hit_sl"] is None or row["hit_tp1"] is None or row["first_outcome"] is None:
+            due_tickers.append(str(row["ticker"]).upper())
+            continue
+        for horizon in FORWARD_HORIZONS:
+            if row[f"close_at_{horizon}d"] is not None and row[f"return_{horizon}d"] is not None:
+                continue
+            target_date = (normalized_event_date + BDay(horizon)).normalize()
+            if current_trade_date >= target_date:
+                due_tickers.append(str(row["ticker"]).upper())
+                break
+        target_20d = (normalized_event_date + BDay(20)).normalize()
+        if current_trade_date >= target_20d and (row["max_gain_20d"] is None or row["max_drawdown_20d"] is None):
+            due_tickers.append(str(row["ticker"]).upper())
+    return list(dict.fromkeys(due_tickers))
+
+
 def _update_detection_returns(
     conn: sqlite3.Connection,
     trade_date: pd.Timestamp,
@@ -496,6 +591,260 @@ def _update_detection_returns(
             )
             closed_detection_count += 1
     return updated_detection_count, closed_detection_count
+
+
+def _update_signal_entry_event_returns(
+    conn: sqlite3.Connection,
+    trade_date: pd.Timestamp,
+    price_histories: dict[str, pd.DataFrame],
+) -> int:
+    if not price_histories:
+        return 0
+    event_rows = conn.execute(
+        """
+        SELECT
+            id,
+            event_date,
+            ticker,
+            entry_price,
+            stop_loss,
+            tp1,
+            close_at_1d,
+            close_at_5d,
+            close_at_10d,
+            close_at_20d,
+            return_1d,
+            return_5d,
+            return_10d,
+            return_20d,
+            hit_sl,
+            hit_tp1,
+            hit_sl_date,
+            hit_tp1_date,
+            first_outcome,
+            first_outcome_date,
+            days_to_first_outcome,
+            outcome_r,
+            max_gain_20d,
+            max_drawdown_20d
+        FROM signal_entry_event
+        WHERE return_20d IS NULL
+           OR hit_sl IS NULL
+           OR hit_tp1 IS NULL
+           OR first_outcome IS NULL
+           OR max_gain_20d IS NULL
+           OR max_drawdown_20d IS NULL
+        """
+    ).fetchall()
+    updated_event_count = 0
+    current_trade_date = pd.Timestamp(trade_date).normalize()
+    for row in event_rows:
+        ticker = str(row["ticker"]).upper()
+        history = price_histories.get(ticker, pd.DataFrame())
+        if history.empty:
+            continue
+        entry_price = _to_float(row["entry_price"])
+        if entry_price is None or entry_price == 0:
+            continue
+        event_date = pd.to_datetime(row["event_date"], errors="coerce")
+        if pd.isna(event_date):
+            continue
+        normalized_event_date = pd.Timestamp(event_date).normalize()
+        updates: dict[str, float | int | str | None] = {}
+
+        for horizon in FORWARD_HORIZONS:
+            price_column_name = f"close_at_{horizon}d"
+            return_column_name = f"return_{horizon}d"
+            if row[price_column_name] is not None and row[return_column_name] is not None:
+                continue
+            target_date = (normalized_event_date + BDay(horizon)).normalize()
+            if current_trade_date < target_date:
+                continue
+            close_at_target = _to_float(row[price_column_name])
+            if close_at_target is None:
+                close_at_target = _close_on_or_after(history, target_date)
+            if close_at_target is None:
+                continue
+            if row[price_column_name] is None:
+                updates[price_column_name] = close_at_target
+            if row[return_column_name] is None:
+                updates[return_column_name] = ((close_at_target / entry_price) - 1.0) * 100.0
+
+        outcome_stats = _signal_entry_event_window_stats(
+            history=history,
+            event_date=normalized_event_date,
+            current_trade_date=current_trade_date,
+            entry_price=entry_price,
+            stop_loss=_to_float(row["stop_loss"]),
+            tp1=_to_float(row["tp1"]),
+        )
+        target_20d = (normalized_event_date + BDay(20)).normalize()
+        final_outcome_window = current_trade_date >= target_20d
+        for column_name in ("hit_sl", "hit_tp1"):
+            candidate_hit = outcome_stats.get(column_name)
+            existing_hit = _to_int(row[column_name])
+            if candidate_hit is None:
+                continue
+            if int(candidate_hit) == 1 and existing_hit != 1:
+                updates[column_name] = 1
+            elif final_outcome_window and row[column_name] is None:
+                updates[column_name] = int(candidate_hit)
+        for column_name in (
+            "hit_sl_date",
+            "hit_tp1_date",
+            "first_outcome",
+            "first_outcome_date",
+            "days_to_first_outcome",
+            "outcome_r",
+        ):
+            if row[column_name] is None and outcome_stats.get(column_name) is not None:
+                updates[column_name] = outcome_stats[column_name]
+
+        if current_trade_date >= target_20d:
+            if row["max_gain_20d"] is None and outcome_stats.get("max_gain_20d") is not None:
+                updates["max_gain_20d"] = outcome_stats["max_gain_20d"]
+            if row["max_drawdown_20d"] is None and outcome_stats.get("max_drawdown_20d") is not None:
+                updates["max_drawdown_20d"] = outcome_stats["max_drawdown_20d"]
+            if row["first_outcome"] is None and outcome_stats.get("first_outcome") is None:
+                close_at_20d = updates.get("close_at_20d", row["close_at_20d"])
+                result_r = _result_r(_to_float(close_at_20d), entry_price, _to_float(row["stop_loss"]))
+                if close_at_20d is not None:
+                    updates["first_outcome"] = "time_20d"
+                    updates["first_outcome_date"] = target_20d.date().isoformat()
+                    updates["days_to_first_outcome"] = 20
+                    updates["outcome_r"] = result_r
+
+        if not updates:
+            continue
+        assignments = ", ".join(f"{column_name} = ?" for column_name in updates)
+        values = [*updates.values(), int(row["id"])]
+        conn.execute(f"UPDATE signal_entry_event SET {assignments} WHERE id = ?", values)
+        updated_event_count += 1
+    return updated_event_count
+
+
+def _signal_entry_event_window_stats(
+    *,
+    history: pd.DataFrame,
+    event_date: pd.Timestamp,
+    current_trade_date: pd.Timestamp,
+    entry_price: float,
+    stop_loss: float | None,
+    tp1: float | None,
+) -> dict[str, float | int | str | None]:
+    working = _normalized_price_history(history)
+    if working.empty:
+        return {
+            "hit_sl": None,
+            "hit_tp1": None,
+            "hit_sl_date": None,
+            "hit_tp1_date": None,
+            "first_outcome": None,
+            "first_outcome_date": None,
+            "days_to_first_outcome": None,
+            "outcome_r": None,
+            "max_gain_20d": None,
+            "max_drawdown_20d": None,
+        }
+    end_date = min(current_trade_date.normalize(), (event_date + BDay(20)).normalize())
+    window = working.loc[(working.index.normalize() > event_date.normalize()) & (working.index.normalize() <= end_date)].copy()
+    if window.empty:
+        return {
+            "hit_sl": None,
+            "hit_tp1": None,
+            "hit_sl_date": None,
+            "hit_tp1_date": None,
+            "first_outcome": None,
+            "first_outcome_date": None,
+            "days_to_first_outcome": None,
+            "outcome_r": None,
+            "max_gain_20d": None,
+            "max_drawdown_20d": None,
+        }
+
+    high_column = "high" if "high" in window.columns else "close" if "close" in window.columns else None
+    low_column = "low" if "low" in window.columns else "close" if "close" in window.columns else None
+    if high_column is None or low_column is None:
+        return {
+            "hit_sl": None,
+            "hit_tp1": None,
+            "hit_sl_date": None,
+            "hit_tp1_date": None,
+            "first_outcome": None,
+            "first_outcome_date": None,
+            "days_to_first_outcome": None,
+            "outcome_r": None,
+            "max_gain_20d": None,
+            "max_drawdown_20d": None,
+        }
+
+    low_values = pd.to_numeric(window[low_column], errors="coerce")
+    high_values = pd.to_numeric(window[high_column], errors="coerce")
+    hit_sl_mask = low_values <= stop_loss if stop_loss is not None else pd.Series(False, index=window.index)
+    hit_tp1_mask = high_values >= tp1 if tp1 is not None else pd.Series(False, index=window.index)
+    hit_sl_date = _first_mask_date(hit_sl_mask)
+    hit_tp1_date = _first_mask_date(hit_tp1_mask)
+    first_outcome, first_outcome_date, outcome_r = _first_signal_outcome(
+        hit_sl_date=hit_sl_date,
+        hit_tp1_date=hit_tp1_date,
+    )
+    days_to_first_outcome = (
+        _business_days_between(event_date, first_outcome_date) if first_outcome_date is not None else None
+    )
+    max_high = _to_float(window[high_column].max())
+    min_low = _to_float(window[low_column].min())
+    return {
+        "hit_sl": int(hit_sl_date is not None) if stop_loss is not None else None,
+        "hit_tp1": int(hit_tp1_date is not None) if tp1 is not None else None,
+        "hit_sl_date": hit_sl_date.date().isoformat() if hit_sl_date is not None else None,
+        "hit_tp1_date": hit_tp1_date.date().isoformat() if hit_tp1_date is not None else None,
+        "first_outcome": first_outcome,
+        "first_outcome_date": first_outcome_date.date().isoformat() if first_outcome_date is not None else None,
+        "days_to_first_outcome": days_to_first_outcome,
+        "outcome_r": outcome_r,
+        "max_gain_20d": ((max_high / entry_price) - 1.0) * 100.0 if max_high is not None else None,
+        "max_drawdown_20d": ((min_low / entry_price) - 1.0) * 100.0 if min_low is not None else None,
+    }
+
+
+def _first_mask_date(mask: pd.Series) -> pd.Timestamp | None:
+    matches = mask.loc[mask.fillna(False)]
+    if matches.empty:
+        return None
+    return pd.Timestamp(matches.index[0]).normalize()
+
+
+def _first_signal_outcome(
+    *,
+    hit_sl_date: pd.Timestamp | None,
+    hit_tp1_date: pd.Timestamp | None,
+) -> tuple[str | None, pd.Timestamp | None, float | None]:
+    if hit_sl_date is None and hit_tp1_date is None:
+        return None, None, None
+    if hit_sl_date is not None and hit_tp1_date is not None:
+        if hit_sl_date == hit_tp1_date:
+            return "ambiguous_same_day", hit_sl_date, -1.0
+        if hit_sl_date < hit_tp1_date:
+            return "sl", hit_sl_date, -1.0
+        return "tp1", hit_tp1_date, 1.0
+    if hit_sl_date is not None:
+        return "sl", hit_sl_date, -1.0
+    return "tp1", hit_tp1_date, 1.0
+
+
+def _result_r(close_price: float | None, entry_price: float, stop_loss: float | None) -> float | None:
+    if close_price is None or stop_loss is None:
+        return None
+    risk = entry_price - stop_loss
+    if risk <= 0:
+        return None
+    return (close_price - entry_price) / risk
+
+
+def _business_days_between(start_date: pd.Timestamp, end_date: pd.Timestamp) -> int:
+    if end_date.normalize() <= start_date.normalize():
+        return 0
+    return max(0, len(pd.bdate_range(start_date.normalize(), end_date.normalize())) - 1)
 
 
 def _close_on_or_after(history: pd.DataFrame, target_date: pd.Timestamp) -> float | None:

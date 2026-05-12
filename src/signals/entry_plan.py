@@ -21,6 +21,7 @@ from src.signals.rules import EntrySignalDefinition
 
 TP2_TRAILING_PLACEHOLDER = "Future trailing stop"
 DEFAULT_PULLBACK_DISTANCE_LIMIT_PCT = 7.5
+RR_COMPARISON_TOLERANCE = 1e-6
 
 
 @dataclass(frozen=True, slots=True)
@@ -593,7 +594,7 @@ def _classify_plan_type(
 ) -> tuple[str, list[str]]:
     if structural_reject_codes:
         return "Invalid", []
-    if current_rr is not None and current_rr >= min_rr:
+    if current_rr is not None and current_rr + RR_COMPARISON_TOLERANCE >= min_rr:
         if action_bucket == entry_ready_bucket:
             return "Ready Now", []
         if action_bucket in {watch_setup_bucket, needs_review_bucket}:
@@ -602,7 +603,7 @@ def _classify_plan_type(
         max_entry_price is not None
         and entry_zone_high is not None
         and ideal_rr is not None
-        and ideal_rr >= min_rr
+        and ideal_rr + RR_COMPARISON_TOLERANCE >= min_rr
     ):
         distance = 0.0 if distance_to_entry_zone_pct is None else float(distance_to_entry_zone_pct)
         if distance <= DEFAULT_PULLBACK_DISTANCE_LIMIT_PCT:

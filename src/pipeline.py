@@ -414,6 +414,8 @@ class ResearchPlatform:
             label_3m_ago=self._optional_str(metadata.get("label_3m_ago")),
             component_scores=self._float_mapping(metadata.get("component_scores")),
             breadth_summary=self._float_mapping(metadata.get("breadth_summary")),
+            participation_summary=self._float_mapping(metadata.get("participation_summary")),
+            metric_deltas=self._nested_float_mapping(metadata.get("metric_deltas")),
             performance_overview=self._float_mapping(metadata.get("performance_overview")),
             high_vix_summary=self._float_mapping(metadata.get("high_vix_summary")),
             risk_on_ratio_summary=self._float_mapping(metadata.get("risk_on_ratio_summary")),
@@ -460,6 +462,16 @@ class ResearchPlatform:
             if value is None:
                 continue
             result[str(key)] = float(value)
+        return result
+
+    def _nested_float_mapping(self, payload: object) -> dict[str, dict[str, float]]:
+        if not isinstance(payload, dict):
+            return {}
+        result: dict[str, dict[str, float]] = {}
+        for key, nested in payload.items():
+            mapped = self._float_mapping(nested)
+            if mapped:
+                result[str(key)] = mapped
         return result
 
     def _frame_from_records(self, payload: object) -> pd.DataFrame:

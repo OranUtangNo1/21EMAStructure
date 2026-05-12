@@ -270,7 +270,7 @@ Current public functions:
 
 Preset-effectiveness writes normalize market labels into the Analysis buckets `bull`, `neutral`, `weak`, and `bear` before inserting `detection.market_env`.
 
-EntrySignal evaluation writes persist the Entry Plan fields in `signal_evaluation` so rejected or downgraded entries can be audited later by plan verdict, plan type, reject code, SL quality, entry-zone, and TP1/RR details. When an evaluation is `Ready Now` and valid, `signal_entry_event` records a distinct entry event keyed by `signal_name x ticker x event_date` for later forward-return, SL-hit, and TP1-hit analysis.
+EntrySignal evaluation writes persist the Entry Plan fields in `signal_evaluation` so rejected or downgraded entries can be audited later by plan verdict, plan type, reject code, SL quality, entry-zone, and TP1/RR details. When an evaluation is `Ready Now` and valid, `signal_entry_event` records a distinct entry event keyed by `signal_name x ticker x event_date`. The tracking refresh path updates those events with fixed horizon returns, TP1/SL hit flags, first outcome, first outcome date, days to outcome, result R, and 20D maximum gain/drawdown.
 
 Current read functions in `src/data/tracking_repository.py`:
 
@@ -365,6 +365,8 @@ The active pipeline bundle includes:
 - label history fields
 - `component_scores`
 - `breadth_summary`
+- `participation_summary`
+- `metric_deltas`
 - `performance_overview`
 - `high_vix_summary`
 - `risk_on_ratio_summary`
@@ -396,8 +398,10 @@ The active pipeline bundle includes:
 - `new_detection_count`
 - `updated_detection_count`
 - `closed_detection_count`
+- `signal_entry_event_count`
+- `updated_signal_entry_event_count`
 - `scan_hit_count`
-- tracking-health counts for active detections and missing/filled 1D and 5D prices
+- tracking-health counts for active detections, pending signal entry outcomes, missing/filled preset prices, and filled signal-entry outcomes
 
 `TrackingPriceRefreshResult` records the same refresh-oriented fields without `new_detection_count` or `scan_hit_count`.
 

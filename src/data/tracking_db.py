@@ -68,6 +68,38 @@ SIGNAL_EVALUATION_COLUMN_MIGRATIONS = {
     "plan_note": "TEXT",
     "plan_detail": "TEXT",
 }
+SIGNAL_ENTRY_EVENT_COLUMN_MIGRATIONS = {
+    "source_evaluation_id": "INTEGER",
+    "plan_type": "TEXT",
+    "entry_price": "REAL",
+    "entry_zone_low": "REAL",
+    "entry_zone_high": "REAL",
+    "max_entry_price": "REAL",
+    "stop_loss": "REAL",
+    "tp1": "REAL",
+    "rr_current": "REAL",
+    "rr_ideal": "REAL",
+    "plan_verdict": "TEXT",
+    "reject_codes": "TEXT",
+    "close_at_1d": "REAL",
+    "close_at_5d": "REAL",
+    "close_at_10d": "REAL",
+    "close_at_20d": "REAL",
+    "return_1d": "REAL",
+    "return_5d": "REAL",
+    "return_10d": "REAL",
+    "return_20d": "REAL",
+    "hit_sl": "INTEGER",
+    "hit_tp1": "INTEGER",
+    "hit_sl_date": "TEXT",
+    "hit_tp1_date": "TEXT",
+    "first_outcome": "TEXT",
+    "first_outcome_date": "TEXT",
+    "days_to_first_outcome": "INTEGER",
+    "outcome_r": "REAL",
+    "max_gain_20d": "REAL",
+    "max_drawdown_20d": "REAL",
+}
 
 
 def resolve_tracking_db_path(
@@ -115,6 +147,7 @@ def _ensure_tracking_columns(conn: sqlite3.Connection) -> None:
     _ensure_table_columns(conn, "detection", DETECTION_COLUMN_MIGRATIONS)
     _ensure_table_columns(conn, "signal_pool_entry", SIGNAL_POOL_ENTRY_COLUMN_MIGRATIONS)
     _ensure_table_columns(conn, "signal_evaluation", SIGNAL_EVALUATION_COLUMN_MIGRATIONS)
+    _ensure_table_columns(conn, "signal_entry_event", SIGNAL_ENTRY_EVENT_COLUMN_MIGRATIONS)
     _deduplicate_signal_evaluations(conn)
     conn.execute(
         """

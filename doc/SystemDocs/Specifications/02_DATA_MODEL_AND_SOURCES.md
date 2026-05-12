@@ -266,7 +266,7 @@ Core tables:
 - `scan_hits`: date-level scan-hit history used by saved-run restore and watchlist reconstruction
 - `signal_pool_entry`: active and historical EntrySignal pool entries derived from preset duplicates
 - `signal_evaluation`: daily EntrySignal evaluation rows, including score components, stop/target metrics, and the mechanical Entry Plan fields used to explain inclusion or exclusion
-- `signal_entry_event`: distinct valid `Ready Now` EntrySignal events used as the base for later forward-return, SL-hit, and TP1-hit analysis
+- `signal_entry_event`: distinct valid `Ready Now` EntrySignal events with forward returns, TP1/SL hits, first outcome, result R, and 20D excursion fields
 
 Forward tracking fields are stored directly on `detection`:
 
@@ -277,6 +277,8 @@ Forward tracking fields are stored directly on `detection`:
 `detection.market_env` stores the normalized analysis buckets `bull`, `neutral`, `weak`, or `bear`. Source labels such as `Bullish`, `Positive`, `Negative`, and `Bearish` are normalized before insertion so Analysis filters do not drop current market records.
 
 EntrySignal tracking persists the user-facing Entry Plan fields needed for later review: `plan_status`, `plan_type`, `entry_type`, `entry_price`, `current_price`, `entry_zone_low`, `entry_zone_high`, `max_entry_price`, `distance_to_entry_zone_pct`, `stop_loss`, `tp1`, `tp2`, `rr_tp1`, `rr_current`, `rr_ideal`, `tp2_plan`, `trigger_condition`, `plan_verdict`, `plan_reject_codes`, `plan_reject_reason`, `sl_quality`, `sl_source`, `sl_basis`, `sl_safety`, `tp1_source`, `plan_invalidation`, `plan_note`, and `plan_detail`.
+
+Ready `signal_entry_event` rows are refreshed from future OHLC bars after `event_date`. The outcome fields include `close_at_1d`, `close_at_5d`, `close_at_10d`, `close_at_20d`, `return_1d`, `return_5d`, `return_10d`, `return_20d`, `hit_sl`, `hit_tp1`, `hit_sl_date`, `hit_tp1_date`, `first_outcome`, `first_outcome_date`, `days_to_first_outcome`, `outcome_r`, `max_gain_20d`, and `max_drawdown_20d`.
 
 Analysis views:
 

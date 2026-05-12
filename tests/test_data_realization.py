@@ -138,6 +138,8 @@ def _sample_market_result(trade_date: pd.Timestamp) -> MarketConditionResult:
         label_3m_ago="Neutral",
         component_scores={"pct_above_sma10": 75.0, "vix_score": 50.0},
         breadth_summary={"pct_above_sma10": 75.0},
+        participation_summary={"pct_positive_1w": 80.0},
+        metric_deltas={"pct_above_sma10": {"1D": 5.0}},
         performance_overview={"% YTD": 12.3},
         high_vix_summary={"S2W HIGH %": 8.0, "VIX": 17.5},
         risk_on_ratio_summary={"REL 1M %": 1.5, "REL 3M %": 3.0, "HIGH DIST %": 0.0, "ABOVE MA COUNT": 3.0, "MA COUNT": 3.0},

@@ -223,11 +223,13 @@ div[data-testid="stDataFrame"], div[data-testid="stExpander"] { background:rgba(
 .oratek-market-mini-score.neutral { background:rgba(127,140,166,.14); color:#7f8ca6; }
 .oratek-market-metric-grid { display:grid; gap:.75rem; }
 .oratek-market-metric-grid.cols-6 { grid-template-columns:repeat(6, minmax(0,1fr)); }
+.oratek-market-metric-grid.cols-5 { grid-template-columns:repeat(5, minmax(0,1fr)); }
 .oratek-market-metric-grid.cols-4 { grid-template-columns:repeat(4, minmax(0,1fr)); }
 .oratek-market-metric-grid.cols-2 { grid-template-columns:repeat(2, minmax(0,1fr)); }
-.oratek-market-metric-card { background:#fbfcff; border:1px solid #e6edf9; border-radius:18px; padding:.78rem .6rem; text-align:center; min-height:112px; display:flex; flex-direction:column; justify-content:space-between; }
+.oratek-market-metric-card { background:#fbfcff; border:1px solid #e6edf9; border-radius:18px; padding:.78rem .6rem; text-align:center; min-height:128px; display:flex; flex-direction:column; justify-content:space-between; }
 .oratek-market-metric-name { color:var(--muted); font-size:.74rem; font-weight:800; text-transform:uppercase; letter-spacing:.05em; }
-.oratek-market-metric-value { color:var(--text); font-size:1.06rem; font-weight:800; margin:.45rem 0 .55rem; }
+.oratek-market-metric-value { color:var(--text); font-size:1.06rem; font-weight:800; margin:.35rem 0 .2rem; }
+.oratek-market-metric-delta { color:#7f8ca6; font-size:.68rem; font-weight:800; line-height:1.25; min-height:2.4em; }
 .oratek-market-pill { display:inline-flex; align-items:center; justify-content:center; border-radius:999px; padding:.34rem .65rem; font-size:.74rem; font-weight:800; }
 .oratek-market-pill.positive { background:rgba(33,164,111,.14); color:#21a46f; }
 .oratek-market-pill.negative { background:rgba(223,91,91,.14); color:#df5b5b; }
@@ -250,7 +252,7 @@ div[data-testid="stDataFrame"], div[data-testid="stExpander"] { background:rgba(
 .oratek-market-factor-head { display:flex; justify-content:space-between; gap:.5rem; align-items:baseline; margin-bottom:.55rem; }
 .oratek-market-factor-name { color:var(--text); font-size:.92rem; font-weight:800; }
 .oratek-market-factor-ticker { color:var(--muted); font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; }
-.oratek-market-factor-metrics { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:.65rem; }
+.oratek-market-factor-metrics { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:.65rem; }
 .oratek-market-factor-metric-head { display:flex; justify-content:space-between; gap:.4rem; align-items:center; font-size:.73rem; font-weight:800; margin-bottom:.28rem; }
 .oratek-market-factor-period { color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
 .oratek-market-factor-value { font-weight:800; }
@@ -259,7 +261,7 @@ div[data-testid="stDataFrame"], div[data-testid="stExpander"] { background:rgba(
 .oratek-market-factor-fill.positive { background:linear-gradient(90deg, #39cf9a 0%, #17b07d 100%); }
 .oratek-market-factor-fill.negative { background:linear-gradient(90deg, #ff8a7a 0%, #ef4d53 100%); }
 .oratek-market-factor-fill.neutral { background:linear-gradient(90deg, #aeb9ca 0%, #8a97b0 100%); }
-@media (max-width:768px) { .oratek-page-meta, .oratek-page-submeta { text-align:left; padding-top:.15rem; } .oratek-ticker-grid { grid-template-columns:repeat(3, minmax(0,1fr)); } .oratek-priority-grid { grid-template-columns:repeat(4, minmax(0,1fr)); } .oratek-mover-row { grid-template-columns:1fr; } .oratek-mover-side { text-align:left; } .oratek-market-gauge { width:180px; height:96px; } .oratek-market-metric-grid.cols-6, .oratek-market-metric-grid.cols-4 { grid-template-columns:repeat(2, minmax(0,1fr)); } .oratek-market-metric-grid.cols-2, .oratek-market-factor-metrics { grid-template-columns:repeat(2, minmax(0,1fr)); } .oratek-market-snapshot-grid { grid-template-columns:1fr; } .oratek-market-snapshot-price-row { align-items:flex-start; flex-direction:column; } }
+@media (max-width:768px) { .oratek-page-meta, .oratek-page-submeta { text-align:left; padding-top:.15rem; } .oratek-ticker-grid { grid-template-columns:repeat(3, minmax(0,1fr)); } .oratek-priority-grid { grid-template-columns:repeat(4, minmax(0,1fr)); } .oratek-mover-row { grid-template-columns:1fr; } .oratek-mover-side { text-align:left; } .oratek-market-gauge { width:180px; height:96px; } .oratek-market-metric-grid.cols-6, .oratek-market-metric-grid.cols-5, .oratek-market-metric-grid.cols-4 { grid-template-columns:repeat(2, minmax(0,1fr)); } .oratek-market-metric-grid.cols-2, .oratek-market-factor-metrics { grid-template-columns:repeat(2, minmax(0,1fr)); } .oratek-market-snapshot-grid { grid-template-columns:1fr; } .oratek-market-snapshot-price-row { align-items:flex-start; flex-direction:column; } }
 </style>
 """
 
@@ -2451,19 +2453,22 @@ def render_market_history_stack(result) -> None:
     st.markdown("<div class='oratek-market-timeline-stack'>" + "".join(cards) + "</div>", unsafe_allow_html=True)
 
 
-def render_market_metric_panel(title: str, items: list[tuple[str, str, str, str]], columns: int, empty_text: str) -> None:
+def render_market_metric_panel(title: str, items: list[tuple[str, ...]], columns: int, empty_text: str) -> None:
     if not items:
         st.markdown(
             f"<div class='oratek-market-panel'><div class='oratek-market-panel-title centered'>{html.escape(title)}</div><div class='oratek-empty-state'>{html.escape(empty_text)}</div></div>",
             unsafe_allow_html=True,
         )
         return
-    cards = "".join(
-        f"<div class='oratek-market-metric-card'><div class='oratek-market-metric-name'>{html.escape(name)}</div><div class='oratek-market-metric-value'>{html.escape(value)}</div><div class='oratek-market-pill {tone}'>{html.escape(status)}</div></div>"
-        for name, value, status, tone in items
-    )
+    cards: list[str] = []
+    for item in items:
+        name, value, status, tone, *rest = item
+        delta = rest[0] if rest else ""
+        cards.append(
+            f"<div class='oratek-market-metric-card'><div class='oratek-market-metric-name'>{html.escape(name)}</div><div class='oratek-market-metric-value'>{html.escape(value)}</div><div class='oratek-market-metric-delta'>{html.escape(delta)}</div><div class='oratek-market-pill {tone}'>{html.escape(status)}</div></div>"
+        )
     st.markdown(
-        f"<div class='oratek-market-panel'><div class='oratek-market-panel-title centered'>{html.escape(title)}</div><div class='oratek-market-metric-grid cols-{columns}'>{cards}</div></div>",
+        f"<div class='oratek-market-panel'><div class='oratek-market-panel-title centered'>{html.escape(title)}</div><div class='oratek-market-metric-grid cols-{columns}'>{''.join(cards)}</div></div>",
         unsafe_allow_html=True,
     )
 
@@ -2493,7 +2498,19 @@ def _risk_ratio_ma_label(above_count: float | None, total_count: float | None) -
     return "Neutral"
 
 
-def _market_metric_items(result) -> tuple[list[tuple[str, str, str, str]], list[tuple[str, str, str, str]], list[tuple[str, str, str, str]], list[tuple[str, str, str, str]]]:
+def _metric_delta_text(result, key: str, decimals: int = 1, unit: str = "pp") -> str:
+    deltas = getattr(result, "metric_deltas", {}) or {}
+    values = deltas.get(key, {})
+    parts = []
+    for period in ("1D", "1W", "1M"):
+        value = values.get(period)
+        if value is None or pd.isna(value):
+            continue
+        parts.append(f"{period} {float(value):+.{decimals}f}{unit}")
+    return "Δ " + " / ".join(parts) if parts else ""
+
+
+def _market_metric_items(result) -> tuple[list[tuple[str, ...]], list[tuple[str, ...]], list[tuple[str, ...]], list[tuple[str, ...]], list[tuple[str, ...]]]:
     breadth_keys = (
         ("pct_above_sma10", "SMA 10"),
         ("pct_above_sma20", "SMA 20"),
@@ -2506,7 +2523,21 @@ def _market_metric_items(result) -> tuple[list[tuple[str, str, str, str]], list[
     for key, label in breadth_keys:
         value = result.breadth_summary.get(key)
         status = _breadth_label(float(value)) if value is not None and not pd.isna(value) else "Neutral"
-        breadth_items.append((label, _format_market_percent(value, signed=False, decimals=2), status, _tone_class(status)))
+        breadth_items.append((label, _format_market_percent(value, signed=False, decimals=2), status, _tone_class(status), _metric_delta_text(result, key)))
+
+    participation_keys = (
+        ("pct_positive_1w", "Pos 1W"),
+        ("pct_positive_1m", "Pos 1M"),
+        ("pct_positive_3m", "Pos 3M"),
+        ("pct_positive_1y", "Pos 1Y"),
+        ("pct_positive_ytd", "Pos YTD"),
+    )
+    participation_items = []
+    participation_summary = getattr(result, "participation_summary", {}) or {}
+    for key, label in participation_keys:
+        value = participation_summary.get(key)
+        status = _breadth_label(float(value)) if value is not None and not pd.isna(value) else "Neutral"
+        participation_items.append((label, _format_market_percent(value, signed=False, decimals=2), status, _tone_class(status), _metric_delta_text(result, key)))
 
     performance_keys = ("% YTD", "% 1W", "% 1M", "% 1Y")
     performance_items = []
@@ -2522,9 +2553,9 @@ def _market_metric_items(result) -> tuple[list[tuple[str, str, str, str]], list[
     safe_haven_value = result.high_vix_summary.get("SAFE HAVEN %")
     safe_haven_status = _safe_haven_label_from_score(result.component_scores.get("safe_haven_score"))
     high_vix_items = [
-        ("S2W High", _format_market_percent(high_value, signed=False, decimals=2), high_status, _tone_class(high_status)),
-        ("VIX", _format_market_number(vix_value, 2), vix_status, _tone_class(vix_status)),
-        ("Safe Haven", _format_market_percent(safe_haven_value, signed=True, decimals=2), safe_haven_status, _tone_class(safe_haven_status)),
+        ("S2W High", _format_market_percent(high_value, signed=False, decimals=2), high_status, _tone_class(high_status), _metric_delta_text(result, "pct_2w_high")),
+        ("VIX", _format_market_number(vix_value, 2), vix_status, _tone_class(vix_status), _metric_delta_text(result, "VIX", decimals=2, unit="pt")),
+        ("Safe Haven", _format_market_percent(safe_haven_value, signed=True, decimals=2), safe_haven_status, _tone_class(safe_haven_status), _metric_delta_text(result, "SAFE HAVEN %")),
     ]
 
     ratio_summary = getattr(result, "risk_on_ratio_summary", {}) or {}
@@ -2541,12 +2572,12 @@ def _market_metric_items(result) -> tuple[list[tuple[str, str, str, str]], list[
     if above_ma_count is not None and ma_count is not None and not pd.isna(above_ma_count) and not pd.isna(ma_count):
         ma_value = f"{int(above_ma_count)}/{int(ma_count)}"
     risk_on_ratio_items = [
-        ("1M", _format_market_percent(ratio_1m, signed=True, decimals=2), ratio_1m_status, _tone_class(ratio_1m_status)),
-        ("3M", _format_market_percent(ratio_3m, signed=True, decimals=2), ratio_3m_status, _tone_class(ratio_3m_status)),
-        ("High Delta", _format_market_percent(high_distance, signed=True, decimals=2), high_distance_status, _tone_class(high_distance_status)),
+        ("1M", _format_market_percent(ratio_1m, signed=True, decimals=2), ratio_1m_status, _tone_class(ratio_1m_status), _metric_delta_text(result, "risk_on:REL 1M %")),
+        ("3M", _format_market_percent(ratio_3m, signed=True, decimals=2), ratio_3m_status, _tone_class(ratio_3m_status), _metric_delta_text(result, "risk_on:REL 3M %")),
+        ("High Delta", _format_market_percent(high_distance, signed=True, decimals=2), high_distance_status, _tone_class(high_distance_status), _metric_delta_text(result, "risk_on:HIGH DIST %")),
         ("MA", ma_value, ma_status, _tone_class(ma_status)),
     ]
-    return breadth_items, performance_items, high_vix_items, risk_on_ratio_items
+    return breadth_items, participation_items, performance_items, high_vix_items, risk_on_ratio_items
 
 
 def render_market_snapshot_panel(frame: pd.DataFrame) -> None:
@@ -2567,15 +2598,16 @@ def render_market_factors_panel(frame: pd.DataFrame) -> None:
         st.caption("No factor-relative-strength rows available.")
         return
     scale_values: list[float] = []
-    for column in ["REL 1W %", "REL 1M %"]:
-        scale_values.extend(abs(float(value)) for value in frame[column].dropna().tolist())
+    for column in ["REL 1W %", "REL 1M %", "REL 1Y %"]:
+        if column in frame.columns:
+            scale_values.extend(abs(float(value)) for value in frame[column].dropna().tolist())
     scale = max(scale_values) if scale_values else 1.0
     scale = max(scale, 0.25)
 
     rows_html: list[str] = []
     for _, row in frame.iterrows():
         metric_html: list[str] = []
-        for period, column in (("1W", "REL 1W %"), ("1M", "REL 1M %")):
+        for period, column in (("1W", "REL 1W %"), ("1M", "REL 1M %"), ("1Y", "REL 1Y %")):
             value = row.get(column)
             tone = _tone_class(value)
             width = 0.0
@@ -2595,7 +2627,7 @@ def render_market_dashboard(artifacts: PlatformArtifacts) -> None:
     updated_meta = f"Updated: {result.update_time.split('T')[-1]}" if result.update_time else "Updated: N/A"
     render_page_header("Market Dashboard", meta=updated_meta, centered=True)
 
-    breadth_items, performance_items, high_vix_items, risk_on_ratio_items = _market_metric_items(result)
+    breadth_items, participation_items, performance_items, high_vix_items, risk_on_ratio_items = _market_metric_items(result)
 
     left_col, middle_col, right_col = st.columns([1.15, 1.0, 2.35])
     with left_col:
@@ -2604,6 +2636,7 @@ def render_market_dashboard(artifacts: PlatformArtifacts) -> None:
         render_market_history_stack(result)
     with right_col:
         render_market_metric_panel("Breadth & Trend Metrics", breadth_items, 6, "No breadth metrics available.")
+        render_market_metric_panel("Participation Momentum", participation_items, 5, "No participation metrics available.")
         performance_col, high_vix_col = st.columns([2.2, 1.0])
         with performance_col:
             render_market_metric_panel("Performance Overview", performance_items, 4, "No performance metrics available.")
@@ -2620,7 +2653,7 @@ def render_market_dashboard(artifacts: PlatformArtifacts) -> None:
         st.markdown("<div class='oratek-market-stage-head'><div class='oratek-market-stage-title'>External</div><div class='oratek-market-stage-caption'>Display-only external universe.</div></div>", unsafe_allow_html=True)
         render_market_snapshot_panel(result.external_snapshot)
     with factor_col:
-        st.markdown("<div class='oratek-market-stage-head'><div class='oratek-market-stage-title'>Factors vs SP500</div><div class='oratek-market-stage-caption'>Factors-only universe. Relative performance vs S&P 500 (1W, 1M).</div></div>", unsafe_allow_html=True)
+        st.markdown("<div class='oratek-market-stage-head'><div class='oratek-market-stage-title'>Factors vs SP500</div><div class='oratek-market-stage-caption'>Factors-only universe. Relative performance vs S&P 500 (1W, 1M, 1Y).</div></div>", unsafe_allow_html=True)
         render_market_factors_panel(result.factors_vs_sp500)
 
     render_data_health_table(artifacts)
@@ -2644,11 +2677,15 @@ def render_setting() -> None:
         return
     rows = [
         ("Active detections", _tracking_health_value(tracking_health, "active_detection_count")),
+        ("Signal entry events", _tracking_health_value(tracking_health, "signal_entry_event_count")),
+        ("Pending signal outcomes", _tracking_health_value(tracking_health, "pending_signal_entry_event_count")),
         ("Missing hit close", _tracking_health_value(tracking_health, "missing_hit_close_count")),
         ("Missing 1D close", _tracking_health_value(tracking_health, "missing_close_1d_count")),
         ("Missing 5D close", _tracking_health_value(tracking_health, "missing_close_5d_count")),
         ("Filled 1D returns", _tracking_health_value(tracking_health, "filled_return_1d_count")),
         ("Filled 5D returns", _tracking_health_value(tracking_health, "filled_return_5d_count")),
+        ("Filled signal 5D returns", _tracking_health_value(tracking_health, "filled_signal_event_return_5d_count")),
+        ("Filled signal outcomes", _tracking_health_value(tracking_health, "filled_signal_event_outcome_count")),
     ]
     st.dataframe(
         pd.DataFrame(rows, columns=["Metric", "Count"]),
@@ -3364,11 +3401,15 @@ def main() -> None:
             st.session_state["tracking_health"] = (
                 {
                     "active_detection_count": effectiveness_sync.active_detection_count,
+                    "signal_entry_event_count": effectiveness_sync.signal_entry_event_count,
+                    "pending_signal_entry_event_count": effectiveness_sync.pending_signal_entry_event_count,
                     "missing_hit_close_count": effectiveness_sync.missing_hit_close_count,
                     "missing_close_1d_count": effectiveness_sync.missing_close_1d_count,
                     "missing_close_5d_count": effectiveness_sync.missing_close_5d_count,
                     "filled_return_1d_count": effectiveness_sync.filled_return_1d_count,
                     "filled_return_5d_count": effectiveness_sync.filled_return_5d_count,
+                    "filled_signal_event_return_5d_count": effectiveness_sync.filled_signal_event_return_5d_count,
+                    "filled_signal_event_outcome_count": effectiveness_sync.filled_signal_event_outcome_count,
                 }
                 if effectiveness_sync is not None
                 else {}

@@ -284,6 +284,8 @@ Action-bucket thresholds are signal-specific and live in `config/default/entry_s
 
 Entry plans are generated as EntrySignal outputs for user review only; automated order placement is out of scope. The main table uses `Plan Type`, `Current Price`, `Entry Zone Low`, `Entry Zone High`, `Max Entry Price`, `Stop Loss`, `TP1`, `R/R Current`, `R/R Ideal`, and `Trigger Condition` as the primary execution context. `Ready Now` means the current close satisfies the signal's minimum R/R. `Wait Pullback` means the setup is valid but current R/R is insufficient, while the calculated entry zone would satisfy the minimum R/R if reached. `Wait Trigger` means price and plan quality are acceptable but the signal still needs confirmation. `Poor R/R` and `Invalid` are diagnostic or review states rather than actionable entries. `TP2` is not price-calculated in the active system; it is displayed as `Future trailing stop` for the planned trailing-stop workflow. Plan exclusions and downgrades are traceable through `Plan Reject Codes`, `Plan Reject Reason`, and `Plan Detail`.
 
+Valid `Ready Now` plans are persisted to `signal_entry_event` for outcome review. Tracking refresh updates those event rows with fixed-horizon returns, TP1/SL hit flags, first outcome, result R, and 20D maximum gain/drawdown. These event outcomes are diagnostics for EntrySignal calibration and do not represent broker orders or realized P&L.
+
 ## 5. RS Radar
 
 ### 5.1 Header
@@ -410,6 +412,7 @@ The page uses a three-part top layout:
 - prior-score stack for `1D Ago`, `1W Ago`, `1M Ago`, and `3M Ago`
 - compact metric-card panels for:
   - `Breadth & Trend Metrics`
+  - `Participation Momentum`
   - `Performance Overview`
   - `High, VIX & Safe Haven`
   - `Risk-On Ratio IWO/IWN`
@@ -440,6 +443,14 @@ Current `Breadth & Trend Metrics` items:
 - `20 > 50`
 - `50 > 200`
 
+Current `Participation Momentum` items:
+
+- `Pos 1W`
+- `Pos 1M`
+- `Pos 3M`
+- `Pos 1Y`
+- `Pos YTD`
+
 Current `Performance Overview` items:
 
 - `% YTD`
@@ -459,6 +470,8 @@ Current `Risk-On Ratio IWO/IWN` items:
 - `3M` relative ratio change
 - `High Delta` versus the configured lookback high, capped by loaded price history
 - `MA` count of configured ratio moving averages currently below the ratio
+
+Metric cards for breadth, participation, high/VIX/safe-haven, and risk-on ratio values may show compact `Delta 1D / 1W / 1M` text computed from already loaded histories. These deltas do not require extra provider symbols or a longer configured price period.
 
 ### 7.5 Core / Leadership / External
 
@@ -504,9 +517,10 @@ Each factor row currently shows:
 - factor ticker
 - `REL 1W %`
 - `REL 1M %`
-- mini bars for the 1W and 1M values
+- `REL 1Y %`
+- mini bars for the 1W, 1M, and 1Y values
 
-The underlying result frame still includes `REL 1Y %`, but the active page does not render it.
+`Factors vs SP500` remains display-only and does not feed the composite Market Score.
 
 ### 7.7 S5TH chart
 

@@ -196,6 +196,8 @@ class MarketConditionResult:
     label_3m_ago: str | None
     component_scores: dict[str, float]
     breadth_summary: dict[str, float]
+    participation_summary: dict[str, float]
+    metric_deltas: dict[str, dict[str, float]]
     performance_overview: dict[str, float]
     high_vix_summary: dict[str, float]
     risk_on_ratio_summary: dict[str, float]
@@ -356,6 +358,7 @@ class MarketConditionScorer:
         factors_vs_sp500 = self.factor_calculator.build(market_histories, benchmark_history)
         s5th_series = self._build_s5th_series(stock_histories)
         risk_on_ratio_summary = self._risk_on_ratio_summary(market_histories)
+        metric_deltas = self._market_metric_deltas(stock_histories, market_histories)
 
         return MarketConditionResult(
             trade_date=self._latest_trade_date(benchmark_history),
@@ -371,6 +374,12 @@ class MarketConditionScorer:
             label_3m_ago=self._label_for_optional_score(score_3m_ago),
             component_scores={key: round(value, 2) for key, value in latest_components.items()},
             breadth_summary={key: round(latest_raw_components[key], 2) for key in self._breadth_keys() if key in latest_raw_components},
+            participation_summary={
+                key: round(latest_raw_components[key], 2)
+                for key in self._participation_keys()
+                if key in latest_raw_components
+            },
+            metric_deltas=metric_deltas,
             performance_overview={key: round(value, 2) for key, value in performance_overview.items()},
             high_vix_summary={
                 "S2W HIGH %": round(latest_raw_components.get("pct_2w_high", 0.0), 2),
@@ -403,6 +412,8 @@ class MarketConditionScorer:
             label_3m_ago=None,
             component_scores={},
             breadth_summary={},
+            participation_summary={},
+            metric_deltas={},
             performance_overview={},
             high_vix_summary={},
             risk_on_ratio_summary={},
@@ -474,6 +485,52 @@ class MarketConditionScorer:
             "pct_2w_high": float(frame["is_2w_high"].mean() * 100.0),
         }
         return components, len(rows)
+
+    def _market_metric_values_at_offset(
+        self,
+        stock_histories: dict[str, pd.DataFrame],
+        market_histories: dict[str, pd.DataFrame],
+        offset: int,
+    ) -> dict[str, float]:
+        values = self._raw_component_values_at_offset(stock_histories, market_histories, offset)
+        vix_score = self._vix_score(market_histories.get("^VIX", pd.DataFrame()), offset)
+        safe_haven = self._safe_haven_spread(market_histories, offset)
+        risk_on_ratio = self._risk_on_ratio_summary(market_histories, offset)
+
+        enriched = dict(values)
+        vix_close = self._close_at_offset(market_histories.get("^VIX", pd.DataFrame()), offset)
+        if vix_close is not None:
+            enriched["VIX"] = vix_close
+        enriched["SAFE HAVEN %"] = safe_haven
+        enriched["vix_score"] = vix_score
+        enriched["safe_haven_score"] = self._safe_haven_score(market_histories, offset)
+        for key, value in risk_on_ratio.items():
+            enriched[f"risk_on:{key}"] = value
+        return enriched
+
+    def _market_metric_deltas(
+        self,
+        stock_histories: dict[str, pd.DataFrame],
+        market_histories: dict[str, pd.DataFrame],
+    ) -> dict[str, dict[str, float]]:
+        current = self._market_metric_values_at_offset(stock_histories, market_histories, 0)
+        offsets = {"1D": 1, "1W": 5, "1M": 21}
+        deltas: dict[str, dict[str, float]] = {}
+        for label, offset in offsets.items():
+            previous = self._market_metric_values_at_offset(stock_histories, market_histories, offset)
+            for key, current_value in current.items():
+                previous_value = previous.get(key)
+                if not self._is_finite_number(current_value) or not self._is_finite_number(previous_value):
+                    continue
+                deltas.setdefault(key, {})[label] = round(float(current_value) - float(previous_value), 3)
+        return deltas
+
+    @staticmethod
+    def _is_finite_number(value: object) -> bool:
+        try:
+            return bool(pd.notna(value) and np.isfinite(float(value)))
+        except (TypeError, ValueError):
+            return False
 
     def _empty_components(self) -> dict[str, float]:
         component_names = set(self.config.component_weights)
@@ -596,7 +653,7 @@ class MarketConditionScorer:
             return 0.0
         return float(risk_on_return - risk_off_return)
 
-    def _risk_on_ratio_summary(self, market_histories: dict[str, pd.DataFrame]) -> dict[str, float]:
+    def _risk_on_ratio_summary(self, market_histories: dict[str, pd.DataFrame], offset: int = 0) -> dict[str, float]:
         numerator_history = market_histories.get(self.config.risk_on_ratio_numerator_symbol, pd.DataFrame())
         denominator_history = market_histories.get(self.config.risk_on_ratio_denominator_symbol, pd.DataFrame())
         if numerator_history.empty or denominator_history.empty:
@@ -619,6 +676,9 @@ class MarketConditionScorer:
             return {}
 
         ratio = aligned.iloc[:, 0] / aligned.iloc[:, 1]
+        if len(ratio) <= offset:
+            return {}
+        ratio = ratio.iloc[: len(ratio) - offset]
         latest_ratio = ratio.iloc[-1]
         if pd.isna(latest_ratio):
             return {}
@@ -737,6 +797,15 @@ class MarketConditionScorer:
             "pct_above_sma200",
             "pct_sma20_gt_sma50",
             "pct_sma50_gt_sma200",
+        )
+
+    def _participation_keys(self) -> tuple[str, ...]:
+        return (
+            "pct_positive_1w",
+            "pct_positive_1m",
+            "pct_positive_3m",
+            "pct_positive_1y",
+            "pct_positive_ytd",
         )
 
     def _latest_close(self, history: pd.DataFrame) -> float | None:

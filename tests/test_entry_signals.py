@@ -173,6 +173,54 @@ def test_entry_signal_runner_classifies_entry_ready_and_watch_setup() -> None:
     assert "stop is too wide" in weak_rr[2]
 
 
+def test_entry_signal_lookup_prefers_enriched_watchlist_context() -> None:
+    runner = EntrySignalRunner(EntrySignalConfig.from_dict({}), ScanConfig.from_dict({}))
+    artifacts = PlatformArtifacts(
+        snapshot=pd.DataFrame(index=["AAA"]),
+        eligible_snapshot=pd.DataFrame(
+            {
+                "close": [100.0],
+                "weekly_return": [5.0],
+                "quarterly_return": [20.0],
+            },
+            index=["AAA"],
+        ),
+        watchlist=pd.DataFrame(
+            {
+                "close": [100.0],
+                "weekly_return": [5.0],
+                "quarterly_return": [20.0],
+                "weekly_return_rank": [88.0],
+                "quarterly_return_rank": [77.0],
+            },
+            index=["AAA"],
+        ),
+        duplicate_tickers=pd.DataFrame(),
+        watchlist_cards=[],
+        earnings_today=pd.DataFrame(),
+        scan_hits=pd.DataFrame(),
+        benchmark_history=pd.DataFrame(),
+        vix_history=pd.DataFrame(),
+        market_result=None,
+        radar_result=None,
+        used_sample_data=False,
+        data_source_label="test",
+        fetch_status=pd.DataFrame(),
+        data_health_summary={},
+        run_directory=None,
+        universe_mode="test",
+        resolved_symbols=["AAA"],
+        universe_snapshot_path=None,
+        artifact_origin="test",
+        entry_signal_watchlist=None,
+    )
+
+    row = runner._build_current_row_lookup(artifacts)["AAA"]
+
+    assert float(row["weekly_return_rank"]) == 88.0
+    assert float(row["quarterly_return_rank"]) == 77.0
+
+
 def test_entry_signal_stop_avoids_obvious_round_number_zone() -> None:
     signal_config = EntrySignalConfig.from_dict(
         {"definitions": {"test_signal": _definition_payload("Test Signal")}}
@@ -238,6 +286,71 @@ def test_entry_signal_plan_tracks_reject_reason_when_tp1_rr_is_too_low() -> None
     assert plan.plan_type == "Wait Pullback"
     assert "rr_current_below_min" in plan.plan_reject_codes
     assert "rr_current_below_min" in plan.to_row()["Plan Detail"]
+
+
+def test_entry_signal_plan_treats_tiny_rr_boundary_diff_as_in_zone() -> None:
+    signal_config = EntrySignalConfig.from_dict(
+        {
+            "definitions": {
+                "early_cycle_recovery_entry": {
+                    **_definition_payload("Early Cycle Recovery Entry"),
+                    "action": {
+                        "entry_ready": {
+                            "entry_strength_min": 52.0,
+                            "timing_min": 50.0,
+                            "risk_reward_min": 55.0,
+                            "rr_ratio_min": 2.5,
+                            "setup_maturity_min": 45.0,
+                        },
+                        "watch_setup": {
+                            "setup_maturity_min": 45.0,
+                            "risk_reward_min": 35.0,
+                        },
+                    },
+                },
+            },
+        }
+    )
+    definition = signal_config.definition_for("early_cycle_recovery_entry")
+    pool_entry = SignalPoolEntry(
+        id=1,
+        signal_name="early_cycle_recovery_entry",
+        ticker="LTH",
+        preset_sources=("Early Cycle Recovery",),
+        first_detected_date=pd.Timestamp("2026-05-08"),
+        latest_detected_date=pd.Timestamp("2026-05-08"),
+        detection_count=1,
+        pool_status="active",
+        invalidated_date=None,
+        invalidated_reason=None,
+        snapshot_at_detection={"low": 30.559999465942383},
+        low_since_detection=30.559999465942383,
+        high_since_detection=36.0,
+    )
+
+    plan = build_entry_plan(
+        action_bucket=ENTRY_ACTION_WATCH_SETUP,
+        entry_ready_bucket=ENTRY_ACTION_ENTRY_READY,
+        watch_setup_bucket=ENTRY_ACTION_WATCH_SETUP,
+        needs_review_bucket=ENTRY_ACTION_NEEDS_REVIEW,
+        definition=definition,
+        pool_entry=pool_entry,
+        current_row=pd.Series(
+            {
+                "close": 31.93000030517578,
+                "atr": 1.3863978637695313,
+                "sma50": 30.0,
+                "rolling_20d_close_high": 31.5,
+                "dcr_percent": 70.0,
+            }
+        ),
+        pool_status="active",
+        pool_transition="",
+    )
+
+    assert plan.plan_type == "Wait Trigger"
+    assert "rr_current_below_min" not in plan.plan_reject_codes
+    assert plan.trigger_condition == "Wait for recovery reclaim to hold and reversal confirmation"
 
 
 def test_orderly_pullback_plan_uses_ema21_fallback_when_pullback_low_is_too_wide() -> None:
