@@ -193,17 +193,17 @@ div[data-testid="stDataFrame"], div[data-testid="stExpander"] { background:rgba(
 .oratek-priority-item { background:rgba(255,255,255,.78); border:1px solid rgba(45,108,223,.12); border-radius:14px; padding:.72rem .75rem; color:var(--text); font-size:.98rem; font-weight:800; text-align:center; }
 .oratek-priority-item-rs { color:#2d6cdf; font-size:.74rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase; margin-bottom:.18rem; }
 .oratek-priority-item-ticker { color:var(--text); font-size:.98rem; font-weight:800; }
-.oratek-market-panel { background:rgba(255,255,255,.95); border:1px solid var(--panel-border); border-radius:24px; box-shadow:0 18px 36px rgba(34,48,69,.06); padding:1rem 1.05rem 1.1rem; margin-bottom:1rem; }
+.oratek-market-panel { background:rgba(255,255,255,.95); border:1px solid var(--panel-border); border-radius:24px; box-shadow:0 18px 36px rgba(34,48,69,.06); padding:.92rem 1rem 1rem; margin-bottom:.85rem; }
 .oratek-market-panel-title { color:var(--text); font-size:.82rem; font-weight:800; text-transform:uppercase; letter-spacing:.08em; margin-bottom:.85rem; }
 .oratek-market-panel-title.centered { text-align:center; }
 .oratek-market-copy-head { color:var(--text); font-size:.88rem; font-weight:800; margin-bottom:.35rem; }
 .oratek-market-copy { color:var(--muted); font-size:.84rem; line-height:1.55; }
-.oratek-market-score-chip { display:inline-flex; align-items:center; justify-content:center; gap:.45rem; padding:.72rem 1rem; border-radius:16px; margin:1rem 0 .8rem; font-size:1rem; font-weight:800; min-width:136px; }
+.oratek-market-score-chip { display:inline-flex; align-items:center; justify-content:center; gap:.45rem; padding:.62rem .95rem; border-radius:16px; margin:.45rem 0 .35rem; font-size:1rem; font-weight:800; min-width:136px; }
 .oratek-market-score-chip.positive { background:linear-gradient(135deg, #1fb87b 0%, #27c997 100%); color:#fff; }
 .oratek-market-score-chip.negative { background:linear-gradient(135deg, #f15050 0%, #ef3d52 100%); color:#fff; }
 .oratek-market-score-chip.neutral { background:linear-gradient(135deg, #7f8ca6 0%, #94a1ba 100%); color:#fff; }
-.oratek-market-gauge { width:220px; margin:0 auto .2rem; }
-.oratek-market-gauge-svg { display:block; width:220px; height:120px; }
+.oratek-market-gauge { width:190px; margin:0 auto .05rem; }
+.oratek-market-gauge-svg { display:block; width:190px; height:104px; }
 .oratek-market-gauge-track { fill:none; stroke:#e8eef8; stroke-width:28; stroke-linecap:round; }
 .oratek-market-gauge-value { fill:none; stroke-width:28; stroke-linecap:round; stroke-dasharray:var(--market-score-filled) var(--market-score-remaining); }
 .oratek-market-gauge-value.positive { stroke:#21a46f; }
@@ -212,8 +212,8 @@ div[data-testid="stDataFrame"], div[data-testid="stExpander"] { background:rgba(
 .oratek-market-gauge-inner { fill:none; stroke:#dbe4f3; stroke-width:1.5; }
 .oratek-market-gauge-core { fill:rgba(255,255,255,.96); stroke:rgba(219,228,243,.9); stroke-width:1.5; }
 .oratek-market-gauge-caption { text-align:center; color:var(--muted); font-size:.78rem; margin-top:.2rem; }
-.oratek-market-timeline-stack { display:grid; gap:.72rem; }
-.oratek-market-mini-card { background:rgba(255,255,255,.95); border:1px solid var(--panel-border); border-radius:20px; box-shadow:0 14px 30px rgba(34,48,69,.05); padding:.88rem .95rem; }
+.oratek-market-timeline-stack { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:.65rem; }
+.oratek-market-mini-card { background:#fbfcff; border:1px solid #e6edf9; border-radius:18px; padding:.72rem .78rem; min-height:82px; }
 .oratek-market-mini-head { display:flex; justify-content:space-between; gap:.75rem; align-items:flex-start; }
 .oratek-market-mini-title { color:var(--text); font-size:.84rem; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }
 .oratek-market-mini-state { color:var(--muted); font-size:.78rem; margin-top:.28rem; }
@@ -226,18 +226,22 @@ div[data-testid="stDataFrame"], div[data-testid="stExpander"] { background:rgba(
 .oratek-market-metric-grid.cols-5 { grid-template-columns:repeat(5, minmax(0,1fr)); }
 .oratek-market-metric-grid.cols-4 { grid-template-columns:repeat(4, minmax(0,1fr)); }
 .oratek-market-metric-grid.cols-2 { grid-template-columns:repeat(2, minmax(0,1fr)); }
-.oratek-market-metric-card { background:#fbfcff; border:1px solid #e6edf9; border-radius:18px; padding:.78rem .6rem; text-align:center; min-height:128px; display:flex; flex-direction:column; justify-content:space-between; }
+.oratek-market-metric-card { background:#fbfcff; border:1px solid #e6edf9; border-radius:18px; padding:.76rem .68rem; text-align:center; min-height:142px; display:flex; flex-direction:column; justify-content:space-between; gap:.3rem; }
 .oratek-market-metric-name { color:var(--muted); font-size:.74rem; font-weight:800; text-transform:uppercase; letter-spacing:.05em; }
-.oratek-market-metric-value { color:var(--text); font-size:1.06rem; font-weight:800; margin:.35rem 0 .2rem; }
-.oratek-market-metric-delta { color:#7f8ca6; font-size:.68rem; font-weight:800; line-height:1.25; min-height:2.4em; }
+.oratek-market-metric-value { color:var(--text); font-size:1.06rem; font-weight:800; margin:.18rem 0 0; }
+.oratek-market-metric-delta { display:grid; gap:.12rem; align-content:center; min-height:3.45rem; width:100%; }
+.oratek-market-metric-delta.empty { visibility:hidden; }
+.oratek-market-metric-delta-row { display:flex; justify-content:center; align-items:baseline; gap:.28rem; color:#7f8ca6; font-size:.64rem; font-weight:800; line-height:1.15; white-space:nowrap; }
+.oratek-market-metric-delta-period { min-width:2.35rem; text-align:right; text-transform:uppercase; }
+.oratek-market-metric-delta-value { min-width:3.35rem; text-align:left; font-variant-numeric:tabular-nums; }
 .oratek-market-pill { display:inline-flex; align-items:center; justify-content:center; border-radius:999px; padding:.34rem .65rem; font-size:.74rem; font-weight:800; }
 .oratek-market-pill.positive { background:rgba(33,164,111,.14); color:#21a46f; }
 .oratek-market-pill.negative { background:rgba(223,91,91,.14); color:#df5b5b; }
 .oratek-market-pill.neutral { background:rgba(127,140,166,.14); color:#7f8ca6; }
-.oratek-market-stage-head { margin:.4rem 0 .65rem; }
+.oratek-market-stage-head { margin:.28rem 0 .55rem; }
 .oratek-market-stage-title { color:var(--text); font-size:1rem; font-weight:800; text-align:center; }
 .oratek-market-stage-caption { color:var(--muted); font-size:.78rem; text-align:center; margin-top:.18rem; }
-.oratek-market-snapshot-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:1rem; }
+.oratek-market-snapshot-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(205px, 1fr)); gap:.85rem; }
 .oratek-market-snapshot-card { background:rgba(255,255,255,.95); border:1px solid var(--panel-border); border-radius:22px; box-shadow:0 18px 36px rgba(34,48,69,.06); padding:.9rem 1rem 1rem; }
 .oratek-market-snapshot-head { display:flex; justify-content:space-between; gap:.65rem; align-items:flex-start; }
 .oratek-market-snapshot-name { color:var(--muted); font-size:.78rem; font-weight:700; line-height:1.35; max-width:70%; }
@@ -246,7 +250,7 @@ div[data-testid="stDataFrame"], div[data-testid="stExpander"] { background:rgba(
 .oratek-market-snapshot-price { color:var(--text); font-size:1.42rem; font-weight:800; }
 .oratek-market-snapshot-day { font-size:1.08rem; font-weight:800; text-align:right; }
 .oratek-market-snapshot-volume { color:var(--muted); font-size:.78rem; text-align:right; margin-top:.28rem; }
-.oratek-market-factors-panel { background:rgba(255,255,255,.95); border:1px solid var(--panel-border); border-radius:22px; box-shadow:0 18px 36px rgba(34,48,69,.06); padding:.9rem .95rem 1rem; }
+.oratek-market-factors-panel { background:rgba(255,255,255,.95); border:1px solid var(--panel-border); border-radius:22px; box-shadow:0 18px 36px rgba(34,48,69,.06); padding:.86rem .9rem .95rem; }
 .oratek-market-factor-list { display:grid; gap:.72rem; }
 .oratek-market-factor-row { background:#fbfcff; border:1px solid #e6edf9; border-radius:18px; padding:.8rem .85rem; }
 .oratek-market-factor-head { display:flex; justify-content:space-between; gap:.5rem; align-items:baseline; margin-bottom:.55rem; }
@@ -261,6 +265,7 @@ div[data-testid="stDataFrame"], div[data-testid="stExpander"] { background:rgba(
 .oratek-market-factor-fill.positive { background:linear-gradient(90deg, #39cf9a 0%, #17b07d 100%); }
 .oratek-market-factor-fill.negative { background:linear-gradient(90deg, #ff8a7a 0%, #ef4d53 100%); }
 .oratek-market-factor-fill.neutral { background:linear-gradient(90deg, #aeb9ca 0%, #8a97b0 100%); }
+@media (max-width:980px) { .oratek-market-timeline-stack { grid-template-columns:1fr; } }
 @media (max-width:768px) { .oratek-page-meta, .oratek-page-submeta { text-align:left; padding-top:.15rem; } .oratek-ticker-grid { grid-template-columns:repeat(3, minmax(0,1fr)); } .oratek-priority-grid { grid-template-columns:repeat(4, minmax(0,1fr)); } .oratek-mover-row { grid-template-columns:1fr; } .oratek-mover-side { text-align:left; } .oratek-market-gauge { width:180px; height:96px; } .oratek-market-metric-grid.cols-6, .oratek-market-metric-grid.cols-5, .oratek-market-metric-grid.cols-4 { grid-template-columns:repeat(2, minmax(0,1fr)); } .oratek-market-metric-grid.cols-2, .oratek-market-factor-metrics { grid-template-columns:repeat(2, minmax(0,1fr)); } .oratek-market-snapshot-grid { grid-template-columns:1fr; } .oratek-market-snapshot-price-row { align-items:flex-start; flex-direction:column; } }
 </style>
 """
@@ -2464,13 +2469,35 @@ def render_market_metric_panel(title: str, items: list[tuple[str, ...]], columns
     for item in items:
         name, value, status, tone, *rest = item
         delta = rest[0] if rest else ""
+        delta_html = _market_metric_delta_html(delta)
         cards.append(
-            f"<div class='oratek-market-metric-card'><div class='oratek-market-metric-name'>{html.escape(name)}</div><div class='oratek-market-metric-value'>{html.escape(value)}</div><div class='oratek-market-metric-delta'>{html.escape(delta)}</div><div class='oratek-market-pill {tone}'>{html.escape(status)}</div></div>"
+            f"<div class='oratek-market-metric-card'><div class='oratek-market-metric-name'>{html.escape(name)}</div><div class='oratek-market-metric-value'>{html.escape(value)}</div>{delta_html}<div class='oratek-market-pill {html.escape(tone)}'>{html.escape(status)}</div></div>"
         )
     st.markdown(
         f"<div class='oratek-market-panel'><div class='oratek-market-panel-title centered'>{html.escape(title)}</div><div class='oratek-market-metric-grid cols-{columns}'>{''.join(cards)}</div></div>",
         unsafe_allow_html=True,
     )
+
+
+def _market_metric_delta_html(delta: str) -> str:
+    if not delta:
+        return "<div class='oratek-market-metric-delta empty'></div>"
+
+    clean_delta = delta[2:].strip() if delta.startswith("Δ ") else delta.strip()
+    rows: list[str] = []
+    for part in clean_delta.split(" / "):
+        period, _, value = part.partition(" ")
+        if not period or not value:
+            continue
+        rows.append(
+            "<div class='oratek-market-metric-delta-row'>"
+            f"<span class='oratek-market-metric-delta-period'>Δ {html.escape(period)}</span>"
+            f"<span class='oratek-market-metric-delta-value'>{html.escape(value)}</span>"
+            "</div>"
+        )
+    if not rows:
+        return "<div class='oratek-market-metric-delta empty'></div>"
+    return "<div class='oratek-market-metric-delta'>" + "".join(rows) + "</div>"
 
 
 def _risk_ratio_high_label(value: float | None) -> str:
@@ -2629,32 +2656,41 @@ def render_market_dashboard(artifacts: PlatformArtifacts) -> None:
 
     breadth_items, participation_items, performance_items, high_vix_items, risk_on_ratio_items = _market_metric_items(result)
 
-    left_col, middle_col, right_col = st.columns([1.15, 1.0, 2.35])
-    with left_col:
+    summary_col, history_col = st.columns([0.82, 1.18])
+    with summary_col:
         render_market_conditions_panel(result)
-    with middle_col:
+    with history_col:
         render_market_history_stack(result)
-    with right_col:
-        render_market_metric_panel("Breadth & Trend Metrics", breadth_items, 6, "No breadth metrics available.")
+
+    render_market_metric_panel("Breadth & Trend Metrics", breadth_items, 6, "No breadth metrics available.")
+
+    participation_col, performance_col = st.columns([1.25, 1.0])
+    with participation_col:
         render_market_metric_panel("Participation Momentum", participation_items, 5, "No participation metrics available.")
-        performance_col, high_vix_col = st.columns([2.2, 1.0])
-        with performance_col:
-            render_market_metric_panel("Performance Overview", performance_items, 4, "No performance metrics available.")
-        with high_vix_col:
-            render_market_metric_panel("High, VIX & Safe Haven", high_vix_items, 3, "No High, VIX & Safe Haven metrics available.")
+    with performance_col:
+        render_market_metric_panel("Performance Overview", performance_items, 4, "No performance metrics available.")
+
+    high_vix_col, risk_ratio_col = st.columns([0.9, 1.1])
+    with high_vix_col:
+        render_market_metric_panel("High, VIX & Safe Haven", high_vix_items, 3, "No High, VIX & Safe Haven metrics available.")
+    with risk_ratio_col:
         render_market_metric_panel("Risk-On Ratio IWO/IWN", risk_on_ratio_items, 4, "No IWO/IWN ratio metrics available.")
 
-    snapshot_col, factor_col = st.columns([2.3, 1.1])
-    with snapshot_col:
+    core_col, factor_col = st.columns([2.0, 1.0])
+    with core_col:
         st.markdown("<div class='oratek-market-stage-head'><div class='oratek-market-stage-title'>Core</div><div class='oratek-market-stage-caption'>Used for Market Score. Vol % vs 50D Avg.</div></div>", unsafe_allow_html=True)
         render_market_snapshot_panel(result.market_snapshot)
-        st.markdown("<div class='oratek-market-stage-head'><div class='oratek-market-stage-title'>Leadership</div><div class='oratek-market-stage-caption'>Display-only leadership universe.</div></div>", unsafe_allow_html=True)
-        render_market_snapshot_panel(result.leadership_snapshot)
-        st.markdown("<div class='oratek-market-stage-head'><div class='oratek-market-stage-title'>External</div><div class='oratek-market-stage-caption'>Display-only external universe.</div></div>", unsafe_allow_html=True)
-        render_market_snapshot_panel(result.external_snapshot)
     with factor_col:
         st.markdown("<div class='oratek-market-stage-head'><div class='oratek-market-stage-title'>Factors vs SP500</div><div class='oratek-market-stage-caption'>Factors-only universe. Relative performance vs S&P 500 (1W, 1M, 1Y).</div></div>", unsafe_allow_html=True)
         render_market_factors_panel(result.factors_vs_sp500)
+
+    leadership_col, external_col = st.columns([1.0, 1.0])
+    with leadership_col:
+        st.markdown("<div class='oratek-market-stage-head'><div class='oratek-market-stage-title'>Leadership</div><div class='oratek-market-stage-caption'>Display-only leadership universe.</div></div>", unsafe_allow_html=True)
+        render_market_snapshot_panel(result.leadership_snapshot)
+    with external_col:
+        st.markdown("<div class='oratek-market-stage-head'><div class='oratek-market-stage-title'>External</div><div class='oratek-market-stage-caption'>Display-only external universe.</div></div>", unsafe_allow_html=True)
+        render_market_snapshot_panel(result.external_snapshot)
 
     render_data_health_table(artifacts)
 
@@ -3414,11 +3450,21 @@ def main() -> None:
                 if effectiveness_sync is not None
                 else {}
             )
-            EntrySignalRunner(
-                load_entry_signal_config(config_path),
+            entry_signal_config = load_entry_signal_config(config_path)
+            entry_signal_runner = EntrySignalRunner(
+                entry_signal_config,
                 load_scan_config(config_path),
                 config_path=config_path,
-            ).sync_tracking(artifacts)
+            )
+            entry_signal_runner.sync_tracking(artifacts)
+            app_settings = load_settings(config_path).get("app", {})
+            entry_signal_export = entry_signal_runner.export_run_outputs(
+                artifacts,
+                list(entry_signal_config.startup_selected_signal_names()),
+                ROOT / str(app_settings.get("snapshot_dir", "data_runs")) / "entry_signals",
+            )
+            st.session_state["entry_signal_export_directory"] = entry_signal_export.output_dir
+            st.session_state["entry_signal_export_count"] = entry_signal_export.evaluation_count
             st.session_state["artifacts_key"] = cache_key
 
     artifacts: PlatformArtifacts = st.session_state["artifacts"]

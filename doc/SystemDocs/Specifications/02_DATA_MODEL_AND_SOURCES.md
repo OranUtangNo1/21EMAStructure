@@ -175,6 +175,7 @@ The current default config sets this to `false`, so sample fallback is inactive 
 - weekly universe snapshots under `data_runs/universe_snapshots/`
 - run artifacts under file-type folders keyed by trade-date date key, such as `data_runs/run_metadata/YYYYMMDD.json`, `data_runs/eligible_snapshot/YYYYMMDD.csv`, `data_runs/market_summary/YYYYMMDD.json`, and `data_runs/radar_summary/YYYYMMDD.json`
 - scan-hit history and preset-hit tracking under `data_runs/tracking.db`
+- EntrySignal startup exports under `data_runs/entry_signals/`
 
 ### 4.2 Current TTLs
 
@@ -300,6 +301,12 @@ When `data.persist_research_snapshots` is true, the pipeline saves:
 - date-level scan hits into `tracking.db`
 
 `eligible_snapshot` is retained as the inspectable scan universe and saved-run restore base. The raw watchlist CSV is optional and controlled by `data.persist_watchlist_snapshot`; the default is false. When the watchlist CSV is absent, same-day saved-run restore rebuilds the watchlist from `eligible_snapshot` and stored scan hits. Preset-hit CSVs remain separate under `data_runs/preset_exports/`.
+
+After the Streamlit artifact load syncs EntrySignal pools, the app evaluates the startup-selected entry signals and writes inspectable exports under `data_runs/entry_signals/`:
+
+- `YYYYMMDD_evaluations.csv`
+
+This CSV export mirrors the current Entry Signal evaluation output for review and diagnostics. Bucket-specific CSV and summary JSON write paths remain available in the runner but are disabled by default for startup exports. The authoritative pool, evaluation, and entry-event history remains `data_runs/tracking.db`.
 
 Run metadata currently includes:
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pandas as pd
 
 from src.data.tracking_db import connect_tracking_db
@@ -496,6 +498,48 @@ def test_entry_signal_runner_builds_pool_and_persists_evaluation(tmp_path) -> No
     assert "Orderly pullback policy" in str(result.iloc[0]["SL Safety"])
     assert "Ready Now" in str(result.iloc[0]["Plan Note"])
     assert "rr_tp1_below_min" not in str(result.iloc[0]["Plan Reject Codes"])
+
+    export_result = runner.export_run_outputs(
+        artifacts,
+        ["orderly_pullback_entry"],
+        tmp_path / "data_runs" / "entry_signals",
+        root_dir=tmp_path,
+    )
+    assert export_result.date_key == "20260424"
+    assert export_result.evaluation_count == 1
+    assert export_result.entry_ready_count == 1
+    export_dir = tmp_path / "data_runs" / "entry_signals"
+    evaluations_path = export_dir / "20260424_evaluations.csv"
+    assert evaluations_path.exists()
+    assert not (export_dir / "20260424_entry_ready.csv").exists()
+    assert not (export_dir / "20260424_watch_setup.csv").exists()
+    assert not (export_dir / "20260424_needs_review.csv").exists()
+    assert not (export_dir / "20260424_summary.json").exists()
+    assert export_result.files == (str(evaluations_path),)
+    exported = pd.read_csv(evaluations_path)
+    assert list(exported["Ticker"]) == ["AAA"]
+    assert exported.iloc[0]["Action Bucket"] == "Entry Ready"
+
+    full_export_dir = tmp_path / "data_runs" / "entry_signals_full"
+    full_export_result = runner.export_run_outputs(
+        artifacts,
+        ["orderly_pullback_entry"],
+        full_export_dir,
+        root_dir=tmp_path,
+        write_bucket_csvs=True,
+        write_summary_json=True,
+    )
+    assert (full_export_dir / "20260424_entry_ready.csv").exists()
+    assert (full_export_dir / "20260424_watch_setup.csv").exists()
+    assert (full_export_dir / "20260424_needs_review.csv").exists()
+    summary_path = full_export_dir / "20260424_summary.json"
+    assert summary_path.exists()
+    with summary_path.open("r", encoding="utf-8") as handle:
+        summary = json.load(handle)
+    assert summary["evaluation_count"] == 1
+    assert summary["entry_ready_count"] == 1
+    assert "20260424_entry_ready.csv" in summary["files"]
+    assert len(full_export_result.files) == 5
 
     conn = connect_tracking_db(root_dir=tmp_path)
     try:

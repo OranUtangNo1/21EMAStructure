@@ -98,6 +98,18 @@ class EntrySignalSyncResult:
     evaluation_count: int
 
 
+@dataclass(frozen=True, slots=True)
+class EntrySignalExportResult:
+    output_dir: str
+    date_key: str
+    selected_signal_names: tuple[str, ...]
+    evaluation_count: int
+    entry_ready_count: int
+    watch_setup_count: int
+    needs_review_count: int
+    files: tuple[str, ...]
+
+
 class EntrySignalRunner:
     """Build signal pools from preset duplicates and evaluate active pools."""
 
@@ -122,6 +134,71 @@ class EntrySignalRunner:
     ) -> pd.DataFrame:
         self.sync_tracking(artifacts, root_dir=root_dir)
         return self.evaluate_active_pools(artifacts, selected_signal_names, root_dir=root_dir)
+
+    def export_run_outputs(
+        self,
+        artifacts: PlatformArtifacts,
+        selected_signal_names: list[str] | tuple[str, ...],
+        output_dir: str | Path,
+        *,
+        root_dir: str | Path | None = None,
+        write_bucket_csvs: bool = False,
+        write_summary_json: bool = False,
+    ) -> EntrySignalExportResult:
+        trade_date = self._latest_trade_date(artifacts)
+        date_key = pd.Timestamp(trade_date).strftime("%Y%m%d") if trade_date is not None else pd.Timestamp.now().strftime("%Y%m%d")
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        selected = tuple(name for name in selected_signal_names if name in self.signal_config.enabled_signal_names())
+        result = self.evaluate_active_pools(artifacts, selected, root_dir=root_dir)
+        files: list[str] = []
+
+        all_path = output_path / f"{date_key}_evaluations.csv"
+        result.to_csv(all_path, index=False)
+        files.append(str(all_path))
+
+        entry_ready_count = int((result["Action Bucket"] == ENTRY_ACTION_ENTRY_READY).sum()) if not result.empty else 0
+        watch_setup_count = int((result["Action Bucket"] == ENTRY_ACTION_WATCH_SETUP).sum()) if not result.empty else 0
+        needs_review_count = int((result["Action Bucket"] == ENTRY_ACTION_NEEDS_REVIEW).sum()) if not result.empty else 0
+
+        if write_bucket_csvs:
+            for file_label, bucket in (
+                ("entry_ready", ENTRY_ACTION_ENTRY_READY),
+                ("watch_setup", ENTRY_ACTION_WATCH_SETUP),
+                ("needs_review", ENTRY_ACTION_NEEDS_REVIEW),
+            ):
+                bucket_frame = result.loc[result["Action Bucket"] == bucket].copy() if not result.empty else result.copy()
+                bucket_path = output_path / f"{date_key}_{file_label}.csv"
+                bucket_frame.to_csv(bucket_path, index=False)
+                files.append(str(bucket_path))
+
+        if write_summary_json:
+            summary = {
+                "date_key": date_key,
+                "trade_date": pd.Timestamp(trade_date).strftime("%Y-%m-%d") if trade_date is not None else None,
+                "selected_signal_names": list(selected),
+                "evaluation_count": int(len(result)),
+                "entry_ready_count": entry_ready_count,
+                "watch_setup_count": watch_setup_count,
+                "needs_review_count": needs_review_count,
+                "files": [Path(file_name).name for file_name in files],
+            }
+            summary_path = output_path / f"{date_key}_summary.json"
+            with summary_path.open("w", encoding="utf-8") as handle:
+                json.dump(summary, handle, ensure_ascii=False, indent=2)
+            files.append(str(summary_path))
+
+        return EntrySignalExportResult(
+            output_dir=str(output_path),
+            date_key=date_key,
+            selected_signal_names=selected,
+            evaluation_count=int(len(result)),
+            entry_ready_count=entry_ready_count,
+            watch_setup_count=watch_setup_count,
+            needs_review_count=needs_review_count,
+            files=tuple(files),
+        )
 
     def sync_tracking(
         self,

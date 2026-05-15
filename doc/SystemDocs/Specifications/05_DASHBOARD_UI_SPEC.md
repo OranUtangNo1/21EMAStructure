@@ -286,6 +286,8 @@ Entry plans are generated as EntrySignal outputs for user review only; automated
 
 Valid `Ready Now` plans are persisted to `signal_entry_event` for outcome review. Tracking refresh updates those event rows with fixed-horizon returns, TP1/SL hit flags, first outcome, result R, and 20D maximum gain/drawdown. These event outcomes are diagnostics for EntrySignal calibration and do not represent broker orders or realized P&L.
 
+On app artifact load, the startup-selected EntrySignal set is also evaluated and exported to `data_runs/entry_signals/` as the date-keyed `YYYYMMDD_evaluations.csv` review artifact. Bucket-specific CSV and summary JSON write paths remain available in the runner but are disabled by default. `data_runs/tracking.db` remains the durable source for pool state, evaluations, and entry events.
+
 ## 5. RS Radar
 
 ### 5.1 Header
