@@ -35,6 +35,7 @@ ENV/
 .vscode/
 Thumbs.db
 .DS_Store
+.vs/
 
 # Project-generated data artifacts
 data_cache/*

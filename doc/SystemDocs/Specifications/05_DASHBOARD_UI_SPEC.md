@@ -23,6 +23,7 @@ The main content area exposes a collapsed `Run options` expander with:
 
 - `Force weekly universe refresh`
 - `Force price data refresh`
+- `Recompute from cache`
 - `Refresh data` button
 
 The default config path is resolved internally to `config/default.yaml` and is not currently exposed in the run controls.
@@ -44,7 +45,7 @@ Current navigation behavior:
 - the app resolves the active page from a page-definition registry so additional tabs can be added without reshaping the main flow
 - page-specific controls render in the main content area
 
-The app reloads artifacts when the user presses `Refresh data` or when the tuple `(config_path, symbols, force_universe_refresh, force_price_refresh)` changes.
+The app reloads artifacts when the user presses `Refresh data` or when the tuple `(config_path, symbols, force_universe_refresh, force_price_refresh, force_recompute_from_cache)` changes.
 
 Current load behavior:
 
@@ -55,6 +56,7 @@ Current load behavior:
 - if same-day restore fails, the app recomputes through `ResearchPlatform.run()`
 - `Force weekly universe refresh` bypasses weekly universe snapshot reuse for symbol resolution
 - `Force price data refresh` bypasses the price-cache TTL for the active run while keeping existing cached price rows as merge/fallback data
+- `Recompute from cache` bypasses same-day saved-run restore without forcing a live price refresh, so the app rebuilds local `data_runs` artifacts from the current cache when cache files have been replaced externally
 
 ### 2.2 Shared context and health
 
@@ -529,6 +531,12 @@ Each factor row currently shows:
 The page does not render the S5TH chart.
 
 The underlying result object may still carry `result.s5th_series`, but the active Market Dashboard does not display it.
+
+### 7.8 Daily market document
+
+The pipeline may persist a deterministic daily AI-input market document under `data_runs/market_documents/`. The final report-writing skill may later write the human-facing report under `data_runs/market_reports/`.
+
+The active Market Dashboard does not render this document or the final report yet. The current UI continues to render the Market Conditions hero, metric panels, Core / Leadership / External snapshots, and Factors vs SP500 sections described above.
 
 ## 8. Setting
 

@@ -79,6 +79,17 @@ DEFAULT_FACTOR_ETFS = (
     MarketUniverseItem("MTUM", "Momentum"),
 )
 
+SECTOR_ROTATION_TICKERS = frozenset({"XLB", "XLC", "XLE", "XLF", "XLI", "XLK", "XLP", "XLRE", "XLU", "XLV", "XLY"})
+DEFENSIVE_SECTOR_TICKERS = ("XLP", "XLU", "XLV")
+CYCLICAL_GROWTH_SECTOR_TICKERS = ("XLC", "XLE", "XLF", "XLI", "XLK", "XLY")
+STYLE_RATIO_PAIRS = (
+    ("VUG", "VTV", "Growth vs Value"),
+    ("MTUM", "SPY", "Momentum vs Market"),
+    ("VB", "MGC", "Small vs Large"),
+    ("VO", "MGC", "Mid vs Large"),
+    ("VYM", "SPY", "Dividend vs Market"),
+)
+
 DEFAULT_COMPONENT_WEIGHTS = {
     "pct_above_sma20": 0.12,
     "pct_above_sma50": 0.14,
@@ -208,6 +219,9 @@ class MarketConditionResult:
     s5th_series: pd.DataFrame
     vix_close: float | None
     update_time: str
+    sector_relative_strength: pd.DataFrame = field(default_factory=pd.DataFrame)
+    style_pair_summary: pd.DataFrame = field(default_factory=pd.DataFrame)
+    defensive_cyclical_summary: dict[str, float] = field(default_factory=dict)
 
 
 class MarketSnapshotBuilder:
@@ -356,6 +370,9 @@ class MarketConditionScorer:
         leadership_snapshot = self.snapshot_builder.build(market_histories, self.config.leadership_etfs)
         external_snapshot = self.snapshot_builder.build(market_histories, self.config.external_etfs)
         factors_vs_sp500 = self.factor_calculator.build(market_histories, benchmark_history)
+        sector_relative_strength = self._sector_relative_strength(market_histories, benchmark_history)
+        style_pair_summary = self._style_pair_summary(market_histories)
+        defensive_cyclical_summary = self._defensive_cyclical_summary(market_histories)
         s5th_series = self._build_s5th_series(stock_histories)
         risk_on_ratio_summary = self._risk_on_ratio_summary(market_histories)
         metric_deltas = self._market_metric_deltas(stock_histories, market_histories)
@@ -394,6 +411,9 @@ class MarketConditionScorer:
             s5th_series=s5th_series,
             vix_close=round(vix_close, 2) if vix_close is not None else None,
             update_time=datetime.now().isoformat(timespec="seconds"),
+            sector_relative_strength=sector_relative_strength,
+            style_pair_summary=style_pair_summary,
+            defensive_cyclical_summary={key: round(value, 3) for key, value in defensive_cyclical_summary.items()},
         )
 
     def _empty_result(self) -> MarketConditionResult:
@@ -424,6 +444,9 @@ class MarketConditionScorer:
             s5th_series=empty,
             vix_close=None,
             update_time=datetime.now().isoformat(timespec="seconds"),
+            sector_relative_strength=empty,
+            style_pair_summary=empty,
+            defensive_cyclical_summary={},
         )
 
     def _raw_component_values_at_offset(
@@ -711,6 +734,140 @@ class MarketConditionScorer:
             "ABOVE MA COUNT": float(above_count),
             "MA COUNT": float(available_ma_count),
         }
+
+    def _sector_relative_strength(
+        self,
+        market_histories: dict[str, pd.DataFrame],
+        benchmark_history: pd.DataFrame,
+    ) -> pd.DataFrame:
+        if benchmark_history.empty or "close" not in benchmark_history.columns:
+            return pd.DataFrame()
+        rows: list[dict[str, object]] = []
+        for item in self.config.condition_etfs:
+            if item.ticker not in SECTOR_ROTATION_TICKERS:
+                continue
+            history = market_histories.get(item.ticker, pd.DataFrame())
+            if history.empty or "close" not in history.columns:
+                continue
+            rows.append(
+                {
+                    "TICKER": item.ticker,
+                    "NAME": item.name,
+                    "REL 1W %": self._relative_return_at_offset(history, benchmark_history, 5, 0),
+                    "REL 1M %": self._relative_return_at_offset(history, benchmark_history, 21, 0),
+                    "REL 3M %": self._relative_return_at_offset(history, benchmark_history, 63, 0),
+                    "REL 1M 1W AGO %": self._relative_return_at_offset(history, benchmark_history, 21, 5),
+                    "REL 1M 1M AGO %": self._relative_return_at_offset(history, benchmark_history, 21, 21),
+                }
+            )
+        frame = pd.DataFrame(rows)
+        if frame.empty:
+            return frame
+        current_rank = frame["REL 1M %"].rank(ascending=False, method="min")
+        prior_1w_rank = frame["REL 1M 1W AGO %"].rank(ascending=False, method="min")
+        prior_1m_rank = frame["REL 1M 1M AGO %"].rank(ascending=False, method="min")
+        frame["RANK 1M"] = current_rank
+        frame["RANK DELTA 1W"] = prior_1w_rank - current_rank
+        frame["RANK DELTA 1M"] = prior_1m_rank - current_rank
+        for column in ["REL 1W %", "REL 1M %", "REL 3M %", "REL 1M 1W AGO %", "REL 1M 1M AGO %", "RANK 1M", "RANK DELTA 1W", "RANK DELTA 1M"]:
+            frame[column] = pd.to_numeric(frame[column], errors="coerce").round(3)
+        return frame.sort_values(["REL 1M %", "REL 1W %"], ascending=[False, False]).reset_index(drop=True)
+
+    def _style_pair_summary(self, market_histories: dict[str, pd.DataFrame]) -> pd.DataFrame:
+        rows: list[dict[str, object]] = []
+        for numerator, denominator, name in STYLE_RATIO_PAIRS:
+            summary = self._pair_ratio_summary(market_histories, numerator, denominator)
+            if not summary:
+                continue
+            rows.append({"PAIR": f"{numerator}/{denominator}", "NAME": name, **summary})
+        frame = pd.DataFrame(rows)
+        if frame.empty:
+            return frame
+        for column in ["REL 1W %", "REL 1M %", "REL 3M %", "ABOVE MA COUNT", "MA COUNT"]:
+            frame[column] = pd.to_numeric(frame[column], errors="coerce").round(3)
+        return frame.sort_values(["REL 1M %", "REL 1W %"], ascending=[False, False]).reset_index(drop=True)
+
+    def _pair_ratio_summary(self, market_histories: dict[str, pd.DataFrame], numerator: str, denominator: str) -> dict[str, float]:
+        numerator_history = market_histories.get(numerator, pd.DataFrame())
+        denominator_history = market_histories.get(denominator, pd.DataFrame())
+        if numerator_history.empty or denominator_history.empty:
+            return {}
+        if "close" not in numerator_history.columns or "close" not in denominator_history.columns:
+            return {}
+        aligned = pd.concat(
+            [numerator_history["close"].astype(float), denominator_history["close"].astype(float)],
+            axis=1,
+            join="inner",
+        ).dropna()
+        if aligned.empty:
+            return {}
+        aligned = aligned.loc[aligned.iloc[:, 1] != 0]
+        if aligned.empty:
+            return {}
+        ratio = aligned.iloc[:, 0] / aligned.iloc[:, 1]
+        above_count = 0
+        available_ma_count = 0
+        for window in self.config.risk_on_ratio_ma_windows:
+            if len(ratio) < window:
+                continue
+            moving_average = ratio.rolling(window).mean().iloc[-1]
+            if pd.isna(moving_average):
+                continue
+            available_ma_count += 1
+            if float(ratio.iloc[-1]) >= float(moving_average):
+                above_count += 1
+        return {
+            "REL 1W %": self._ratio_return(ratio, 5),
+            "REL 1M %": self._ratio_return(ratio, 21),
+            "REL 3M %": self._ratio_return(ratio, 63),
+            "ABOVE MA COUNT": float(above_count),
+            "MA COUNT": float(available_ma_count),
+        }
+
+    def _defensive_cyclical_summary(self, market_histories: dict[str, pd.DataFrame]) -> dict[str, float]:
+        summary: dict[str, float] = {}
+        for periods, label in [(5, "REL 1W %"), (21, "REL 1M %"), (63, "REL 3M %")]:
+            defensive = self._basket_return(market_histories, DEFENSIVE_SECTOR_TICKERS, periods)
+            cyclical = self._basket_return(market_histories, CYCLICAL_GROWTH_SECTOR_TICKERS, periods)
+            if defensive is None or cyclical is None:
+                continue
+            summary[label] = cyclical - defensive
+        return summary
+
+    def _basket_return(self, market_histories: dict[str, pd.DataFrame], tickers: tuple[str, ...], periods: int) -> float | None:
+        returns = [
+            value
+            for ticker in tickers
+            if (value := self._return_at_offset(market_histories.get(ticker, pd.DataFrame()), periods, 0)) is not None
+        ]
+        if not returns:
+            return None
+        return float(np.mean(returns))
+
+    def _relative_return_at_offset(
+        self,
+        asset_history: pd.DataFrame,
+        benchmark_history: pd.DataFrame,
+        periods: int,
+        offset: int,
+    ) -> float:
+        if asset_history.empty or benchmark_history.empty:
+            return float("nan")
+        if "close" not in asset_history.columns or "close" not in benchmark_history.columns:
+            return float("nan")
+        aligned = pd.concat(
+            [asset_history["close"].astype(float), benchmark_history["close"].astype(float)],
+            axis=1,
+            join="inner",
+        ).dropna()
+        if len(aligned) <= periods + offset:
+            return float("nan")
+        aligned = aligned.iloc[: len(aligned) - offset] if offset > 0 else aligned
+        asset_return = aligned.iloc[:, 0].pct_change(periods, fill_method=None).iloc[-1] * 100.0
+        benchmark_return = aligned.iloc[:, 1].pct_change(periods, fill_method=None).iloc[-1] * 100.0
+        if pd.isna(asset_return) or pd.isna(benchmark_return):
+            return float("nan")
+        return float(asset_return - benchmark_return)
 
     def _ratio_return(self, ratio: pd.Series, periods: int) -> float:
         if len(ratio) <= periods:

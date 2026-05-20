@@ -173,7 +173,7 @@ The current default config sets this to `false`, so sample fallback is inactive 
 - fundamental cache under `data_cache/`
 - user preferences under `data_cache/user_preferences.yaml`
 - weekly universe snapshots under `data_runs/universe_snapshots/`
-- run artifacts under file-type folders keyed by trade-date date key, such as `data_runs/run_metadata/YYYYMMDD.json`, `data_runs/eligible_snapshot/YYYYMMDD.csv`, `data_runs/market_summary/YYYYMMDD.json`, and `data_runs/radar_summary/YYYYMMDD.json`
+- run artifacts under file-type folders keyed by trade-date date key, such as `data_runs/run_metadata/YYYYMMDD.json`, `data_runs/eligible_snapshot/YYYYMMDD.csv`, `data_runs/market_summary/YYYYMMDD.json`, `data_runs/market_documents/YYYYMMDD.json`, `data_runs/market_documents/YYYYMMDD.md`, `data_runs/market_reports/YYYYMMDD.md`, and `data_runs/radar_summary/YYYYMMDD.json`
 - scan-hit history and preset-hit tracking under `data_runs/tracking.db`
 - EntrySignal startup exports under `data_runs/entry_signals/`
 
@@ -195,7 +195,7 @@ When persistence is enabled, `ResearchPlatform.load_latest_run_artifacts()` can 
 - the saved run metadata `manual_symbols_input` matches the current symbol input, which is empty in the active UI
 - the saved run `trade_date` matches the current expected trade date
 
-The current expected trade date is derived from US/Eastern calendar date with a daily close cutoff and a weekday-only fallback. The Streamlit app uses this helper on startup and artifact-key changes when neither refresh control is forced. Explicit `Refresh data`, `Force weekly universe refresh`, or `Force price data refresh` bypass saved-run restore and recompute through `ResearchPlatform.run()`.
+The current expected trade date is derived from US/Eastern calendar date with a daily close cutoff and a weekday-only fallback. The Streamlit app uses this helper on startup and artifact-key changes when neither refresh control is forced. Explicit `Refresh data`, `Force weekly universe refresh`, `Force price data refresh`, or `Recompute from cache` bypass saved-run restore and recompute through `ResearchPlatform.run()`. `Recompute from cache` does not bypass price-cache TTL by itself; it is intended to rebuild local run artifacts and tracking rows from the current cache state.
 
 ### 4.4 Fetch-status states
 
@@ -297,10 +297,14 @@ When `data.persist_research_snapshots` is true, the pipeline saves:
 - `eligible_snapshot/YYYYMMDD.csv`
 - `run_metadata/YYYYMMDD.json`
 - `market_summary/YYYYMMDD.json`
+- `market_documents/YYYYMMDD.json`
+- `market_documents/YYYYMMDD.md`
 - `radar_summary/YYYYMMDD.json`
 - date-level scan hits into `tracking.db`
 
 `eligible_snapshot` is retained as the inspectable scan universe and saved-run restore base. The raw watchlist CSV is optional and controlled by `data.persist_watchlist_snapshot`; the default is false. When the watchlist CSV is absent, same-day saved-run restore rebuilds the watchlist from `eligible_snapshot` and stored scan hits. Preset-hit CSVs remain separate under `data_runs/preset_exports/`.
+
+`market_documents/YYYYMMDD.json` is generated deterministically from the saved market summary and recent same-folder market summaries. It is an AI-input market document, not the final human-facing report. The document stores `schema_version=market_document.v1`, executive context, section facts, evidence source fields, trajectory summaries, significance flags, recent transitions, watchpoint candidates, analysis boundaries, missing inputs, and a data appendix. `market_documents/YYYYMMDD.md` renders the same market document for AI/skill input. The final human-facing report is owned by a report-writing skill and is written to `market_reports/YYYYMMDD.md`.
 
 After the Streamlit artifact load syncs EntrySignal pools, the app evaluates the startup-selected entry signals and writes inspectable exports under `data_runs/entry_signals/`:
 
@@ -324,7 +328,7 @@ Run metadata currently includes:
 - `universe_mode`
 - `universe_snapshot_path`
 
-The current same-day saved-run restore path restores the saved `eligible_snapshot`, `watchlist`, scan hits from SQLite, market summary, radar summary, and metadata. It still does not restore full `snapshot` or `fetch_status` CSVs; when those are unavailable, the pipeline builds a minimal snapshot carrying the saved trade date.
+The current same-day saved-run restore path restores the saved `eligible_snapshot`, `watchlist`, scan hits from SQLite, market summary, market document metadata, radar summary, and metadata. It still does not restore full `snapshot` or `fetch_status` CSVs; when those are unavailable, the pipeline builds a minimal snapshot carrying the saved trade date.
 
 ## 6. Active Provider Modules
 

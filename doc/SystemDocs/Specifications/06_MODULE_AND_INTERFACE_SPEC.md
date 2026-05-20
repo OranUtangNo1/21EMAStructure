@@ -140,6 +140,7 @@ This keeps settings, reusable calculations, and display-ready outputs separate.
   - page rendering
   - artifact reload by run-option cache key and `Refresh data`
   - same-day saved-run reuse before full recompute when refresh controls are not forced
+  - cache-based recompute control that bypasses saved-run restore without forcing live price refresh
   - watchlist control state
   - watchlist preset save/load/update/delete UI with a 10-preset cap
   - Analysis filtering, benchmark comparison, and CSV export
@@ -202,7 +203,7 @@ The pipeline contract is:
 9. optionally persist run artifacts
 10. in the app layer, sync preset detections and refresh tracking outcomes after artifact load
 
-When `force_price_refresh` is true, the price provider bypasses fresh price-cache reuse for the run, uses any cached price rows as merge/fallback data, and fetches live yfinance rows for the requested price symbols.
+When `force_price_refresh` is true, the price provider bypasses fresh price-cache reuse for the run, uses any cached price rows as merge/fallback data, and fetches live yfinance rows for the requested price symbols. The app-level `Recompute from cache` control is separate from this pipeline flag: it skips same-day saved-run restore but still calls `ResearchPlatform.run(..., force_price_refresh=False)` unless `Force price data refresh` is also selected.
 
 ### 3.4 Scan Interface
 
@@ -305,6 +306,10 @@ The scorer supports these calculation modes:
 - `active_symbols`
 - `blended`
 
+`MarketReportBuilder.build(summary, source_summary_path=None, data_health_summary=None, history_summaries=None)` returns `MarketReportResult`. The builder consumes the persisted market summary shape plus optional recent market summaries and emits an AI-input market document. It does not infer unknown fields, and it records evidence source fields, trajectory summaries, significance flags, recent transitions, watchpoint candidates, and analysis boundaries.
+
+`MarketReportMarkdownRenderer.render(report)` renders a Markdown market document from `MarketReportResult`. This Markdown is not the final human-facing report. The final report is expected to be produced by a report-writing skill that uses the market document as its only evidence source.
+
 ## 4. Result Objects
 
 ### 4.1 PlatformArtifacts
@@ -374,11 +379,48 @@ The active pipeline bundle includes:
 - `leadership_snapshot`
 - `external_snapshot`
 - `factors_vs_sp500`
+- `sector_relative_strength`
+- `style_pair_summary`
+- `defensive_cyclical_summary`
 - `s5th_series`
 - `vix_close`
 - `update_time`
 
-### 4.5 Data Status Models
+### 4.5 MarketReportResult
+
+`MarketReportResult` is the AI-input market document and contains:
+
+- `schema_version`
+- `document_type`
+- `trade_date`
+- `generated_at`
+- `source_summary_path`
+- `executive_context`
+- `sections`
+- `recent_transitions`
+- `watchpoint_candidates`
+- `analysis_boundary`
+- `missing_inputs`
+- `data_appendix`
+- `report_generation_contract`
+
+Each section includes a key, title, label, optional direction, significance, summary, metrics, `facts_for_ai`, warnings, and optional trajectory.
+
+Each metric row includes:
+
+- `metric`
+- `source_field`
+- `value`
+- `raw_value`
+- `score_value`
+- `delta_1d`
+- `delta_1w`
+- `delta_1m`
+- `note`
+
+`analysis_boundary` limits the skill to the market document's own values, labels, trajectories, significance flags, facts, and watchpoint candidates. It also prohibits external events, news, and macro causes that are not present in the document. `report_generation_contract` states that the final report owner is the skill and that the system output is only the evidence-bearing input.
+
+### 4.6 Data Status Models
 
 `FetchStatus` records:
 

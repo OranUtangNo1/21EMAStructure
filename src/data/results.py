@@ -88,5 +88,6 @@ class RunArtifactsLoadResult:
     scan_hits: pd.DataFrame | None
     market_metadata: dict[str, object] | None = None
     radar_metadata: dict[str, object] | None = None
+    market_report_metadata: dict[str, object] | None = None
     market_frames: dict[str, pd.DataFrame] = field(default_factory=dict)
     radar_frames: dict[str, pd.DataFrame] = field(default_factory=dict)

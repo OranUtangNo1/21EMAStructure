@@ -92,12 +92,18 @@ Related folders:
    - active config parameters
    - thresholds, weights, universes, and modes
 
-9. `10_TRADING_METHOD_PLAYBOOK.md`
+9. `09_MARKET_DOCUMENT_AND_REPORT_SPEC.md`
+   - market document schema
+   - final market report format
+   - skill input/output contract
+   - market document and final report artifact paths
+
+10. `10_TRADING_METHOD_PLAYBOOK.md`
     - human-readable method guide
     - screening workflow
     - active scope boundary
 
-10. `12_UNIVERSE_PROVIDER_DECISIONS.md`
+11. `12_UNIVERSE_PROVIDER_DECISIONS.md`
    - universe discovery strategy
    - refresh cadence
    - current provider decisions

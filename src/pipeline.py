@@ -10,6 +10,7 @@ from pandas.tseries.offsets import BDay
 
 from src.configuration import load_settings
 from src.dashboard.market import MarketConditionConfig, MarketConditionResult, MarketConditionScorer
+from src.dashboard.market_report import MarketReportConfig
 from src.dashboard.radar import RadarConfig, RadarResult, RadarViewModelBuilder
 from src.dashboard.watchlist import ScanCardViewModel, WatchlistViewModelBuilder
 from src.data.cache import CacheLayer
@@ -97,7 +98,10 @@ class ResearchPlatform:
         cache_dir = self.root / app_settings.get("cache_dir", "data_cache")
         self.cache = CacheLayer(cache_dir)
         self.sample_factory = SampleDataFactory()
-        self.snapshot_store = DataSnapshotStore(self.root / app_settings.get("snapshot_dir", "data_runs"))
+        self.snapshot_store = DataSnapshotStore(
+            self.root / app_settings.get("snapshot_dir", "data_runs"),
+            market_report_config=MarketReportConfig.from_dict(self.settings.get("market", {}).get("market_report", {})),
+        )
         self.allow_sample_fallback = bool(app_settings.get("use_sample_data_if_fetch_fails", False))
 
         self.indicator_calculator = IndicatorCalculator(IndicatorConfig.from_dict(self.settings.get("indicators", {})))
@@ -220,7 +224,6 @@ class ResearchPlatform:
             universe_mode,
             universe_snapshot_path,
         )
-
         return PlatformArtifacts(
             snapshot=snapshot,
             eligible_snapshot=eligible_snapshot,
@@ -400,6 +403,8 @@ class ResearchPlatform:
         leadership_snapshot = self._frame_from_records(metadata.get("leadership_snapshot"))
         external_snapshot = self._frame_from_records(metadata.get("external_snapshot"))
         factors_vs_sp500 = self._frame_from_records(metadata.get("factors_vs_sp500"))
+        sector_relative_strength = self._frame_from_records(metadata.get("sector_relative_strength"))
+        style_pair_summary = self._frame_from_records(metadata.get("style_pair_summary"))
         return MarketConditionResult(
             trade_date=trade_date,
             score=float(metadata.get("score", 0.0)),
@@ -426,6 +431,9 @@ class ResearchPlatform:
             s5th_series=pd.DataFrame(),
             vix_close=self._optional_float(metadata.get("vix_close")),
             update_time=str(metadata.get("update_time", "")),
+            sector_relative_strength=sector_relative_strength,
+            style_pair_summary=style_pair_summary,
+            defensive_cyclical_summary=self._float_mapping(metadata.get("defensive_cyclical_summary")),
         )
 
     def _restore_radar_result(

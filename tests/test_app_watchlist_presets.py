@@ -291,6 +291,27 @@ def test_load_artifacts_force_refresh_bypasses_saved_run(monkeypatch) -> None:
     assert load_artifacts("config/default.yaml", ["AAPL"], False, True) is recomputed_artifact
 
 
+def test_load_artifacts_force_recompute_from_cache_bypasses_saved_run_without_price_refresh(monkeypatch) -> None:
+    recomputed_artifact = object()
+
+    class FakePlatform:
+        def __init__(self, config_path: str) -> None:
+            self.config_path = config_path
+
+        def load_latest_run_artifacts(self, *args, **kwargs):
+            raise AssertionError("saved artifacts should not be loaded during cache recompute")
+
+        def run(self, symbols, force_universe_refresh, force_price_refresh):
+            assert symbols == ["AAPL"]
+            assert force_universe_refresh is False
+            assert force_price_refresh is False
+            return recomputed_artifact
+
+    monkeypatch.setattr("app.main.get_research_platform_class", lambda: FakePlatform)
+
+    assert load_artifacts("config/default.yaml", ["AAPL"], False, False, force_recompute_from_cache=True) is recomputed_artifact
+
+
 def test_export_watchlist_preset_csvs_writes_daily_folder_and_overwrites_files(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     preferences_path = tmp_path / "user_preferences.yaml"

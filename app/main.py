@@ -557,11 +557,12 @@ def load_artifacts(
     symbols: list[str],
     force_universe_refresh: bool,
     force_price_refresh: bool,
+    force_recompute_from_cache: bool = False,
     *,
     prefer_saved_run: bool = True,
 ) -> PlatformArtifacts:
     platform = get_research_platform_class()(config_path)
-    if prefer_saved_run and not force_universe_refresh and not force_price_refresh:
+    if prefer_saved_run and not force_universe_refresh and not force_price_refresh and not force_recompute_from_cache:
         saved = platform.load_latest_run_artifacts(
             symbols or None,
             force_universe_refresh=force_universe_refresh,
@@ -3396,9 +3397,14 @@ def main() -> None:
             value=False,
             help="Bypass the price-cache TTL and fetch the latest OHLCV data while keeping cached rows as fallback.",
         )
+        force_recompute_from_cache = st.checkbox(
+            "Recompute from cache",
+            value=False,
+            help="Bypass same-day saved-run restore and rebuild local run artifacts from the current cache without forcing a live price refresh.",
+        )
         refresh = st.button("Refresh data", type="secondary")
 
-    cache_key = (config_path, tuple(symbols), force_universe_refresh, force_price_refresh)
+    cache_key = (config_path, tuple(symbols), force_universe_refresh, force_price_refresh, force_recompute_from_cache)
     if refresh or st.session_state.get("artifacts_key") != cache_key:
         with st.spinner("Loading screening artifacts..."):
             artifacts = load_artifacts(
@@ -3406,6 +3412,7 @@ def main() -> None:
                 symbols,
                 force_universe_refresh,
                 force_price_refresh,
+                force_recompute_from_cache,
                 prefer_saved_run=not refresh,
             )
             st.session_state["artifacts"] = artifacts

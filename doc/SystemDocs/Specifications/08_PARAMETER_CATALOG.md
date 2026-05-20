@@ -440,6 +440,30 @@ The same `entry_ready.rr_ratio_min` value is used as the minimum acceptable `R/R
 - `external_etfs`: display-only external ETF universe
 - `factor_etfs`: factor-comparison ETF universe
 
+### Market document
+- `market_report.output.write_json`: current default `true`; writes the AI-input market document to `data_runs/market_documents/YYYYMMDD.json`
+- `market_report.output.write_markdown`: current default `true`; writes a Markdown rendering of the AI-input market document to `data_runs/market_documents/YYYYMMDD.md`
+- `market_report.horizons.short_days`: current default `5`
+- `market_report.horizons.medium_days`: current default `21`
+- `market_report.horizons.long_days`: current default `63`
+- `market_report.regime.score_improving_1w`: current default `3.0`
+- `market_report.regime.score_deteriorating_1w`: current default `-3.0`
+- `market_report.regime.score_improving_1m`: current default `5.0`
+- `market_report.regime.score_deteriorating_1m`: current default `-5.0`
+- `market_report.breadth.strong_level`: current default `70.0`
+- `market_report.breadth.weak_level`: current default `50.0`
+- `market_report.breadth.s2w_high_active_level`: current default `30.0`
+- `market_report.breadth.s2w_high_weak_level`: current default `15.0`
+- `market_report.volatility.vix_low_level`: current default `12.0`
+- `market_report.volatility.vix_neutral_level`: current default `17.0`
+- `market_report.volatility.vix_elevated_level`: current default `25.0`
+- `market_report.volatility.vix_stress_level`: current default `30.0`
+- `market_report.risk.safe_haven_positive_threshold`: current default `2.0`
+- `market_report.risk.safe_haven_negative_threshold`: current default `-2.0`
+- `market_report.risk.high_distance_warning_pct`: current default `-5.0`
+- `market_report.confidence.minimum_required_metric_coverage`: current default `0.8`
+- `market_report.confidence.disagreement_penalty`: current default `0.2`
+
 ## 10. RS Radar
 
 ### Radar parameters
@@ -472,6 +496,8 @@ When persistence is enabled, the current implementation saves these run-level ar
 - run metadata
 - weekly universe snapshots
 - market summary JSON
+- market document JSON
+- market document Markdown
 - radar summary JSON
 - date-level scan-hit history in `data_runs/tracking.db`
 

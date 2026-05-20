@@ -7,6 +7,7 @@ from typing import Any
 
 import pandas as pd
 
+from src.dashboard.market_report import MarketReportBuilder, MarketReportConfig, MarketReportMarkdownRenderer
 from src.data.tracking_repository import read_scan_hits_for_watchlist
 from src.data.tracking_db import connect_tracking_db
 from src.data.results import RunArtifactsLoadResult, UniverseSnapshotLoadResult
@@ -15,19 +16,26 @@ from src.data.results import RunArtifactsLoadResult, UniverseSnapshotLoadResult
 class DataSnapshotStore:
     """Persist daily research artifacts in file-type folders and reusable universe snapshots."""
 
-    def __init__(self, root_dir: str | Path) -> None:
+    def __init__(self, root_dir: str | Path, market_report_config: MarketReportConfig | None = None) -> None:
         self.root_dir = Path(root_dir)
         self.root_dir.mkdir(parents=True, exist_ok=True)
         self.eligible_snapshot_dir = self.root_dir / "eligible_snapshot"
         self.watchlist_dir = self.root_dir / "watchlist"
         self.market_summary_dir = self.root_dir / "market_summary"
+        self.market_document_dir = self.root_dir / "market_documents"
+        self.market_report_dir = self.root_dir / "market_reports"
         self.radar_summary_dir = self.root_dir / "radar_summary"
         self.metadata_dir = self.root_dir / "run_metadata"
         self.universe_dir = self.root_dir / "universe_snapshots"
+        self.market_report_config = market_report_config or MarketReportConfig()
+        self.market_report_builder = MarketReportBuilder(self.market_report_config)
+        self.market_report_renderer = MarketReportMarkdownRenderer()
         for directory in [
             self.eligible_snapshot_dir,
             self.watchlist_dir,
             self.market_summary_dir,
+            self.market_document_dir,
+            self.market_report_dir,
             self.radar_summary_dir,
             self.metadata_dir,
             self.universe_dir,
@@ -57,7 +65,7 @@ class DataSnapshotStore:
         if scan_hits is not None:
             self._save_scan_hits(date_key, trade_date_iso, scan_hits)
         if market_result is not None:
-            self._save_market_result(date_key, market_result)
+            self._save_market_result(date_key, market_result, metadata)
         if radar_result is not None:
             self._save_radar_result(date_key, radar_result)
 
@@ -100,6 +108,7 @@ class DataSnapshotStore:
             scan_hits=self._load_scan_hits(date_key),
             market_metadata=self._load_json(self.market_summary_dir / f"{date_key}.json"),
             radar_metadata=self._load_json(self.radar_summary_dir / f"{date_key}.json"),
+            market_report_metadata=self._load_json(self.market_document_dir / f"{date_key}.json"),
             market_frames={},
             radar_frames={},
         )
@@ -139,7 +148,7 @@ class DataSnapshotStore:
             snapshot["ticker"] = snapshot["ticker"].astype(str).str.upper()
         return UniverseSnapshotLoadResult(snapshot=snapshot, metadata=metadata, path=str(csv_path))
 
-    def _save_market_result(self, date_key: str, market_result: Any) -> None:
+    def _save_market_result(self, date_key: str, market_result: Any, metadata: dict[str, Any]) -> None:
         payload = {
             "trade_date": market_result.trade_date.isoformat() if market_result.trade_date is not None else None,
             "score": market_result.score,
@@ -165,9 +174,28 @@ class DataSnapshotStore:
             "leadership_snapshot": self._frame_to_records(getattr(market_result, "leadership_snapshot", pd.DataFrame())),
             "external_snapshot": self._frame_to_records(getattr(market_result, "external_snapshot", pd.DataFrame())),
             "factors_vs_sp500": self._frame_to_records(getattr(market_result, "factors_vs_sp500", pd.DataFrame())),
+            "sector_relative_strength": self._frame_to_records(getattr(market_result, "sector_relative_strength", pd.DataFrame())),
+            "style_pair_summary": self._frame_to_records(getattr(market_result, "style_pair_summary", pd.DataFrame())),
+            "defensive_cyclical_summary": dict(getattr(market_result, "defensive_cyclical_summary", {})),
         }
-        with (self.market_summary_dir / f"{date_key}.json").open("w", encoding="utf-8") as handle:
+        summary_path = self.market_summary_dir / f"{date_key}.json"
+        with summary_path.open("w", encoding="utf-8") as handle:
             json.dump(payload, handle, ensure_ascii=False, indent=2)
+        self._save_market_document(date_key, payload, summary_path, metadata)
+
+    def _save_market_document(self, date_key: str, payload: dict[str, object], summary_path: Path, metadata: dict[str, Any]) -> None:
+        document = self.market_report_builder.build(
+            payload,
+            source_summary_path=str(summary_path),
+            data_health_summary=self._as_mapping(metadata.get("data_health_summary")),
+            history_summaries=self._recent_market_summaries(date_key),
+        )
+        if self.market_report_config.write_json:
+            with (self.market_document_dir / f"{date_key}.json").open("w", encoding="utf-8") as handle:
+                json.dump(document.to_dict(), handle, ensure_ascii=False, indent=2)
+        if self.market_report_config.write_markdown:
+            with (self.market_document_dir / f"{date_key}.md").open("w", encoding="utf-8") as handle:
+                handle.write(self.market_report_renderer.render(document))
 
     def _save_radar_result(self, date_key: str, radar_result: Any) -> None:
         payload = {
@@ -233,6 +261,22 @@ class DataSnapshotStore:
             return None
         with path.open("r", encoding="utf-8") as handle:
             return json.load(handle)
+
+    def _recent_market_summaries(self, date_key: str, lookback: int = 10) -> list[dict[str, object]]:
+        candidates = sorted(
+            path
+            for path in self.market_summary_dir.iterdir()
+            if path.is_file() and path.suffix == ".json" and path.stem.isdigit() and path.stem <= date_key
+        )
+        summaries = []
+        for path in candidates[-lookback:]:
+            payload = self._load_json(path)
+            if payload is not None:
+                summaries.append(payload)
+        return summaries
+
+    def _as_mapping(self, value: object) -> dict[str, object]:
+        return value if isinstance(value, dict) else {}
 
     def _latest_date_key(self, directory: Path, suffix: str) -> str | None:
         candidates = [
