@@ -1,0 +1,4 @@
+interface:
+  display_name: "ReportSkill-1"
+  short_description: "Write industry-aware market reports"
+  default_prompt: "Use $reportskill-1 to write an action-oriented Japanese market report from the latest market document."

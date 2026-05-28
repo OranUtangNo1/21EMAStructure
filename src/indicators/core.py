@@ -14,7 +14,9 @@ class IndicatorConfig:
 
     ema_period: int = 21
     sma_short_period: int = 50
+    sma_medium_period: int = 150
     sma_long_period: int = 200
+    sma_long_slope_lookback: int = 21
     atr_period: int = 14
     adr_period: int = 20
     adr_formula: str = "sma_high_low_ratio"
@@ -84,11 +86,48 @@ class IndicatorCalculator:
         df["ema21_close"] = df["close"].ewm(span=self.config.ema_period, adjust=False).mean()
         df["ema21_cloud_width"] = df["ema21_high"] - df["ema21_low"]
         df["sma50"] = df["close"].rolling(self.config.sma_short_period).mean()
+        df["sma150"] = df["close"].rolling(self.config.sma_medium_period).mean()
         df["sma200"] = df["close"].rolling(self.config.sma_long_period).mean()
+        df["sma150_slope_1m_pct"] = ((df["sma150"] / df["sma150"].shift(self.config.sma_long_slope_lookback)) - 1.0) * 100.0
+        df["sma200_slope_1m_pct"] = ((df["sma200"] / df["sma200"].shift(self.config.sma_long_slope_lookback)) - 1.0) * 100.0
         df["high_52w"] = df["high"].rolling(252).max()
         df["low_52w"] = df["low"].rolling(252).min()
+        df["high_3y"] = df["high"].rolling(756, min_periods=504).max()
         df["dist_from_52w_high"] = ((df["close"] / df["high_52w"].replace(0, np.nan)) - 1.0) * 100.0
         df["dist_from_52w_low"] = ((df["close"] / df["low_52w"].replace(0, np.nan)) - 1.0) * 100.0
+        df["dist_from_3y_high"] = ((df["close"] / df["high_3y"].replace(0, np.nan)) - 1.0) * 100.0
+        trend_template_checks = {
+            "trend_template_close_above_150_200": (df["close"] > df["sma150"]) & (df["close"] > df["sma200"]),
+            "trend_template_sma150_above_sma200": df["sma150"] > df["sma200"],
+            "trend_template_sma200_up_1m": df["sma200_slope_1m_pct"] > 0.0,
+            "trend_template_sma50_above_150_200": (df["sma50"] > df["sma150"]) & (df["sma50"] > df["sma200"]),
+            "trend_template_close_above_sma50": df["close"] > df["sma50"],
+            "trend_template_52w_low_distance": df["dist_from_52w_low"] >= 30.0,
+            "trend_template_52w_high_proximity": df["dist_from_52w_high"] >= -25.0,
+        }
+        for column_name, values in trend_template_checks.items():
+            df[column_name] = values.fillna(False)
+        df["trend_template_price_score"] = pd.DataFrame(trend_template_checks).fillna(False).sum(axis=1).astype(int)
+        df["trend_template_price_setup"] = df["trend_template_price_score"] >= len(trend_template_checks)
+        stage2_candidate = (
+            (df["close"] > df["sma150"])
+            & (df["close"] > df["sma200"])
+            & (df["sma150_slope_1m_pct"] >= 0.0)
+            & (df["trend_template_price_score"] >= 5)
+        )
+        stage4_avoid = (df["close"] < df["sma150"]) & (df["close"] < df["sma200"]) & (df["sma150_slope_1m_pct"] < 0.0)
+        stage_base_or_transition = (df["trend_template_price_score"].between(3, 5)) & ~stage2_candidate & ~stage4_avoid
+        df["stage_label"] = np.select(
+            [stage2_candidate, stage4_avoid, stage_base_or_transition],
+            ["stage2_candidate", "stage4_avoid", "stage_base_or_transition"],
+            default="unclassified",
+        )
+        stage2_candidate = stage2_candidate.fillna(False)
+        stage2_start = stage2_candidate & ~stage2_candidate.shift(1, fill_value=False)
+        row_number = pd.Series(np.arange(len(df)), index=df.index, dtype=float)
+        stage2_start_row = pd.Series(np.where(stage2_start, row_number, np.nan), index=df.index).ffill()
+        df["days_since_stage2_start"] = (row_number - stage2_start_row).where(stage2_candidate)
+        df["stage_base_days_3m"] = stage_base_or_transition.fillna(False).rolling(63, min_periods=1).sum()
         df["avg_volume_50d"] = df["volume"].rolling(self.config.relvol_period).mean()
 
         weekly = df.resample("W-FRI").agg(

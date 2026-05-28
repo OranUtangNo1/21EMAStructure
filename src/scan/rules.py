@@ -38,6 +38,10 @@ DEFAULT_SCAN_RULE_NAMES = (
     "LL-HL Structure Trend Line Break",
     "50SMA Reclaim",
     "RS New High",
+    "RS 3Y New High",
+    "RS Leads Price Setup",
+    "Trend Template",
+    "Fresh Stage 2 Breakout",
 )
 
 DEFAULT_ANNOTATION_FILTER_NAMES = (
@@ -45,6 +49,12 @@ DEFAULT_ANNOTATION_FILTER_NAMES = (
     "High Est. EPS Growth",
     "PP Count (20d)",
     "Trend Base",
+    "Stage 2 Confirmed",
+    "Stage 2 Quality Score",
+    "Trend Template",
+    "Mature / Late Stage Risk Filter",
+    "Industry Leadership Gate",
+    "Stage 4 Avoid",
     "Fund Score > 70",
     "Resistance Tests >= 2",
     "Recent Power Gap",
@@ -86,12 +96,22 @@ DEFAULT_CARD_SECTION_PAYLOADS = (
     {"scan_name": "LL-HL Structure Trend Line Break", "display_name": "CT Break"},
     {"scan_name": "50SMA Reclaim", "display_name": "50SMA Reclaim"},
     {"scan_name": "RS New High", "display_name": "RS New High"},
+    {"scan_name": "RS 3Y New High", "display_name": "RS 3Y New High"},
+    {"scan_name": "RS Leads Price Setup", "display_name": "RS Leads Price"},
+    {"scan_name": "Trend Template", "display_name": "Trend Template"},
+    {"scan_name": "Fresh Stage 2 Breakout", "display_name": "Fresh Stage 2"},
 )
 DEFAULT_ANNOTATION_FILTER_PAYLOADS = (
     {"filter_name": "RS 21 >= 63", "display_name": "RS 21 >= 63"},
     {"filter_name": "High Est. EPS Growth", "display_name": "High Est. EPS Growth"},
     {"filter_name": "PP Count (20d)", "display_name": "PP Count (20d)"},
     {"filter_name": "Trend Base", "display_name": "Trend Base"},
+    {"filter_name": "Stage 2 Confirmed", "display_name": "Stage 2 Confirmed"},
+    {"filter_name": "Stage 2 Quality Score", "display_name": "Stage 2 Quality"},
+    {"filter_name": "Trend Template", "display_name": "Trend Template"},
+    {"filter_name": "Mature / Late Stage Risk Filter", "display_name": "Mature Risk Filter"},
+    {"filter_name": "Industry Leadership Gate", "display_name": "Industry Leadership"},
+    {"filter_name": "Stage 4 Avoid", "display_name": "Stage 4 Avoid"},
     {"filter_name": "Fund Score > 70", "display_name": "Fund Score > 70"},
     {"filter_name": "Resistance Tests >= 2", "display_name": "Resistance Tests >= 2"},
     {"filter_name": "Recent Power Gap", "display_name": "Recent Power Gap"},
@@ -102,6 +122,12 @@ ANNOTATION_FILTER_COLUMN_NAMES = {
     "PP Count (20d)": "annotation_pp_count_20d",
     "3+ Pocket Pivots (20d)": "annotation_pp_count_20d",
     "Trend Base": "annotation_trend_base",
+    "Stage 2 Confirmed": "annotation_stage2_confirmed",
+    "Stage 2 Quality Score": "annotation_stage2_quality_score",
+    "Trend Template": "annotation_trend_template",
+    "Mature / Late Stage Risk Filter": "annotation_mature_late_stage_risk_filter",
+    "Industry Leadership Gate": "annotation_industry_leadership_gate",
+    "Stage 4 Avoid": "annotation_stage4_avoid",
     "Fund Score > 70": "annotation_fund_score_gt_70",
     "Resistance Tests >= 2": "annotation_resistance_tests_gte_2",
     "Recent Power Gap": "annotation_recent_power_gap",
@@ -419,6 +445,26 @@ class ScanConfig:
     power_gap_annotation_max_days: int = 20
     rs_new_high_price_dist_max: float = -5.0
     rs_new_high_price_dist_min: float = -30.0
+    rs_3y_new_high_price_dist_max: float = -5.0
+    rs_3y_new_high_price_dist_min: float = -35.0
+    rs_leads_price_rs_min: float = 75.0
+    rs_leads_price_quality_min: float = 70.0
+    rs_leads_price_dist_from_52w_high_max: float = -3.0
+    rs_leads_price_dist_from_52w_high_min: float = -30.0
+    trend_template_price_score_min: int = 7
+    trend_template_rs_min: float = 70.0
+    stage2_price_score_min: int = 5
+    stage2_rs_min: float = 60.0
+    stage2_quality_min_score: float = 75.0
+    fresh_stage2_max_days_since_start: int = 21
+    fresh_stage2_min_base_days_3m: int = 20
+    fresh_stage2_rs_min: float = 70.0
+    fresh_stage2_volume_ratio_min: float = 1.2
+    fresh_stage2_dcr_min: float = 60.0
+    mature_stage_max_days_since_start: int = 252
+    mature_stage_dist_from_52w_low_max: float = 250.0
+    mature_stage_atr_from_50sma_max: float = 7.0
+    industry_leadership_min_score: float = 70.0
     earnings_warning_days: int = 7
     watchlist_sort_mode: str = "hybrid_score"
     scan_status_map: dict[str, str] = field(default_factory=dict)
@@ -1070,6 +1116,56 @@ def _scan_rs_new_high(row: pd.Series, config: ScanConfig) -> bool:
     )
 
 
+def _scan_rs_3y_new_high(row: pd.Series, config: ScanConfig) -> bool:
+    return bool(
+        row.get("rs_ratio_at_3y_high", False)
+        and row.get("dist_from_52w_high", float("nan")) <= config.rs_3y_new_high_price_dist_max
+        and row.get("dist_from_52w_high", float("nan")) >= config.rs_3y_new_high_price_dist_min
+    )
+
+
+def _scan_rs_leads_price_setup(row: pd.Series, config: ScanConfig) -> bool:
+    rs21 = _raw_rs(row, 21)
+    dist_from_52w_high = row.get("dist_from_52w_high", float("nan"))
+    return bool(
+        _stage2_confirmed_pass(row, config)
+        and _mature_stage_risk_pass(row, config)
+        and pd.notna(rs21)
+        and float(rs21) >= config.rs_leads_price_rs_min
+        and _stage2_quality_score(row, config) >= config.rs_leads_price_quality_min
+        and (row.get("rs_ratio_at_52w_high", False) or row.get("rs_ratio_at_3y_high", False))
+        and pd.notna(dist_from_52w_high)
+        and config.rs_leads_price_dist_from_52w_high_min <= float(dist_from_52w_high) <= config.rs_leads_price_dist_from_52w_high_max
+    )
+
+
+def _scan_trend_template(row: pd.Series, config: ScanConfig) -> bool:
+    return _trend_template_pass(row, config)
+
+
+def _scan_fresh_stage2_breakout(row: pd.Series, config: ScanConfig) -> bool:
+    rs21 = _raw_rs(row, 21)
+    days_since_start = row.get("days_since_stage2_start", float("nan"))
+    base_days = row.get("stage_base_days_3m", 0.0)
+    return bool(
+        _stage2_confirmed_pass(row, config)
+        and _mature_stage_risk_pass(row, config)
+        and pd.notna(days_since_start)
+        and 0.0 <= float(days_since_start) <= config.fresh_stage2_max_days_since_start
+        and float(base_days) >= config.fresh_stage2_min_base_days_3m
+        and pd.notna(rs21)
+        and float(rs21) >= config.fresh_stage2_rs_min
+        and row.get("close", 0.0) > row.get("sma50", float("inf"))
+        and (
+            row.get("vcp_pivot_breakout", False)
+            or row.get("structure_pivot_long_breakout_first_day", False)
+            or row.get("dist_from_52w_high", float("nan")) >= -5.0
+        )
+        and row.get("volume_ratio_20d", 0.0) >= config.fresh_stage2_volume_ratio_min
+        and row.get("dcr_percent", 0.0) >= config.fresh_stage2_dcr_min
+    )
+
+
 def _annotation_rs21_gte_63(row: pd.Series, config: ScanConfig) -> bool:
     rs21 = _raw_rs(row, 21)
     return bool(pd.notna(rs21) and float(rs21) >= 63.0)
@@ -1085,6 +1181,34 @@ def _annotation_pp_count_20d(row: pd.Series, config: ScanConfig) -> bool:
 
 def _annotation_trend_base(row: pd.Series, config: ScanConfig) -> bool:
     return bool(row.get("trend_base", False))
+
+
+def _annotation_stage2_confirmed(row: pd.Series, config: ScanConfig) -> bool:
+    return _stage2_confirmed_pass(row, config)
+
+
+def _annotation_stage2_quality_score(row: pd.Series, config: ScanConfig) -> bool:
+    return bool(
+        _stage2_confirmed_pass(row, config)
+        and _stage2_quality_score(row, config) >= config.stage2_quality_min_score
+    )
+
+
+def _annotation_trend_template(row: pd.Series, config: ScanConfig) -> bool:
+    return _trend_template_pass(row, config)
+
+
+def _annotation_mature_late_stage_risk_filter(row: pd.Series, config: ScanConfig) -> bool:
+    return bool(_stage2_confirmed_pass(row, config) and _mature_stage_risk_pass(row, config))
+
+
+def _annotation_industry_leadership_gate(row: pd.Series, config: ScanConfig) -> bool:
+    industry_score = row.get("industry_score", float("nan"))
+    return bool(pd.notna(industry_score) and float(industry_score) >= config.industry_leadership_min_score)
+
+
+def _annotation_stage4_avoid(row: pd.Series, config: ScanConfig) -> bool:
+    return bool(str(row.get("stage_label", "")) == "stage4_avoid")
 
 
 def _annotation_fund_score_gt_70(row: pd.Series, config: ScanConfig) -> bool:
@@ -1135,6 +1259,10 @@ SCAN_RULE_REGISTRY: dict[str, RuleEvaluator] = {
     "LL-HL Structure Trend Line Break": _scan_llhl_ct_break,
     "50SMA Reclaim": _scan_50sma_reclaim,
     "RS New High": _scan_rs_new_high,
+    "RS 3Y New High": _scan_rs_3y_new_high,
+    "RS Leads Price Setup": _scan_rs_leads_price_setup,
+    "Trend Template": _scan_trend_template,
+    "Fresh Stage 2 Breakout": _scan_fresh_stage2_breakout,
 }
 
 ANNOTATION_FILTER_REGISTRY: dict[str, RuleEvaluator] = {
@@ -1143,6 +1271,12 @@ ANNOTATION_FILTER_REGISTRY: dict[str, RuleEvaluator] = {
     "PP Count (20d)": _annotation_pp_count_20d,
     "3+ Pocket Pivots (20d)": _annotation_pp_count_20d,
     "Trend Base": _annotation_trend_base,
+    "Stage 2 Confirmed": _annotation_stage2_confirmed,
+    "Stage 2 Quality Score": _annotation_stage2_quality_score,
+    "Trend Template": _annotation_trend_template,
+    "Mature / Late Stage Risk Filter": _annotation_mature_late_stage_risk_filter,
+    "Industry Leadership Gate": _annotation_industry_leadership_gate,
+    "Stage 4 Avoid": _annotation_stage4_avoid,
     "Fund Score > 70": _annotation_fund_score_gt_70,
     "Resistance Tests >= 2": _annotation_resistance_tests_gte_2,
     "Recent Power Gap": _annotation_recent_power_gap,
@@ -1152,3 +1286,96 @@ ANNOTATION_FILTER_REGISTRY: dict[str, RuleEvaluator] = {
 def _raw_rs(row: pd.Series, lookback: int) -> float:
     value = row.get(f"raw_rs{lookback}", row.get(f"rs{lookback}", float("nan")))
     return float(value) if pd.notna(value) else float("nan")
+
+
+def stage2_quality_score(row: pd.Series, config: ScanConfig) -> float:
+    return _stage2_quality_score(row, config)
+
+
+def mature_late_stage_risk(row: pd.Series, config: ScanConfig) -> bool:
+    return not _mature_stage_risk_pass(row, config)
+
+
+def _stage2_confirmed_pass(row: pd.Series, config: ScanConfig) -> bool:
+    rs21 = _raw_rs(row, 21)
+    return bool(
+        str(row.get("stage_label", "")) == "stage2_candidate"
+        and row.get("trend_template_price_score", 0) >= config.stage2_price_score_min
+        and pd.notna(rs21)
+        and float(rs21) >= config.stage2_rs_min
+    )
+
+
+def _stage2_quality_score(row: pd.Series, config: ScanConfig) -> float:
+    existing = row.get("stage2_quality_score", float("nan"))
+    if pd.notna(existing):
+        return float(existing)
+
+    price_score = _bounded_ratio(row.get("trend_template_price_score", 0.0), 0.0, 7.0) * 35.0
+    rs21 = _raw_rs(row, 21)
+    rs63 = row.get("raw_rs63", row.get("rs63", float("nan")))
+    if pd.notna(rs21) and pd.notna(rs63):
+        rs_composite = float(rs21) * 0.65 + float(rs63) * 0.35
+    elif pd.notna(rs21):
+        rs_composite = float(rs21)
+    else:
+        rs_composite = 0.0
+    rs_score = _bounded_ratio(rs_composite, 0.0, 100.0) * 25.0
+
+    slope_score = (
+        _bounded_ratio(row.get("sma150_slope_1m_pct", 0.0), 0.0, 5.0) * 8.0
+        + _bounded_ratio(row.get("sma200_slope_1m_pct", 0.0), 0.0, 3.0) * 7.0
+    )
+    location_score = (
+        _bounded_ratio(row.get("dist_from_52w_high", -25.0), -25.0, -5.0) * 10.0
+        + _bounded_ratio(row.get("dist_from_52w_low", 0.0), 30.0, 80.0) * 5.0
+    )
+    demand_score = (
+        _bounded_ratio(row.get("ud_volume_ratio", 0.0), 1.0, 2.0) * 5.0
+        + _bounded_ratio(row.get("pp_count_window", 0.0), 0.0, 3.0) * 5.0
+    )
+    return round(float(min(100.0, max(0.0, price_score + rs_score + slope_score + location_score + demand_score))), 2)
+
+
+def _mature_stage_risk_pass(row: pd.Series, config: ScanConfig) -> bool:
+    if str(row.get("stage_label", "")) == "stage4_avoid":
+        return False
+
+    days_since_start = row.get("days_since_stage2_start", float("nan"))
+    dist_from_52w_low = row.get("dist_from_52w_low", float("nan"))
+    atr_from_50sma = row.get("atr_pct_from_50sma", float("nan"))
+
+    if pd.notna(atr_from_50sma) and float(atr_from_50sma) > config.mature_stage_atr_from_50sma_max:
+        return False
+    if pd.notna(dist_from_52w_low) and float(dist_from_52w_low) > config.mature_stage_dist_from_52w_low_max:
+        return False
+    if (
+        pd.notna(days_since_start)
+        and float(days_since_start) > config.mature_stage_max_days_since_start
+        and pd.notna(dist_from_52w_low)
+        and float(dist_from_52w_low) > 150.0
+    ):
+        return False
+    return True
+
+
+def _bounded_ratio(value: object, low: float, high: float) -> float:
+    if pd.isna(value):
+        return 0.0
+    if high <= low:
+        return 0.0
+    numeric = float(value)
+    if numeric <= low:
+        return 0.0
+    if numeric >= high:
+        return 1.0
+    return (numeric - low) / (high - low)
+
+
+def _trend_template_pass(row: pd.Series, config: ScanConfig) -> bool:
+    rs21 = _raw_rs(row, 21)
+    return bool(
+        row.get("trend_template_price_score", 0) >= config.trend_template_price_score_min
+        and pd.notna(rs21)
+        and float(rs21) >= config.trend_template_rs_min
+    )

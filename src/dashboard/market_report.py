@@ -190,6 +190,7 @@ class MarketReportBuilder:
             self._breadth_and_participation(summary, history),
             self._volatility_and_safe_haven(summary, history),
             self._sector_rotation(summary, history),
+            self._industry_leadership(summary),
             self._factor_and_style(summary),
         ]
         missing_inputs = self._missing_inputs(summary, data_health_summary)
@@ -512,6 +513,52 @@ class MarketReportBuilder:
             warnings=[],
         )
 
+    def _industry_leadership(self, summary: dict[str, object]) -> MarketReportSection:
+        industry_rows = _sort_records(_records(summary.get("industry_leaders")), "RS", reverse=True)
+        if not industry_rows:
+            return MarketReportSection(
+                key="industry_leadership",
+                title="Industry Leadership",
+                label="no_data",
+                direction=None,
+                significance=MarketReportSignificance(level="low", reason="Industry leader rows are missing."),
+                summary="Industry-level leadership inputs for final-report candidate-priority guidance.",
+                facts_for_ai=["No industry leadership data is available."],
+            )
+
+        top_industries = industry_rows[:5]
+        new_high_industries = [row for row in industry_rows if _is_52w_high(row.get("52W HIGH"))][:5]
+        accelerating_industries = [row for row in industry_rows if _is_accelerating_industry(row)][:5]
+        sustained_industries = [row for row in industry_rows if _is_sustained_industry(row)][:5]
+        weak_industries = _weak_industries(industry_rows)[:5]
+        facts = [
+            "top_industries=" + _industry_list(top_industries),
+            "new_high_industries=" + _industry_list(new_high_industries),
+            "accelerating_industries=" + _industry_list(accelerating_industries),
+            "sustained_leadership_industries=" + _industry_list(sustained_industries),
+            "weak_industries=" + _industry_list(weak_industries),
+        ]
+        label = "confirmed_industry_leadership" if new_high_industries or sustained_industries else "mixed_industry_leadership"
+        if not top_industries:
+            label = "no_data"
+        significance = MarketReportSignificance(
+            level="high" if new_high_industries or sustained_industries else "medium",
+            reason="Industry-level RS leaders and 52W HIGH context are available.",
+        )
+        evidence_rows = _unique_records([*top_industries, *new_high_industries, *accelerating_industries, *weak_industries])
+        metrics = [_industry_metric(row) for row in evidence_rows[:12]]
+        return MarketReportSection(
+            key="industry_leadership",
+            title="Industry Leadership",
+            label=label,
+            direction=None,
+            significance=significance,
+            summary="Industry-level leadership inputs for final-report candidate-priority guidance.",
+            metrics=metrics,
+            facts_for_ai=facts,
+            warnings=[],
+        )
+
     def _factor_and_style(self, summary: dict[str, object]) -> MarketReportSection:
         factors = _records(summary.get("factors_vs_sp500"))
         style_rows = _records(summary.get("style_pair_summary"))
@@ -714,7 +761,7 @@ class MarketReportBuilder:
                 "地政学的イベント",
             ],
             "watchpoint_candidates_only": [item.metric for item in watchpoints],
-            "sector_inference_limit": "セクターの含意は 21EMA POS、DAY%、relative strength、basket comparison の範囲に限定する。上昇/下落の外部理由は書かない。",
+            "sector_inference_limit": "セクター/業種の含意は 21EMA POS、DAY%、relative strength、52W HIGH、basket comparison の範囲に限定する。上昇/下落の外部理由は書かない。",
         }
 
     def _report_generation_contract(self) -> dict[str, object]:
@@ -750,6 +797,7 @@ class MarketReportBuilder:
             "sector_relative_strength": "Useful for sector rotation priority.",
             "style_pair_summary": "Useful for style rotation priority.",
             "defensive_cyclical_summary": "Useful for Defensive vs Cyclical/Growth spread.",
+            "industry_leaders": "Useful for industry-level leadership priority.",
             "credit_proxy": "Useful but not implemented.",
         }
         for key, reason in enriched.items():
@@ -1144,6 +1192,22 @@ def _records(value: object) -> list[dict[str, object]]:
     return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
 
 
+def _sort_records(records: list[dict[str, object]], key: str, *, reverse: bool = False) -> list[dict[str, object]]:
+    return sorted(records, key=lambda item: _optional_float(item.get(key)) if _optional_float(item.get(key)) is not None else float("-inf"), reverse=reverse)
+
+
+def _unique_records(records: list[dict[str, object]]) -> list[dict[str, object]]:
+    seen: set[str] = set()
+    unique: list[dict[str, object]] = []
+    for record in records:
+        key = str(record.get("TICKER", "")).strip() or str(id(record))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(record)
+    return unique
+
+
 def _as_list(value: object) -> list[object]:
     return value if isinstance(value, list) else []
 
@@ -1278,6 +1342,93 @@ def _ticker_name(record: dict[str, object]) -> str:
     ticker = str(record.get("TICKER", "")).strip()
     name = str(record.get("NAME", ticker)).strip() or ticker
     return f"{ticker} {name}".strip()
+
+
+def _industry_list(rows: list[dict[str, object]]) -> str:
+    if not rows:
+        return "none"
+    return ", ".join(_industry_descriptor(row) for row in rows)
+
+
+def _industry_descriptor(row: dict[str, object]) -> str:
+    return (
+        f"{_ticker_name(row)} "
+        f"(RS={_format_number(_optional_float(row.get('RS')))}, "
+        f"1D={_format_number(_optional_float(row.get('1D')))}, "
+        f"1W={_format_number(_optional_float(row.get('1W')))}, "
+        f"1M={_format_number(_optional_float(row.get('1M')))}, "
+        f"RS MTH%={_format_signed(_optional_float(row.get('RS MTH%')))}, "
+        f"52W HIGH={_format_value(row.get('52W HIGH'))})"
+    )
+
+
+def _industry_metric(row: dict[str, object]) -> MarketReportMetric:
+    state = _industry_state(row)
+    note = (
+        f"1D={_format_number(_optional_float(row.get('1D')))}, "
+        f"1W={_format_number(_optional_float(row.get('1W')))}, "
+        f"1M={_format_number(_optional_float(row.get('1M')))}, "
+        f"52W HIGH={_format_value(row.get('52W HIGH'))}, "
+        f"state={state}"
+    )
+    return MarketReportMetric(
+        metric=str(row.get("TICKER", "")),
+        source_field="industry_leaders",
+        value=row.get("NAME"),
+        raw_value=_optional_float(row.get("RS")),
+        delta_1d=_optional_float(row.get("RS DAY%")),
+        delta_1w=_optional_float(row.get("RS WK%")),
+        delta_1m=_optional_float(row.get("RS MTH%")),
+        note=note,
+    )
+
+
+def _is_52w_high(value: object) -> bool:
+    return str(value).strip().lower() == "yes"
+
+
+def _is_accelerating_industry(row: dict[str, object]) -> bool:
+    one_day = _optional_float(row.get("1D"))
+    one_week = _optional_float(row.get("1W"))
+    one_month = _optional_float(row.get("1M"))
+    rs_day = _optional_float(row.get("RS DAY%"))
+    rs_week = _optional_float(row.get("RS WK%"))
+    if None in {one_day, one_week, one_month, rs_day, rs_week}:
+        return False
+    return bool(one_day >= one_week >= one_month and one_day >= 70 and rs_day > 0 and rs_week > 0)
+
+
+def _is_sustained_industry(row: dict[str, object]) -> bool:
+    values = [_optional_float(row.get(key)) for key in ["1D", "1W", "1M"]]
+    rs_month = _optional_float(row.get("RS MTH%"))
+    return all(value is not None and value >= 80 for value in values) and rs_month is not None and rs_month > 0
+
+
+def _weak_industries(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    weak = []
+    for row in rows:
+        rs = _optional_float(row.get("RS"))
+        one_month = _optional_float(row.get("1M"))
+        rs_month = _optional_float(row.get("RS MTH%"))
+        if (rs is not None and rs <= 35) or (one_month is not None and one_month <= 35) or (rs_month is not None and rs_month <= -5):
+            weak.append(row)
+    return _sort_records(weak, "RS")
+
+
+def _industry_state(row: dict[str, object]) -> str:
+    if _is_accelerating_industry(row):
+        return "accelerating"
+    if _is_sustained_industry(row):
+        return "sustained_leadership"
+    rs = _optional_float(row.get("RS"))
+    one_month = _optional_float(row.get("1M"))
+    rs_month = _optional_float(row.get("RS MTH%"))
+    if (rs is not None and rs <= 35) or (one_month is not None and one_month <= 35) or (rs_month is not None and rs_month <= -5):
+        return "weak"
+    one_day = _optional_float(row.get("1D"))
+    if one_day is not None and one_month is not None and one_day >= 75 and one_month < 60:
+        return "rebound_watch"
+    return "mixed"
 
 
 def _factor_classification(rel_1w: float | None, rel_1m: float | None) -> str:

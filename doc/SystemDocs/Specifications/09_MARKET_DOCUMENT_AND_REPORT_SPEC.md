@@ -19,9 +19,9 @@ The system does not write final-report JSON metadata. The final report is a Mark
 
 ## 3. Daily Flow
 
-1. The pipeline computes `MarketConditionResult`.
+1. The pipeline computes `MarketConditionResult` and `RadarResult`.
 2. `DataSnapshotStore` persists `market_summary/YYYYMMDD.json`.
-3. The market-document builder reads the current summary plus recent same-folder summaries.
+3. The market-document builder reads the current summary, RS Radar industry leadership rows, and recent same-folder summaries.
 4. The system writes `market_documents/YYYYMMDD.json` and `market_documents/YYYYMMDD.md`.
 5. The report-writing skill reads the market document, preferably the Markdown rendering with the JSON treated as canonical data.
 6. The skill writes `market_reports/YYYYMMDD.md`.
@@ -60,6 +60,8 @@ The market document must include these intermediate representations so the skill
 - `analysis_boundary`: allowed and prohibited information sources
 - `facts_for_ai`: section-specific facts the skill may turn into prose
 
+The system includes an `industry_leadership` section when RS Radar `industry_leaders` rows are available. This section supplies industry-level RS leadership context, 52W HIGH industry groups, accelerating industry groups, sustained-leadership industry groups, and weak industry groups for report-level candidate-priority guidance.
+
 ## 6. Analysis Boundary
 
 The skill may use:
@@ -77,7 +79,7 @@ The skill must not use:
 - geopolitical events
 - watchpoints not listed in `watchpoint_candidates`
 
-Sector implications must be limited to `21EMA POS`, `DAY %`, relative strength, and basket comparison fields that exist in the document.
+Sector and industry implications must be limited to `21EMA POS`, `DAY %`, relative strength, 52W HIGH, and basket comparison fields that exist in the document.
 
 ## 7. Final Report Format
 
@@ -153,6 +155,8 @@ Body text must start a new source line after each Japanese full stop (`。`) so 
 
 For sector-level prose, the final report must write sector names instead of ETF labels. For example, write `Financials`, not `XLF Financials`, and `Energy`, not `XLE Energy`.
 
+When the market document includes `industry_leadership`, action-oriented report skills may use it to write industry-level priority groups, 52W HIGH groups, accelerating groups, sustained-leadership groups, and weak groups. This must remain report-level guidance only; the report must not claim that EntrySignal, WatchList, RS Radar, or dashboard logic changed.
+
 ## 9. Terminology
 
 These terms are implementation/domain labels and should not be over-translated:
@@ -164,13 +168,23 @@ These terms are implementation/domain labels and should not be over-translated:
 - `Risk-On Ratio`
 - `Safe Haven`
 - `Profit-taking/Exit Watch`
+- `EntrySignal`
+- `WatchList`
 
 ## 10. Skill Location
 
-The report-writing skill is located at:
+The standard report-writing skill is located at:
 
 ```text
 .agents/skills/market-report-writer/SKILL.md
 ```
+
+The action-oriented ReportSkill-1 variant is located at:
+
+```text
+.agents/skills/reportskill-1/SKILL.md
+```
+
+ReportSkill-1 keeps the same market-document-only evidence boundary, then adds in-report confirmation order, industry-level priority groups, and EntrySignal interpretation. It does not directly integrate with or modify EntrySignal or WatchList systems.
 
 The skill's input should be whichever form is easiest for the AI to write from. Operationally, Markdown is the primary prompt input and JSON remains the canonical persisted data.

@@ -14,7 +14,7 @@
 ```yaml
 preset_name: Accumulation Breakout
 selected_scan_names: [VCS 52 High, PP Count, Volume Accumulation, Pocket Pivot, 4% bullish, VCP 3T]
-selected_annotation_filters: []
+selected_annotation_filters: [Stage 2 Quality Score, Mature / Late Stage Risk Filter]
 selected_duplicate_subfilters: []
 duplicate_threshold: 1
 duplicate_rule:

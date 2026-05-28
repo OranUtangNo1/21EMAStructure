@@ -14,7 +14,7 @@
 ```yaml
 preset_name: Power Gap Pullback
 selected_scan_names: [Pullback Quality scan, 21EMA Pattern H, 21EMA Pattern L, Reclaim scan, Volume Accumulation, Pocket Pivot]
-selected_annotation_filters: [Recent Power Gap, Trend Base]
+selected_annotation_filters: [Recent Power Gap, Stage 2 Quality Score, Mature / Late Stage Risk Filter]
 selected_duplicate_subfilters: []
 duplicate_threshold: 1
 duplicate_rule:
@@ -43,7 +43,7 @@ preset_status: enabled
 
 ## Post-Scan And Duplicate Settings
 
-- selected annotation filters: `Recent Power Gap`, `Trend Base`
+- selected annotation filters: `Recent Power Gap`, `Stage 2 Quality Score`, `Mature / Late Stage Risk Filter`
 - selected duplicate subfilters: none
 - duplicate rule: `grouped_threshold`
   - required: `Pullback Quality scan`

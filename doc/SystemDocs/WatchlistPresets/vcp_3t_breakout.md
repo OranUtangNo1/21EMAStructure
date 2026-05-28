@@ -13,8 +13,8 @@
 
 ```yaml
 preset_name: VCP 3T Breakout
-selected_scan_names: [VCP 3T, VCS 52 High, Pocket Pivot, Volume Accumulation, RS New High]
-selected_annotation_filters: []
+selected_scan_names: [VCP 3T, VCS 52 High, Pocket Pivot, Volume Accumulation, RS New High, RS 3Y New High, RS Leads Price Setup]
+selected_annotation_filters: [Stage 2 Quality Score, Mature / Late Stage Risk Filter]
 selected_duplicate_subfilters: []
 duplicate_threshold: 1
 duplicate_rule:
@@ -22,7 +22,7 @@ duplicate_rule:
   required_scans: [VCP 3T]
   optional_groups:
   - group_name: Leadership / High Tightness
-    scans: [VCS 52 High, RS New High]
+    scans: [VCS 52 High, RS New High, RS 3Y New High, RS Leads Price Setup]
     min_hits: 1
   - group_name: Demand Confirmation
     scans: [Pocket Pivot, Volume Accumulation]
@@ -39,6 +39,8 @@ preset_status: enabled
 | `Pocket Pivot` | [../Scan/scan_07_pocket_pivot.md](../Scan/scan_07_pocket_pivot.md) |
 | `Volume Accumulation` | [../Scan/scan_15_volume_accumulation.md](../Scan/scan_15_volume_accumulation.md) |
 | `RS New High` | [../Scan/scan_28_rs_new_high.md](../Scan/scan_28_rs_new_high.md) |
+| `RS 3Y New High` | [../Scan/scan_31_rs_3y_new_high.md](../Scan/scan_31_rs_3y_new_high.md) |
+| `RS Leads Price Setup` | [../Scan/scan_32_rs_leads_price_setup.md](../Scan/scan_32_rs_leads_price_setup.md) |
 
 ## Intent
 
@@ -48,6 +50,7 @@ This preset targets the image-style VCP breakout:
 - three progressively smaller contractions
 - final tight candles with volume dry-up
 - breakout through the pivot while still close to the pivot
+- Stage 2 quality and mature-risk context from annotation filters
 - at least one high-tightness or RS-new-high confirmation
 - at least one demand confirmation from pocket-pivot or accumulation evidence
 

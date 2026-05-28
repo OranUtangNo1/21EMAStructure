@@ -9,7 +9,7 @@ Column meaning:
 - `Startup`: selected by default in Watchlist controls.
 
 Current totals:
-- enabled: 7
+- enabled: 10
 - disabled: 0
 - startup selected: 0
 
@@ -19,6 +19,9 @@ Current totals:
 | `High Est. EPS Growth` | `enabled` | `no` |
 | `PP Count (20d)` | `enabled` | `no` |
 | `Trend Base` | `enabled` | `no` |
+| `Stage 2 Confirmed` | `enabled` | `no` |
+| `Trend Template` | `enabled` | `no` |
+| `Stage 4 Avoid` | `enabled` | `no` |
 | `Fund Score > 70` | `enabled` | `no` |
 | `Resistance Tests >= 2` | `enabled` | `no` |
 | `Recent Power Gap` | `enabled` | `no` |

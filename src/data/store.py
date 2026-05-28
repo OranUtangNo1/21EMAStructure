@@ -65,7 +65,7 @@ class DataSnapshotStore:
         if scan_hits is not None:
             self._save_scan_hits(date_key, trade_date_iso, scan_hits)
         if market_result is not None:
-            self._save_market_result(date_key, market_result, metadata)
+            self._save_market_result(date_key, market_result, metadata, radar_result=radar_result)
         if radar_result is not None:
             self._save_radar_result(date_key, radar_result)
 
@@ -148,7 +148,7 @@ class DataSnapshotStore:
             snapshot["ticker"] = snapshot["ticker"].astype(str).str.upper()
         return UniverseSnapshotLoadResult(snapshot=snapshot, metadata=metadata, path=str(csv_path))
 
-    def _save_market_result(self, date_key: str, market_result: Any, metadata: dict[str, Any]) -> None:
+    def _save_market_result(self, date_key: str, market_result: Any, metadata: dict[str, Any], *, radar_result: Any | None = None) -> None:
         payload = {
             "trade_date": market_result.trade_date.isoformat() if market_result.trade_date is not None else None,
             "score": market_result.score,
@@ -177,6 +177,7 @@ class DataSnapshotStore:
             "sector_relative_strength": self._frame_to_records(getattr(market_result, "sector_relative_strength", pd.DataFrame())),
             "style_pair_summary": self._frame_to_records(getattr(market_result, "style_pair_summary", pd.DataFrame())),
             "defensive_cyclical_summary": dict(getattr(market_result, "defensive_cyclical_summary", {})),
+            "industry_leaders": self._frame_to_records(getattr(radar_result, "industry_leaders", pd.DataFrame())) if radar_result is not None else [],
         }
         summary_path = self.market_summary_dir / f"{date_key}.json"
         with summary_path.open("w", encoding="utf-8") as handle:

@@ -33,6 +33,7 @@ To change built-in preset behavior, edit `config/default/scan.yaml`.
 | [leader_breakout.md](leader_breakout.md) | `Leader Breakout` |
 | [orderly_pullback.md](orderly_pullback.md) | `Orderly Pullback` |
 | [reclaim_trigger.md](reclaim_trigger.md) | `Reclaim Trigger` |
+| [fresh_stage2_breakout.md](fresh_stage2_breakout.md) | `Fresh Stage 2 Breakout` |
 | [momentum_surge.md](momentum_surge.md) | `Momentum Surge` |
 | [early_cycle_recovery.md](early_cycle_recovery.md) | `Early Cycle Recovery` |
 | [base_breakout.md](base_breakout.md) | `Base Breakout` |

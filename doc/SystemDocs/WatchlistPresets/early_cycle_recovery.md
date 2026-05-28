@@ -22,7 +22,7 @@ duplicate_rule:
   required_scans: [Trend Reversal Setup]
   optional_scans: [Pocket Pivot, VCS 52 Low, Volume Accumulation]
   optional_min_hits: 1
-preset_status: enabled
+preset_status: disabled
 ```
 
 ## Pre-Scan Context
@@ -45,7 +45,7 @@ preset_status: enabled
 - selected annotation filters: none
 - selected duplicate subfilters: none
 - UI optional threshold after preset load: `1`
-- preset status: `enabled`
+- preset status: `disabled`
 - duplicate rule: `required_plus_optional_min`; requires every scan in `Trend Reversal Setup` plus at least `1` hit from optional scans `Pocket Pivot, VCS 52 Low, Volume Accumulation`
 
 ## Consolidation Notes
@@ -54,5 +54,6 @@ This preset absorbs the former `Pattern 5 - Early Reversal Signal` by adding `Po
 
 ## Scope Notes
 
+- This preset is implemented but disabled by default because it targets recovery and reversal conditions before confirmed Stage 2 participation.
 - This preset changes watchlist page controls only.
 - It does not override global scan thresholds.

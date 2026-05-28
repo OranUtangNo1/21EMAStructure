@@ -63,7 +63,12 @@ Use the per-scan files for boolean logic. Use the status matrix for the current 
 | [scan_26_llhl_ct_break.md](scan_26_llhl_ct_break.md) | `LL-HL Structure Trend Line Break` |
 | [scan_27_50sma_reclaim.md](scan_27_50sma_reclaim.md) | `50SMA Reclaim` |
 | [scan_28_rs_new_high.md](scan_28_rs_new_high.md) | `RS New High` |
+| [scan_31_rs_3y_new_high.md](scan_31_rs_3y_new_high.md) | `RS 3Y New High` |
+| [scan_32_rs_leads_price_setup.md](scan_32_rs_leads_price_setup.md) | `RS Leads Price Setup` |
+| [scan_30_trend_template.md](scan_30_trend_template.md) | `Trend Template` |
+| [scan_33_fresh_stage2_breakout.md](scan_33_fresh_stage2_breakout.md) | `Fresh Stage 2 Breakout` |
 
 ## Out Of Scope
 
 Post-scan annotation filters are not scans. Their current implementation source is `src/scan/rules.py::ANNOTATION_FILTER_REGISTRY`.
+Stage 2 strictness is currently exposed through `Stage 2 Quality Score`, `Mature / Late Stage Risk Filter`, and `Industry Leadership Gate`.

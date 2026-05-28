@@ -27,7 +27,7 @@ duplicate_rule:
   - group_name: Demand Confirmation
     scans: [Volume Accumulation, Pocket Pivot]
     min_hits: 1
-preset_status: enabled
+preset_status: disabled
 ```
 
 ## Selected Scans
@@ -45,7 +45,12 @@ preset_status: enabled
 
 - selected annotation filters: none
 - selected duplicate subfilters: none
+- preset status: `disabled`
 - duplicate rule: `grouped_threshold`
   - required: `Trend Reversal Setup`
   - optional group `Structure Break`: min 1 of 3
   - optional group `Demand Confirmation`: min 1 of 2
+
+## Scope Notes
+
+- This preset is implemented but disabled by default because it targets recovery and structure-reversal conditions before confirmed Stage 2 participation.

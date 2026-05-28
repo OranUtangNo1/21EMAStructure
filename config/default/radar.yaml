@@ -99,8 +99,8 @@ radar:
     name: Home Construction
   - ticker: BLOK
     name: Blockchain
-  - ticker: WGMI
-    name: Bitcoin Miners
+  # - ticker: WGMI
+  #   name: Bitcoin Miners
   - ticker: IGV
     name: Tech-Software
   - ticker: KWEB

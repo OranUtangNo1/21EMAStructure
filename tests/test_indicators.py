@@ -65,6 +65,28 @@ def test_indicator_calculator_adds_52_week_high_from_daily_highs() -> None:
     assert float(result.iloc[-1]["high_52w"]) == 125.0
 
 
+def test_indicator_calculator_adds_3y_high_from_daily_highs_when_history_is_sufficient() -> None:
+    dates = pd.date_range("2023-01-02", periods=800, freq="B")
+    frame = pd.DataFrame(
+        {
+            "open": [90.0] * len(dates),
+            "high": [100.0] * (len(dates) - 1) + [150.0],
+            "low": [80.0] * len(dates),
+            "close": [95.0] * (len(dates) - 1) + [135.0],
+            "adjusted_close": [95.0] * (len(dates) - 1) + [135.0],
+            "volume": [1_000_000] * len(dates),
+        },
+        index=dates,
+    )
+    calculator = IndicatorCalculator(IndicatorConfig(sma_short_period=2, sma_long_period=2, relvol_period=2, enable_3wt=False))
+
+    result = calculator.calculate(frame)
+
+    assert "high_3y" in result.columns
+    assert float(result.iloc[-1]["high_3y"]) == 150.0
+    assert round(float(result.iloc[-1]["dist_from_3y_high"]), 6) == -10.0
+
+
 def test_dist_from_52w_high_is_zero_when_close_matches_52w_high() -> None:
     dates = pd.date_range("2025-01-01", periods=252, freq="B")
     frame = pd.DataFrame(
@@ -103,6 +125,35 @@ def test_dist_from_52w_high_is_negative_when_close_is_below_high() -> None:
     result = calculator.calculate(frame)
 
     assert round(float(result.iloc[-1]["dist_from_52w_high"]), 6) == -10.0
+
+
+def test_indicator_calculator_adds_trend_template_price_context() -> None:
+    dates = pd.date_range("2024-01-01", periods=280, freq="B")
+    close = [100.0 + i * 0.5 for i in range(len(dates))]
+    frame = pd.DataFrame(
+        {
+            "open": close,
+            "high": [value * 1.01 for value in close],
+            "low": [value * 0.99 for value in close],
+            "close": close,
+            "adjusted_close": close,
+            "volume": [1_000_000] * len(close),
+        },
+        index=dates,
+    )
+    calculator = IndicatorCalculator(IndicatorConfig(enable_3wt=False))
+
+    result = calculator.calculate(frame)
+    latest = result.iloc[-1]
+
+    assert "sma150" in result.columns
+    assert "sma200_slope_1m_pct" in result.columns
+    assert int(latest["trend_template_price_score"]) == 7
+    assert bool(latest["trend_template_price_setup"]) is True
+    assert latest["stage_label"] == "stage2_candidate"
+    assert "days_since_stage2_start" in result.columns
+    assert float(latest["days_since_stage2_start"]) >= 0.0
+    assert "stage_base_days_3m" in result.columns
 
 
 def test_dist_from_52w_low_is_zero_when_close_matches_52w_low() -> None:

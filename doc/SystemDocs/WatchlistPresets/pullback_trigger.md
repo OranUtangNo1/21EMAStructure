@@ -14,7 +14,7 @@
 ```yaml
 preset_name: Pullback Trigger
 selected_scan_names: [Pullback Quality scan, 21EMA Pattern H, 21EMA Pattern L, Volume Accumulation, Pocket Pivot]
-selected_annotation_filters: []
+selected_annotation_filters: [Stage 2 Quality Score, Mature / Late Stage Risk Filter]
 selected_duplicate_subfilters: []
 duplicate_threshold: 1
 duplicate_rule:
@@ -42,7 +42,7 @@ preset_status: enabled
 
 ## Post-Scan And Duplicate Settings
 
-- selected annotation filters: none
+- selected annotation filters: `Stage 2 Quality Score`, `Mature / Late Stage Risk Filter`
 - selected duplicate subfilters: none
 - duplicate rule: `grouped_threshold`
   - required: `Pullback Quality scan`

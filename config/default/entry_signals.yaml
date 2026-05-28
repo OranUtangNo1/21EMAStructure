@@ -12,8 +12,6 @@ entry_signals:
         weak_market_score_threshold: 40.0
       accumulation_breakout_entry:
         weak_market_score_threshold: 40.0
-      early_cycle_recovery_entry:
-        weak_market_score_threshold: 20.0
       power_gap_pullback_entry:
         weak_market_score_threshold: 30.0
     earnings:
@@ -24,14 +22,13 @@ entry_signals:
     pullback_resumption_entry: enabled
     momentum_acceleration_entry: enabled
     accumulation_breakout_entry: enabled
-    early_cycle_recovery_entry: enabled
+    early_cycle_recovery_entry: disabled
     power_gap_pullback_entry: enabled
   default_selected_signal_names:
   - orderly_pullback_entry
   - pullback_resumption_entry
   - momentum_acceleration_entry
   - accumulation_breakout_entry
-  - early_cycle_recovery_entry
   - power_gap_pullback_entry
   definitions:
     orderly_pullback_entry:

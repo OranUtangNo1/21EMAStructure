@@ -73,6 +73,38 @@ def _sample_summary() -> dict[str, object]:
             {"TICKER": "XLE", "NAME": "Energy", "REL 1W %": -0.8, "REL 1M %": 2.1, "REL 3M %": 3.2, "RANK 1M": 2.0, "RANK DELTA 1W": -3.0},
             {"TICKER": "XLU", "NAME": "Utilities", "REL 1W %": -1.1, "REL 1M %": -2.2, "REL 3M %": -3.1, "RANK 1M": 9.0, "RANK DELTA 1W": -1.0},
         ],
+        "industry_leaders": [
+            {
+                "RS": 96.0,
+                "1D": 96.0,
+                "1W": 92.0,
+                "1M": 91.0,
+                "TICKER": "CIBR",
+                "NAME": "Cybersecurity",
+                "DAY %": 2.5,
+                "WK %": 6.6,
+                "MTH %": 26.5,
+                "RS DAY%": 2.2,
+                "RS WK%": 5.7,
+                "RS MTH%": 21.3,
+                "52W HIGH": "Yes",
+            },
+            {
+                "RS": 20.0,
+                "1D": 25.0,
+                "1W": 20.0,
+                "1M": 15.0,
+                "TICKER": "GDX",
+                "NAME": "Gold Miners",
+                "DAY %": -1.0,
+                "WK %": -3.0,
+                "MTH %": -8.0,
+                "RS DAY%": -1.4,
+                "RS WK%": -3.8,
+                "RS MTH%": -13.2,
+                "52W HIGH": "-24.0%",
+            },
+        ],
         "style_pair_summary": [
             {"PAIR": "VUG/VTV", "NAME": "Growth vs Value", "REL 1W %": 0.7, "REL 1M %": 2.1, "REL 3M %": 4.0, "ABOVE MA COUNT": 3.0, "MA COUNT": 3.0}
         ],
@@ -101,8 +133,13 @@ def test_market_report_builder_creates_evidence_first_sections() -> None:
         "volatility_safe_haven",
         "risk_on_ratio",
         "sector_rotation",
+        "industry_leadership",
         "factor_style",
     }
+    industry = next(section for section in report.sections if section.key == "industry_leadership")
+    assert industry.label == "confirmed_industry_leadership"
+    assert any("new_high_industries=CIBR Cybersecurity" in fact for fact in industry.facts_for_ai)
+    assert any("weak_industries=GDX Gold Miners" in fact for fact in industry.facts_for_ai)
     assert any(section.trajectory for section in report.sections if section.key == "market_regime")
     assert report.watchpoint_candidates
     assert report.analysis_boundary["prohibited_sources"]
@@ -120,6 +157,8 @@ def test_market_report_markdown_uses_structured_result_without_trade_management_
     assert "## analysis_boundary" in markdown
     assert "## watchpoint_candidates" in markdown
     assert "### recommendation_inputs" in markdown
+    assert "### industry_leadership" in markdown
+    assert "new_high_industries" in markdown
     assert "priority_sectors" in markdown
     assert "profit_taking_exit_watch" in markdown
     assert "source=score" in markdown

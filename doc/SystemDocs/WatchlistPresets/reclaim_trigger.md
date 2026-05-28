@@ -14,7 +14,7 @@
 ```yaml
 preset_name: Reclaim Trigger
 selected_scan_names: [Reclaim scan, Pocket Pivot]
-selected_annotation_filters: [Trend Base]
+selected_annotation_filters: [Stage 2 Quality Score, Mature / Late Stage Risk Filter]
 selected_duplicate_subfilters: []
 duplicate_threshold: 1
 duplicate_rule:
@@ -40,7 +40,7 @@ preset_status: enabled
 
 ## Post-Scan And Duplicate Settings
 
-- selected annotation filters: `Trend Base`
+- selected annotation filters: `Stage 2 Quality Score`, `Mature / Late Stage Risk Filter`
 - selected duplicate subfilters: none
 - UI optional threshold after preset load: `1`
 - preset status: `enabled`

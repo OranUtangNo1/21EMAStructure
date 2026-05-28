@@ -2,7 +2,7 @@
 
 ## 1. Product Definition
 
-OraTek is an active screening, candidate extraction, and preset-performance review platform for growth-stock research. The implemented product produces six active app outputs:
+OraTek is an active screening, candidate extraction, and preset-performance review platform for short- to medium-term long-only growth-stock research. The system's primary promise is to prioritize Stage 2 participation candidates and avoid treating bottom-fishing, recovery, or short-side setups as default actionable outputs. The implemented product produces six active app outputs:
 
 1. Watchlist
 2. Entry Signal
@@ -25,6 +25,8 @@ The active product scope is limited to:
 - duplicate-ticker prioritization from scan overlap
 - Watchlist, Entry Signal, Market Dashboard, RS, Analysis, and Setting rendering
 - SQLite-backed preset-hit tracking for 1, 5, 10, and 20 business-day outcomes
+
+Default actionable screening is long-only and Stage 2 oriented. Recovery, 52-week-low, and pre-confirmation reversal logic can remain implemented for research continuity, but it should be disabled by default and excluded from default Entry Signal promotion.
 
 ## 3. Out-Of-Scope Areas
 
@@ -81,7 +83,7 @@ The pipeline:
 
 ### 4.4 Candidate Extraction
 
-The application evaluates the configured enabled scan rules on the eligible universe. The default config currently enables 18 scan families.
+The application evaluates the configured enabled scan rules on the eligible universe. The default config currently enables 17 scan families.
 
 Tickers enter the raw watchlist only when they pass at least one scan. Annotation filters are also evaluated, but they add flags and counts only; they do not create watchlist candidates on their own.
 

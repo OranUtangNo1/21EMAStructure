@@ -14,7 +14,7 @@
 ```yaml
 preset_name: Momentum Ignition
 selected_scan_names: [Momentum 97, 4% bullish, PP Count, VCS 52 High, Volume Accumulation]
-selected_annotation_filters: []
+selected_annotation_filters: [Stage 2 Quality Score, Mature / Late Stage Risk Filter]
 selected_duplicate_subfilters: []
 duplicate_threshold: 1
 duplicate_rule:

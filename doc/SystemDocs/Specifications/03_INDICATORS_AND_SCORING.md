@@ -84,20 +84,23 @@ Supporting field:
 
 - `avg_volume_50d = rolling_mean(volume, 50)`
 
-### 2.7 52-Week Distance Fields
+### 2.7 High Distance Fields
 
 Implemented fields:
 
 - `high_52w = rolling_max(high, 252)`
 - `low_52w = rolling_min(low, 252)`
+- `high_3y = rolling_max(high, 756, min_periods=504)`
 - `dist_from_52w_high = ((close / high_52w) - 1.0) * 100`
 - `dist_from_52w_low = ((close / low_52w) - 1.0) * 100`
+- `dist_from_3y_high = ((close / high_3y) - 1.0) * 100`
 
 Interpretation:
 
 - `dist_from_52w_high` is zero at the 52-week high and negative below it
 - `dist_from_52w_low` is zero at the 52-week low and positive above it
-- both distance fields use the current close relative to the rolling 252-session extreme
+- `dist_from_3y_high` is zero at the 3-year high and negative below it
+- distance fields use the current close relative to the matching rolling extreme
 
 ### 2.8 Up/Down Volume Ratio
 
@@ -287,12 +290,19 @@ Implemented fields:
 - `raw_rs5`, `raw_rs21`, `raw_rs63`, `raw_rs126`
 - `rs5`, `rs21`, `rs63`, `rs126`
 - `price_ratio`
+- `rs_ratio`
+- `rs_ratio_52w_high`, `rs_ratio_at_52w_high`
+- `rs_ratio_3y_high`, `rs_ratio_at_3y_high`
 
 Current implementation behavior:
 
 - benchmark symbol defaults to `SPY`
 - align stock close and benchmark close on date index
 - compute `price_ratio = stock_close / benchmark_close`
+- set `rs_ratio` equal to the current `price_ratio`
+- compute `rs_ratio_52w_high` with a 252-session rolling max and 126-session minimum history
+- compute `rs_ratio_3y_high` with a 756-session rolling max and 504-session minimum history
+- mark `rs_ratio_at_*_high` when the current ratio is within `rs_new_high_tolerance` of the matching rolling high
 - for each lookback window, take the trailing ratio window
 - when `rs_normalization_method = percentile`, score the window with Pine-style percentrank semantics:
   `count(window values <= current value) / window length * 100`

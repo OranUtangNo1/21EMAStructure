@@ -9,9 +9,9 @@ Column meaning:
 - `Startup`: selected by default on the Entry Signal page.
 
 Current totals:
-- enabled: 6
-- disabled: 0
-- startup selected: 6
+- enabled: 5
+- disabled: 1
+- startup selected: 5
 
 | Entry signal | Status | Startup |
 | --- | --- | --- |
@@ -19,5 +19,5 @@ Current totals:
 | `pullback_resumption_entry` | `enabled` | `yes` |
 | `momentum_acceleration_entry` | `enabled` | `yes` |
 | `accumulation_breakout_entry` | `enabled` | `yes` |
-| `early_cycle_recovery_entry` | `enabled` | `yes` |
+| `early_cycle_recovery_entry` | `disabled` | `no` |
 | `power_gap_pullback_entry` | `enabled` | `yes` |

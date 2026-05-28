@@ -13,14 +13,17 @@
 
 ```yaml
 preset_name: RS Breakout Setup
-selected_scan_names: [RS New High, VCS 52 High, Pocket Pivot, 4% bullish, PP Count]
-selected_annotation_filters: [Trend Base]
+selected_scan_names: [RS New High, RS 3Y New High, RS Leads Price Setup, VCS 52 High, Pocket Pivot, 4% bullish, PP Count]
+selected_annotation_filters: [Stage 2 Quality Score, Mature / Late Stage Risk Filter, Industry Leadership Gate]
 selected_duplicate_subfilters: []
 duplicate_threshold: 1
 duplicate_rule:
   mode: grouped_threshold
-  required_scans: [RS New High, VCS 52 High]
+  required_scans: [VCS 52 High]
   optional_groups:
+  - group_name: RS Leadership
+    scans: [RS New High, RS 3Y New High, RS Leads Price Setup]
+    min_hits: 1
   - group_name: Breakout Event
     scans: [Pocket Pivot, 4% bullish, PP Count]
     min_hits: 1
@@ -32,6 +35,8 @@ preset_status: enabled
 | Scan name | Scan reference |
 |---|---|
 | `RS New High` | [../Scan/scan_28_rs_new_high.md](../Scan/scan_28_rs_new_high.md) |
+| `RS 3Y New High` | [../Scan/scan_31_rs_3y_new_high.md](../Scan/scan_31_rs_3y_new_high.md) |
+| `RS Leads Price Setup` | [../Scan/scan_32_rs_leads_price_setup.md](../Scan/scan_32_rs_leads_price_setup.md) |
 | `VCS 52 High` | [../Scan/scan_13_vcs_52_high.md](../Scan/scan_13_vcs_52_high.md) |
 | `Pocket Pivot` | [../Scan/scan_07_pocket_pivot.md](../Scan/scan_07_pocket_pivot.md) |
 | `4% bullish` | [../Scan/scan_02_4pct_bullish.md](../Scan/scan_02_4pct_bullish.md) |
@@ -39,8 +44,9 @@ preset_status: enabled
 
 ## Post-Scan And Duplicate Settings
 
-- selected annotation filters: `Trend Base`
+- selected annotation filters: `Stage 2 Quality Score`, `Mature / Late Stage Risk Filter`, `Industry Leadership Gate`
 - selected duplicate subfilters: none
 - duplicate rule: `grouped_threshold`
-  - required: `RS New High`, `VCS 52 High`
+  - required: `VCS 52 High`
+  - optional group `RS Leadership`: min 1 of 3
   - optional group `Breakout Event`: min 1 of 3

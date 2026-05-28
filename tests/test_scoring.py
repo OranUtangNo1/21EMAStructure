@@ -111,6 +111,25 @@ def test_rs_scorer_outputs_rs_ratio_and_52w_high_flags() -> None:
     assert bool(result.loc["BBB", "rs_ratio_at_52w_high"]) is False
 
 
+def test_rs_scorer_outputs_rs_ratio_3y_high_flags_with_sufficient_history() -> None:
+    dates = pd.date_range("2023-01-02", periods=800, freq="B")
+    benchmark_history = pd.DataFrame({"close": [100.0] * len(dates)}, index=dates)
+    aaa_close = [100.0 + (i * 0.2) for i in range(len(dates))]
+    bbb_close = [260.0 - (i * 0.1) for i in range(len(dates))]
+    histories = {
+        "AAA": pd.DataFrame({"close": aaa_close}, index=dates),
+        "BBB": pd.DataFrame({"close": bbb_close}, index=dates),
+    }
+    snapshot = pd.DataFrame(index=["AAA", "BBB"])
+
+    scorer = RSScorer(RSConfig(rs_lookbacks=(21,)))
+    result = scorer.score(snapshot, histories, benchmark_history)
+
+    assert round(float(result.loc["AAA", "rs_ratio_3y_high"]), 6) == round(max([value / 100.0 for value in aaa_close[-756:]]), 6)
+    assert bool(result.loc["AAA", "rs_ratio_at_3y_high"]) is True
+    assert bool(result.loc["BBB", "rs_ratio_at_3y_high"]) is False
+
+
 def test_rs_scorer_respects_rs_new_high_tolerance_and_min_history() -> None:
     long_dates = pd.date_range("2025-01-01", periods=200, freq="D")
     benchmark_history = pd.DataFrame({"close": [100.0] * len(long_dates)}, index=long_dates)
@@ -128,6 +147,7 @@ def test_rs_scorer_respects_rs_new_high_tolerance_and_min_history() -> None:
     short_benchmark = pd.DataFrame({"close": [100.0] * len(short_dates)}, index=short_dates)
     short_result = RSScorer(RSConfig(rs_lookbacks=(21,))).score(pd.DataFrame(index=["AAA"]), short_history, short_benchmark)
     assert bool(short_result.loc["AAA", "rs_ratio_at_52w_high"]) is False
+    assert bool(short_result.loc["AAA", "rs_ratio_at_3y_high"]) is False
 
 
 

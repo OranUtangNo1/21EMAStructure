@@ -20,7 +20,7 @@ Archived final discretionary execution, sizing, and trade-management parameters 
 - current default: `^VIX`
 
 ### app.price_period
-- current default: `1y`
+- current default: `3y`
 
 ### app.cache_dir
 - current default: `data_cache`
@@ -127,8 +127,16 @@ Archived final discretionary execution, sizing, and trade-management parameters 
 ### indicators.sma_short_period
 - current default: `50`
 
+### indicators.sma_medium_period
+- current default: `150`
+- used for Stage/Trend Template context as the daily proxy for Weinstein's 30-week moving average
+
 ### indicators.sma_long_period
 - current default: `200`
+
+### indicators.sma_long_slope_lookback
+- current default: `21`
+- used to confirm the 200-day moving average slope over roughly one trading month
 
 ### indicators.atr_period
 - current default: `14`
@@ -224,6 +232,16 @@ Archived final discretionary execution, sizing, and trade-management parameters 
 - `vcp_pivot_lookback`: `20`
 - `vcp_tight_daily_range_pct`: `3.0`
 
+### indicators Stage/Trend Template derived fields
+- `sma150`
+- `sma150_slope_1m_pct`
+- `sma200_slope_1m_pct`
+- `high_3y`
+- `dist_from_3y_high`
+- `trend_template_price_score`
+- `trend_template_price_setup`
+- `stage_label`
+
 ## 6. Scoring
 
 ### scoring.rs
@@ -232,8 +250,10 @@ Archived final discretionary execution, sizing, and trade-management parameters 
 - `rs_normalization_method`: `percentile`
 - `rs_strong_threshold`: `80`
 - `rs_weak_threshold`: `39`
+- `rs_new_high_tolerance`: `1.0`
 
 When `rs_normalization_method = percentile`, the current implementation uses the trailing-window percent-rank of the symbol's own `price_ratio = close / SPY` series.
+RS scoring also emits `rs_ratio_52w_high`, `rs_ratio_at_52w_high`, `rs_ratio_3y_high`, and `rs_ratio_at_3y_high`.
 
 ### scoring.fundamental
 - `eps_weight`: `1.0`
@@ -310,6 +330,14 @@ When `rs_normalization_method = percentile`, the current implementation uses the
 - `structure_pivot_include_gap_up_breakouts`: `true`
 - `pp_count_scan_min`: `3`
 - `pp_count_annotation_min`: `2`
+- `rs_new_high_price_dist_max`: `-5.0`
+- `rs_new_high_price_dist_min`: `-30.0`
+- `rs_3y_new_high_price_dist_max`: `-5.0`
+- `rs_3y_new_high_price_dist_min`: `-35.0`
+- `trend_template_price_score_min`: `7`
+- `trend_template_rs_min`: `70.0`
+- `stage2_price_score_min`: `5`
+- `stage2_rs_min`: `60.0`
 - `duplicate_min_count`: `3`
 - `high_eps_growth_rank_threshold`: `90.0`
 - `earnings_warning_days`: `7`
@@ -333,6 +361,9 @@ When `rs_normalization_method = percentile`, the current implementation uses the
   - `High Est. EPS Growth`
   - `PP Count (20d)`
   - `Trend Base`
+  - `Stage 2 Confirmed`
+  - `Trend Template`
+  - `Stage 4 Avoid`
   - `Fund Score > 70`
   - `Resistance Tests >= 2`
   - `Recent Power Gap`
@@ -380,7 +411,7 @@ Current built-in entry signal names:
 - `pullback_resumption_entry`
 - `momentum_acceleration_entry`
 - `accumulation_breakout_entry`
-- `early_cycle_recovery_entry`
+- `early_cycle_recovery_entry` (implemented but disabled by default)
 - `power_gap_pullback_entry`
 
 Each entry signal definition may include an `action` section. These thresholds drive `Action Bucket` classification on the Entry Signal page.

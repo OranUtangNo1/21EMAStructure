@@ -67,11 +67,14 @@ Current implemented behavior:
 
 - annotation-filter availability is controlled by `annotation_filter_status_map`
 - annotation filters are defined by `scan.annotation_filters`
-- the default config ships seven available filters:
+- the default config ships ten available filters:
   - `RS 21 >= 63`
   - `High Est. EPS Growth`
   - `PP Count (20d)`
   - `Trend Base`
+  - `Stage 2 Confirmed`
+  - `Trend Template`
+  - `Stage 4 Avoid`
   - `Fund Score > 70`
   - `Resistance Tests >= 2`
   - `Recent Power Gap`
@@ -346,6 +349,11 @@ It is calculated across all enabled scan hits, not from the current Watchlist UI
 - `vcs`
 - `dist_from_52w_high`
 - `dist_from_52w_low`
+- `dist_from_3y_high`
+- `rs_ratio_at_3y_high`
+- `rs_ratio_3y_high`
+- `trend_template_price_score`
+- `stage_label`
 - `ud_volume_ratio`
 - `earnings`
 - `pp_count_window`

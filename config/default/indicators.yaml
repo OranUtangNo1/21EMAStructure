@@ -1,7 +1,9 @@
 indicators:
   ema_period: 21
   sma_short_period: 50
+  sma_medium_period: 150
   sma_long_period: 200
+  sma_long_slope_lookback: 21
   atr_period: 14
   adr_period: 20
   adr_formula: sma_high_low_ratio

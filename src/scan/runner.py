@@ -10,6 +10,8 @@ from src.scan.rules import (
     enrich_with_scan_context,
     evaluate_annotation_filters,
     evaluate_scan_rules,
+    mature_late_stage_risk,
+    stage2_quality_score,
 )
 
 
@@ -33,6 +35,8 @@ class ScanRunner:
             return ScanRunResult(hits=pd.DataFrame(columns=["ticker", "kind", "name"]), watchlist=empty)
 
         working = enrich_with_scan_context(snapshot)
+        working["stage2_quality_score"] = [stage2_quality_score(row, self.config) for _, row in working.iterrows()]
+        working["mature_late_stage_risk"] = [mature_late_stage_risk(row, self.config) for _, row in working.iterrows()]
         scan_records: list[dict[str, object]] = []
         annotation_records: dict[str, dict[str, bool]] = {}
         annotation_filter_names = tuple(section.filter_name for section in self.config.annotation_filters)

@@ -7,8 +7,8 @@
 - Version: `1.0`
 - Runtime owner: `src/signals/evaluators/early_cycle_recovery.py`
 - Config owner: `config/default/entry_signals.yaml`
-- Status: `enabled`
-- Startup selected: `yes`
+- Status: `disabled`
+- Startup selected: `no`
 
 ## Pool Definition
 
@@ -143,3 +143,4 @@ Guardrail reasons are written into `Timing Detail` using keys such as `recovery_
 - This signal targets the early recovery phase before full trend confirmation.
 - It intentionally does not invalidate all SMA50-under candidates, because early-cycle setups may form before complete SMA50 recovery.
 - It differs from breakout and momentum signals by prioritizing structure reversal and low-risk pivot references.
+- The default product stance is short- to medium-term long-only Stage 2 participation, so this recovery signal remains implemented but disabled by default.

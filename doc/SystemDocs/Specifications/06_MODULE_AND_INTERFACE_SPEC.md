@@ -406,6 +406,8 @@ The active pipeline bundle includes:
 
 Each section includes a key, title, label, optional direction, significance, summary, metrics, `facts_for_ai`, warnings, and optional trajectory.
 
+When RS Radar rows are available, `DataSnapshotStore` copies `RadarResult.industry_leaders` into the saved market-summary payload for market-document generation. The market document then includes an `industry_leadership` section that classifies top industries, 52W HIGH industries, accelerating industries, sustained-leadership industries, and weak industries for final-report skill use.
+
 Each metric row includes:
 
 - `metric`

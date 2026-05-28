@@ -15,7 +15,7 @@ def test_load_settings_merges_manifest_includes() -> None:
         (base / "app.yaml").write_text(
             """app:
   benchmark_symbol: SPY
-  price_period: 1y
+  price_period: 3y
 """,
             encoding="utf-8",
         )
@@ -41,7 +41,7 @@ scan:
         settings = load_settings(manifest)
 
         assert settings["app"]["benchmark_symbol"] == "SPY"
-        assert settings["app"]["price_period"] == "1y"
+        assert settings["app"]["price_period"] == "3y"
         assert settings["scan"]["duplicate_min_count"] == 5
         assert settings["scan"]["enabled_scan_rules"] == ["VCS"]
 
@@ -76,11 +76,12 @@ def test_default_settings_include_builtin_watchlist_presets() -> None:
     presets = settings["scan"]["watchlist_presets"]
     preset_names = [preset["preset_name"] for preset in presets]
 
-    assert len(presets) == 17
+    assert len(presets) == 18
     assert preset_names == [
         "Leader Breakout",
         "Orderly Pullback",
         "Reclaim Trigger",
+        "Fresh Stage 2 Breakout",
         "Momentum Surge",
         "Early Cycle Recovery",
         "Base Breakout",
@@ -127,7 +128,14 @@ def test_default_watchlist_presets_use_expected_duplicate_rules() -> None:
         "VCP 3T Breakout": (
             ("VCP 3T",),
             (
-                ("Leadership / High Tightness", ("VCS 52 High", "RS New High"), 1),
+                ("Leadership / High Tightness", ("VCS 52 High", "RS New High", "RS 3Y New High", "RS Leads Price Setup"), 1),
+                ("Demand Confirmation", ("Pocket Pivot", "Volume Accumulation"), 1),
+            ),
+        ),
+        "Fresh Stage 2 Breakout": (
+            ("Fresh Stage 2 Breakout",),
+            (
+                ("Leadership Confirmation", ("RS Leads Price Setup", "VCS 52 High"), 1),
                 ("Demand Confirmation", ("Pocket Pivot", "Volume Accumulation"), 1),
             ),
         ),
@@ -146,8 +154,9 @@ def test_default_watchlist_presets_use_expected_duplicate_rules() -> None:
             ),
         ),
         "RS Breakout Setup": (
-            ("RS New High", "VCS 52 High"),
+            ("VCS 52 High",),
             (
+                ("RS Leadership", ("RS New High", "RS 3Y New High", "RS Leads Price Setup"), 1),
                 ("Breakout Event", ("Pocket Pivot", "4% bullish", "PP Count"), 1),
             ),
         ),
@@ -240,10 +249,14 @@ def test_default_settings_include_annotation_and_entry_signal_status_maps() -> N
 
     assert annotation_status_map["Trend Base"] == "enabled"
     assert annotation_status_map["Recent Power Gap"] == "enabled"
+    assert annotation_status_map["Stage 2 Quality Score"] == "enabled"
+    assert annotation_status_map["Mature / Late Stage Risk Filter"] == "enabled"
+    assert annotation_status_map["Industry Leadership Gate"] == "enabled"
     assert signal_status_map["orderly_pullback_entry"] == "enabled"
     assert signal_status_map["pullback_resumption_entry"] == "enabled"
+    assert signal_status_map["early_cycle_recovery_entry"] == "disabled"
     assert context_guard["enabled"] is True
     assert context_guard["weak_market_score_threshold"] == 30.0
     assert context_guard["signal_overrides"]["momentum_acceleration_entry"]["weak_market_score_threshold"] == 40.0
-    assert context_guard["signal_overrides"]["early_cycle_recovery_entry"]["weak_market_score_threshold"] == 20.0
+    assert "early_cycle_recovery_entry" not in context_guard["signal_overrides"]
     assert orderly_pool["preset_sources"] == ["Pullback Trigger"]

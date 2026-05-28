@@ -3,7 +3,9 @@
 ## Project Summary
 
 - The active product is a screening, candidate extraction, and entry evaluation platform.
+- The active product is short- to medium-term, long-only, and Stage 2 oriented by default.
 - The active scope includes Market Dashboard, RS Radar, Today's Watchlist, and Entry Signal evaluation.
+- Bottom-fishing, recovery, 52-week-low, and short-side setups are not default actionable workflows.
 - Final discretionary chart review, position sizing, trade execution, and exit management are out of scope for the active system.
 - Those out-of-scope notes belong in `archived/`.
 - The top priority is to keep the screening and entry-evaluation workflow reliable, inspectable, and easy to change.

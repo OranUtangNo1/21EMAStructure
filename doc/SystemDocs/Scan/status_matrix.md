@@ -10,9 +10,9 @@ Column meaning:
 - `Startup`: selected at app startup after `default_selected_scan_names` is filtered to active cards.
 
 Current totals:
-- enabled scan rules: 20
-- visible scan cards: 19
-- startup selected scans: 16
+- enabled scan rules: 22
+- visible scan cards: 21
+- startup selected scans: 18
 
 | Scan | Status | Card | Startup |
 | --- | --- | --- | --- |
@@ -28,7 +28,7 @@ Current totals:
 | `97 Club` | `disabled` | `no` | `no` |
 | `VCS` | `disabled` | `no` | `no` |
 | `VCS 52 High` | `enabled` | `yes` | `yes` |
-| `VCS 52 Low` | `enabled` | `yes` | `yes` |
+| `VCS 52 Low` | `disabled` | `no` | `no` |
 | `Pocket Pivot` | `enabled` | `yes` | `yes` |
 | `PP Count` | `enabled` | `yes` | `yes` |
 | `Weekly 20% plus gainers` | `enabled` | `yes` | `yes` |
@@ -37,10 +37,14 @@ Current totals:
 | `VCP 3T` | `enabled` | `yes` | `yes` |
 | `RS Acceleration` | `disabled` | `no` | `no` |
 | `Sustained Leadership` | `disabled` | `no` | `no` |
-| `Trend Reversal Setup` | `enabled` | `yes` | `yes` |
+| `Trend Reversal Setup` | `disabled` | `no` | `no` |
 | `Structure Pivot` | `disabled` | `no` | `no` |
 | `LL-HL Structure 1st Pivot` | `enabled` | `yes` | `no` |
 | `LL-HL Structure 2nd Pivot` | `enabled` | `yes` | `no` |
 | `LL-HL Structure Trend Line Break` | `enabled` | `yes` | `no` |
 | `50SMA Reclaim` | `enabled` | `yes` | `yes` |
 | `RS New High` | `enabled` | `yes` | `yes` |
+| `RS 3Y New High` | `enabled` | `yes` | `yes` |
+| `RS Leads Price Setup` | `enabled` | `yes` | `yes` |
+| `Trend Template` | `enabled` | `yes` | `yes` |
+| `Fresh Stage 2 Breakout` | `enabled` | `yes` | `yes` |

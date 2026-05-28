@@ -3,7 +3,15 @@ from __future__ import annotations
 import pandas as pd
 
 from src.dashboard.watchlist import WatchlistViewModelBuilder
-from src.scan.rules import DuplicateRuleConfig, ScanCardConfig, ScanConfig, evaluate_annotation_filters, evaluate_scan_rules
+from src.scan.rules import (
+    DuplicateRuleConfig,
+    ScanCardConfig,
+    ScanConfig,
+    evaluate_annotation_filters,
+    evaluate_scan_rules,
+    mature_late_stage_risk,
+    stage2_quality_score,
+)
 from src.scan.runner import ScanRunner
 
 
@@ -30,6 +38,85 @@ def test_trend_base_annotation_uses_existing_indicator_flag() -> None:
     result = evaluate_annotation_filters(row, config)
 
     assert result["Trend Base"] is True
+
+
+def test_trend_template_scan_requires_price_template_and_rs_confirmation() -> None:
+    row = pd.Series({"trend_template_price_score": 7, "raw_rs21": 70.0})
+    config = ScanConfig(enabled_scan_rules=("Trend Template",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["Trend Template"] is True
+
+
+def test_stage_annotations_use_template_context_and_rs_confirmation() -> None:
+    row = pd.Series({"stage_label": "stage2_candidate", "trend_template_price_score": 5, "raw_rs21": 60.0})
+    config = ScanConfig()
+
+    result = evaluate_annotation_filters(row, config)
+
+    assert result["Stage 2 Confirmed"] is True
+    assert result["Stage 4 Avoid"] is False
+
+
+def test_stage2_quality_annotation_uses_composite_quality_score() -> None:
+    row = pd.Series(
+        {
+            "stage_label": "stage2_candidate",
+            "trend_template_price_score": 7,
+            "raw_rs21": 88.0,
+            "raw_rs63": 80.0,
+            "sma150_slope_1m_pct": 3.0,
+            "sma200_slope_1m_pct": 2.0,
+            "dist_from_52w_high": -6.0,
+            "dist_from_52w_low": 75.0,
+            "ud_volume_ratio": 1.8,
+            "pp_count_window": 2,
+        }
+    )
+    config = ScanConfig()
+
+    result = evaluate_annotation_filters(row, config)
+
+    assert stage2_quality_score(row, config) >= config.stage2_quality_min_score
+    assert result["Stage 2 Quality Score"] is True
+
+
+def test_mature_stage_risk_filter_rejects_extended_late_stage_rows() -> None:
+    row = pd.Series(
+        {
+            "stage_label": "stage2_candidate",
+            "trend_template_price_score": 7,
+            "raw_rs21": 80.0,
+            "days_since_stage2_start": 300.0,
+            "dist_from_52w_low": 180.0,
+            "atr_pct_from_50sma": 3.0,
+        }
+    )
+    config = ScanConfig()
+
+    result = evaluate_annotation_filters(row, config)
+
+    assert mature_late_stage_risk(row, config) is True
+    assert result["Mature / Late Stage Risk Filter"] is False
+
+
+def test_industry_leadership_gate_uses_industry_score_threshold() -> None:
+    row = pd.Series({"industry_score": 72.0})
+    config = ScanConfig(industry_leadership_min_score=70.0)
+
+    result = evaluate_annotation_filters(row, config)
+
+    assert result["Industry Leadership Gate"] is True
+
+
+def test_stage4_annotation_uses_indicator_stage_label() -> None:
+    row = pd.Series({"stage_label": "stage4_avoid", "trend_template_price_score": 0, "raw_rs21": 10.0})
+    config = ScanConfig()
+
+    result = evaluate_annotation_filters(row, config)
+
+    assert result["Stage 4 Avoid"] is True
 
 
 def test_fund_score_annotation_uses_fixed_threshold() -> None:
@@ -271,6 +358,91 @@ def test_rs_new_high_scan_respects_configurable_distance_bounds() -> None:
     )
     relaxed_result = evaluate_scan_rules(row, relaxed)
     assert relaxed_result["RS New High"] is True
+
+
+def test_rs_3y_new_high_scan_uses_long_term_rs_flag_and_distance_band() -> None:
+    row = pd.Series(
+        {
+            "rs_ratio_at_3y_high": True,
+            "dist_from_52w_high": -18.0,
+        }
+    )
+    config = ScanConfig(enabled_scan_rules=("RS 3Y New High",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["RS 3Y New High"] is True
+
+
+def test_rs_3y_new_high_scan_respects_configurable_distance_bounds() -> None:
+    row = pd.Series(
+        {
+            "rs_ratio_at_3y_high": True,
+            "dist_from_52w_high": -4.9,
+        }
+    )
+    config = ScanConfig(
+        enabled_scan_rules=("RS 3Y New High",),
+        rs_3y_new_high_price_dist_max=-5.0,
+        rs_3y_new_high_price_dist_min=-35.0,
+    )
+    result = evaluate_scan_rules(row, config)
+    assert result["RS 3Y New High"] is False
+
+    relaxed = ScanConfig(
+        enabled_scan_rules=("RS 3Y New High",),
+        rs_3y_new_high_price_dist_max=-4.0,
+        rs_3y_new_high_price_dist_min=-35.0,
+    )
+    relaxed_result = evaluate_scan_rules(row, relaxed)
+    assert relaxed_result["RS 3Y New High"] is True
+
+
+def test_rs_leads_price_setup_requires_rs_new_high_before_price_breakout() -> None:
+    row = pd.Series(
+        {
+            "stage_label": "stage2_candidate",
+            "trend_template_price_score": 7,
+            "raw_rs21": 82.0,
+            "raw_rs63": 78.0,
+            "sma150_slope_1m_pct": 2.0,
+            "sma200_slope_1m_pct": 1.0,
+            "dist_from_52w_high": -8.0,
+            "dist_from_52w_low": 70.0,
+            "ud_volume_ratio": 1.5,
+            "pp_count_window": 2,
+            "atr_pct_from_50sma": 2.0,
+            "rs_ratio_at_52w_high": True,
+        }
+    )
+    config = ScanConfig(enabled_scan_rules=("RS Leads Price Setup",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["RS Leads Price Setup"] is True
+
+
+def test_fresh_stage2_breakout_requires_recent_stage2_transition_and_breakout_evidence() -> None:
+    row = pd.Series(
+        {
+            "stage_label": "stage2_candidate",
+            "trend_template_price_score": 7,
+            "raw_rs21": 78.0,
+            "days_since_stage2_start": 5.0,
+            "stage_base_days_3m": 30.0,
+            "close": 105.0,
+            "sma50": 100.0,
+            "vcp_pivot_breakout": True,
+            "volume_ratio_20d": 1.6,
+            "dcr_percent": 75.0,
+            "atr_pct_from_50sma": 2.0,
+        }
+    )
+    config = ScanConfig(enabled_scan_rules=("Fresh Stage 2 Breakout",))
+
+    result = evaluate_scan_rules(row, config)
+
+    assert result["Fresh Stage 2 Breakout"] is True
 
 
 def test_21ema_pattern_h_requires_shallow_high_band_support_and_prev_high_break() -> None:
@@ -1134,6 +1306,7 @@ def test_default_scan_config_includes_new_scan_names_and_cards() -> None:
         "Reclaim scan",
         "50SMA Reclaim",
         "RS New High",
+        "RS 3Y New High",
         "Volume Accumulation",
         "VCS 52 High",
         "VCS 52 Low",
@@ -1150,6 +1323,7 @@ def test_default_scan_config_includes_new_scan_names_and_cards() -> None:
         "Reclaim scan",
         "50SMA Reclaim",
         "RS New High",
+        "RS 3Y New High",
         "Volume Accumulation",
         "VCS 52 High",
         "VCS 52 Low",
