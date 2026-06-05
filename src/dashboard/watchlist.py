@@ -108,6 +108,8 @@ class WatchlistViewModelBuilder:
             "vcp_t2_depth_pct",
             "vcp_t3_depth_pct",
             "vcp_prior_uptrend_pct",
+            "vcp_is_3t_contracting",
+            "vcp_has_prior_uptrend",
             "vcp_pivot_price",
             "vcp_pivot_proximity_pct",
             "vcp_volume_dryup_ratio",

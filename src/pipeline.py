@@ -4,6 +4,7 @@ from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime, time as dt_time
 from pathlib import Path
+from time import perf_counter
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -50,6 +51,8 @@ VCP_3T_ARTIFACT_COLUMNS = (
     "vcp_t2_depth_pct",
     "vcp_t3_depth_pct",
     "vcp_prior_uptrend_pct",
+    "vcp_is_3t_contracting",
+    "vcp_has_prior_uptrend",
     "vcp_pivot_price",
     "vcp_pivot_proximity_pct",
     "vcp_volume_dryup_ratio",
@@ -67,6 +70,20 @@ VCP_3T_ARTIFACT_COLUMNS = (
     "vcp_is_under_pivot",
     "vcp_stage2_context",
     "vcp_tightening",
+)
+
+VCP_3T_BOOLEAN_ARTIFACT_COLUMNS = frozenset(
+    (
+        "vcp_pivot_breakout",
+        "vcp_is_3t_contracting",
+        "vcp_has_prior_uptrend",
+        "vcp_is_contracting",
+        "vcp_is_tight",
+        "vcp_is_dryup",
+        "vcp_is_under_pivot",
+        "vcp_stage2_context",
+        "vcp_tightening",
+    )
 )
 
 
@@ -348,19 +365,45 @@ class ResearchPlatform:
         if trade_date is None or expected_trade_date is None or trade_date.normalize() != expected_trade_date.normalize():
             self._mark_timing("pipeline.saved_run.miss", reason="trade_date_mismatch")
             return None
+        eligible_snapshot_for_restore = loaded.eligible_snapshot
+        if eligible_snapshot_for_restore is not None:
+            eligible_snapshot_for_restore, missing_columns = self._backfill_required_scan_columns_for_frame(
+                eligible_snapshot_for_restore
+            )
+            if missing_columns:
+                self._mark_timing(
+                    "pipeline.saved_run.backfill_scan_columns",
+                    frame="eligible_snapshot",
+                    missing_count=len(missing_columns),
+                    missing_columns=",".join(missing_columns),
+                )
+
         with self._timed("pipeline.saved_run.watchlist_frames"):
             watchlist, scan_hits, entry_signal_watchlist = self._saved_run_watchlist_frames(
                 loaded.watchlist,
-                loaded.eligible_snapshot,
+                eligible_snapshot_for_restore,
                 loaded.scan_hits,
             )
         if watchlist is None or scan_hits is None or entry_signal_watchlist is None:
             self._mark_timing("pipeline.saved_run.miss", reason="watchlist_restore_failed")
             return None
 
-        if not self._saved_run_has_required_scan_columns(watchlist, loaded.eligible_snapshot):
-            self._mark_timing("pipeline.saved_run.miss", reason="missing_required_scan_columns")
-            return None
+        watchlist, missing_columns = self._backfill_required_scan_columns_for_frame(watchlist)
+        if missing_columns:
+            self._mark_timing(
+                "pipeline.saved_run.backfill_scan_columns",
+                frame="watchlist",
+                missing_count=len(missing_columns),
+                missing_columns=",".join(missing_columns),
+            )
+        entry_signal_watchlist, missing_columns = self._backfill_required_scan_columns_for_frame(entry_signal_watchlist)
+        if missing_columns:
+            self._mark_timing(
+                "pipeline.saved_run.backfill_scan_columns",
+                frame="entry_signal_watchlist",
+                missing_count=len(missing_columns),
+                missing_columns=",".join(missing_columns),
+            )
 
         with self._timed("pipeline.saved_run.restore_market_radar"):
             market_result = self._restore_market_result(loaded.market_metadata, loaded.market_frames)
@@ -448,18 +491,21 @@ class ResearchPlatform:
             return False
         return self._normalize_symbols(saved_manual_symbols) == manual_symbols
 
-    def _saved_run_has_required_scan_columns(
+    def _backfill_required_scan_columns_for_frame(
         self,
-        watchlist: pd.DataFrame,
-        eligible_snapshot: pd.DataFrame | None,
-    ) -> bool:
+        frame: pd.DataFrame,
+    ) -> tuple[pd.DataFrame, list[str]]:
         if "VCP 3T" not in self.scan_config.enabled_scan_rules:
-            return True
-        frames = [watchlist]
-        if eligible_snapshot is not None:
-            frames.append(eligible_snapshot)
-        required = set(VCP_3T_ARTIFACT_COLUMNS)
-        return all(required.issubset(set(frame.columns)) for frame in frames)
+            return frame, []
+        missing_columns = [column for column in VCP_3T_ARTIFACT_COLUMNS if column not in frame.columns]
+        if not missing_columns:
+            return frame, []
+        defaults = {
+            column: False if column in VCP_3T_BOOLEAN_ARTIFACT_COLUMNS else pd.NA
+            for column in missing_columns
+        }
+        backfilled = pd.concat([frame.copy(), pd.DataFrame(defaults, index=frame.index)], axis=1)
+        return backfilled, missing_columns
 
     def _expected_trade_date(self) -> pd.Timestamp:
         now_eastern = datetime.now(ZoneInfo("America/New_York"))
@@ -770,11 +816,44 @@ class ResearchPlatform:
 
     def _build_indicator_histories(self, histories: dict[str, pd.DataFrame], symbols: list[str]) -> dict[str, pd.DataFrame]:
         result: dict[str, pd.DataFrame] = {}
-        for ticker in symbols:
+        processed = 0
+        skipped = 0
+        total = len(symbols)
+        loop_started = perf_counter()
+        for index, ticker in enumerate(symbols, start=1):
             history = histories.get(ticker, pd.DataFrame())
             if history.empty:
+                skipped += 1
                 continue
+            ticker_started = perf_counter()
             result[ticker] = self.indicator_calculator.calculate(history)
+            processed += 1
+            ticker_duration = perf_counter() - ticker_started
+            if ticker_duration >= 1.0:
+                self._mark_timing(
+                    "pipeline.build_indicator_histories.slow_symbol",
+                    ticker=ticker,
+                    rows=len(history),
+                    duration_s=f"{ticker_duration:.3f}",
+                    processed=processed,
+                    total=total,
+                )
+            if processed == 1 or processed % 100 == 0:
+                self._mark_timing(
+                    "pipeline.build_indicator_histories.progress",
+                    processed=processed,
+                    skipped=skipped,
+                    total=total,
+                    latest_ticker=ticker,
+                    elapsed_loop_s=f"{perf_counter() - loop_started:.3f}",
+                )
+        self._mark_timing(
+            "pipeline.build_indicator_histories.complete",
+            processed=processed,
+            skipped=skipped,
+            total=total,
+            elapsed_loop_s=f"{perf_counter() - loop_started:.3f}",
+        )
         return result
 
     def _build_snapshot(

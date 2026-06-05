@@ -46,6 +46,7 @@ class IndicatorConfig:
     resistance_test_count_window: int = 20
     power_gap_threshold: float = 10.0
     vcp_prior_uptrend_lookback: int = 126
+    vcp_prior_uptrend_min_pct: float = 30.0
     vcp_t1_window: int = 20
     vcp_t1_shift: int = 16
     vcp_t2_window: int = 10
@@ -56,7 +57,7 @@ class IndicatorConfig:
     vcp_tight_daily_range_pct: float = 3.0
     vcp_base_lookback: int = 50
     vcp_tight_window: int = 10
-    vcp_contraction_ratio: float = 0.6
+    vcp_contraction_ratio: float = 0.78
     vcp_adr_ceiling: float = 3.5
     vcp_range_ceiling: float = 12.0
     vcp_vdu_ratio: float = 0.75
@@ -328,6 +329,8 @@ class IndicatorCalculator:
         base_start_shift = self.config.vcp_t1_shift + self.config.vcp_t1_window
         prior_low = low.shift(base_start_shift).rolling(self.config.vcp_prior_uptrend_lookback).min()
         prior_uptrend = (t1_high / prior_low.replace(0, np.nan) - 1.0) * 100.0
+        vcp_is_3t_contracting = (t1_depth > t2_depth) & (t2_depth > t3_depth)
+        vcp_has_prior_uptrend = prior_uptrend >= self.config.vcp_prior_uptrend_min_pct
 
         pivot_price = high.shift(1).rolling(self.config.vcp_pivot_lookback).max()
         pivot_proximity = (close - pivot_price) / pivot_price.replace(0, np.nan) * 100.0
@@ -370,6 +373,8 @@ class IndicatorCalculator:
         )
         vcp_tightening = (
             vcp_is_contracting
+            & vcp_is_3t_contracting
+            & vcp_has_prior_uptrend
             & vcp_is_tight
             & vcp_is_dryup
             & vcp_is_under_pivot
@@ -381,6 +386,8 @@ class IndicatorCalculator:
             "vcp_t2_depth_pct": t2_depth,
             "vcp_t3_depth_pct": t3_depth,
             "vcp_prior_uptrend_pct": prior_uptrend,
+            "vcp_is_3t_contracting": vcp_is_3t_contracting.fillna(False),
+            "vcp_has_prior_uptrend": vcp_has_prior_uptrend.fillna(False),
             "vcp_pivot_price": pivot_price,
             "vcp_pivot_proximity_pct": pivot_proximity,
             "vcp_pivot_breakout": pivot_breakout.fillna(False),

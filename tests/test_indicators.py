@@ -427,10 +427,11 @@ def test_vcp_tightening_flags_contracting_dryup_under_pivot_stage2_context() -> 
             sma_long_slope_lookback=5,
             relvol_period=5,
             enable_3wt=False,
+            vcp_prior_uptrend_lookback=1,
             vcp_base_lookback=20,
             vcp_tight_window=5,
             vcp_pivot_lookback=10,
-            vcp_contraction_ratio=0.6,
+            vcp_contraction_ratio=0.78,
             vcp_adr_ceiling=3.5,
             vcp_range_ceiling=12.0,
             vcp_vdu_ratio=0.75,
@@ -441,6 +442,8 @@ def test_vcp_tightening_flags_contracting_dryup_under_pivot_stage2_context() -> 
     latest = calculator.calculate(frame).iloc[-1]
 
     assert bool(latest["vcp_is_contracting"]) is True
+    assert bool(latest["vcp_is_3t_contracting"]) is True
+    assert bool(latest["vcp_has_prior_uptrend"]) is True
     assert bool(latest["vcp_is_tight"]) is True
     assert bool(latest["vcp_is_dryup"]) is True
     assert bool(latest["vcp_is_under_pivot"]) is True

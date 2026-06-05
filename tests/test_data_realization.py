@@ -13,7 +13,7 @@ from src.data.cache import CacheLayer
 from src.data.quality import append_data_quality, summarize_data_source_label
 from src.data.results import FetchStatus, FundamentalBatchResult, PriceHistoryBatch, ProfileBatchResult
 from src.data.store import DataSnapshotStore
-from src.pipeline import ResearchPlatform
+from src.pipeline import ResearchPlatform, VCP_3T_ARTIFACT_COLUMNS
 from src.scan.rules import ScanConfig
 
 
@@ -334,6 +334,8 @@ def test_research_platform_reuses_same_day_saved_run(tmp_path: Path) -> None:
         "vcp_t2_depth_pct": 12.0,
         "vcp_t3_depth_pct": 5.0,
         "vcp_prior_uptrend_pct": 60.0,
+        "vcp_is_3t_contracting": True,
+        "vcp_has_prior_uptrend": True,
         "vcp_pivot_price": 100.0,
         "vcp_pivot_proximity_pct": 2.0,
         "vcp_volume_dryup_ratio": 0.55,
@@ -406,14 +408,18 @@ def test_research_platform_reuses_same_day_saved_run(tmp_path: Path) -> None:
     assert platform.load_latest_run_artifacts(symbols=["MSFT"], force_universe_refresh=False) is None
 
 
-def test_research_platform_rejects_saved_run_missing_vcp_columns() -> None:
+def test_research_platform_backfills_saved_run_missing_vcp_columns() -> None:
     platform = ResearchPlatform()
     platform.scan_config = ScanConfig(enabled_scan_rules=("VCP 3T",))
 
-    assert platform._saved_run_has_required_scan_columns(
-        pd.DataFrame({"close": [10.0]}, index=["AAA"]),
-        pd.DataFrame({"close": [10.0]}, index=["AAA"]),
-    ) is False
+    backfilled, missing_columns = platform._backfill_required_scan_columns_for_frame(
+        pd.DataFrame({"close": [10.0]}, index=["AAA"])
+    )
+
+    assert missing_columns == list(VCP_3T_ARTIFACT_COLUMNS)
+    assert set(VCP_3T_ARTIFACT_COLUMNS).issubset(set(backfilled.columns))
+    assert bool(backfilled.loc["AAA", "vcp_tightening"]) is False
+    assert pd.isna(backfilled.loc["AAA", "vcp_adr_recent_pct"])
 
 
 def test_research_platform_passes_force_price_refresh_to_price_provider() -> None:

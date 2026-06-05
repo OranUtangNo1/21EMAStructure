@@ -215,6 +215,7 @@ Archived final discretionary execution, sizing, and trade-management parameters 
 
 ### indicators.vcp_* fields
 - `vcp_prior_uptrend_lookback`: `126`
+- `vcp_prior_uptrend_min_pct`: `30.0`
 - `vcp_t1_window`: `20`
 - `vcp_t1_shift`: `16`
 - `vcp_t2_window`: `10`
@@ -225,7 +226,7 @@ Archived final discretionary execution, sizing, and trade-management parameters 
 - `vcp_tight_daily_range_pct`: `3.0`
 - `vcp_base_lookback`: `50`
 - `vcp_tight_window`: `10`
-- `vcp_contraction_ratio`: `0.6`
+- `vcp_contraction_ratio`: `0.78`
 - `vcp_adr_ceiling`: `3.5`
 - `vcp_range_ceiling`: `12.0`
 - `vcp_vdu_ratio`: `0.75`
