@@ -4,6 +4,8 @@ import pandas as pd
 
 from app.main import (
     _build_builtin_watchlist_presets,
+    _build_entry_signal_connection_candidate_display,
+    _build_signal_entry_performance_display,
     _build_tracking_detail_display,
     _build_tracking_ranking_display,
     _build_watchlist_control_values,
@@ -19,18 +21,66 @@ from app.main import (
 )
 from src.pipeline import PlatformArtifacts
 from src.scan.rules import ScanConfig
+from src.signals.rules import EntrySignalConfig
 from src.ui_preferences import UserPreferenceStore
+
+
+def _minimal_entry_signal_config(preset_sources: list[str]) -> EntrySignalConfig:
+    return EntrySignalConfig.from_dict(
+        {
+            "definitions": {
+                "accumulation_breakout_entry": {
+                    "display_name": "Accumulation Breakout Entry",
+                    "signal_version": "1.0",
+                    "pool": {
+                        "preset_sources": preset_sources,
+                        "detection_window_days": 5,
+                    },
+                    "setup_maturity": {"indicators": {"setup": {"weight": 1.0}}},
+                    "timing": {"indicators": {"timing": {"weight": 1.0}}},
+                    "risk_reward": {
+                        "stop": {
+                            "reference": "low",
+                            "atr_buffer": 0.25,
+                            "min_distance_atr": 0.5,
+                            "structural_penalty": 0.8,
+                        },
+                        "reward": {"primary": "high"},
+                        "scoring": {"breakpoints": [[1.0, 50.0], [2.0, 100.0]]},
+                    },
+                    "entry_strength": {
+                        "weights": {
+                            "setup_maturity": 0.3,
+                            "timing": 0.35,
+                            "risk_reward": 0.35,
+                        },
+                        "floor_gate": {
+                            "min_axis_threshold": 20.0,
+                            "capped_strength": 30.0,
+                        },
+                    },
+                    "display": {
+                        "thresholds": {
+                            "signal_detected": 55.0,
+                            "approaching": 38.0,
+                            "tracking": 0.0,
+                        },
+                    },
+                },
+            },
+        }
+    )
 
 
 def test_watchlist_controls_equal_treats_duplicate_threshold_as_material() -> None:
     left = {
-        "selected_scan_names": ["VCS", "97 Club"],
+        "selected_scan_names": ["Pocket Pivot", "VCS 52 High"],
         "selected_annotation_filters": ["RS 21 >= 63"],
         "selected_duplicate_subfilters": ["Top3 HybridRS"],
         "duplicate_threshold": 2,
     }
     right = {
-        "selected_scan_names": ["VCS", "97 Club"],
+        "selected_scan_names": ["Pocket Pivot", "VCS 52 High"],
         "selected_annotation_filters": ["RS 21 >= 63"],
         "selected_duplicate_subfilters": ["Top3 HybridRS"],
         "duplicate_threshold": 1,
@@ -41,13 +91,13 @@ def test_watchlist_controls_equal_treats_duplicate_threshold_as_material() -> No
 
 def test_watchlist_controls_equal_accepts_equivalent_values() -> None:
     left = {
-        "selected_scan_names": ["VCS"],
+        "selected_scan_names": ["Pocket Pivot"],
         "selected_annotation_filters": [],
         "selected_duplicate_subfilters": [],
         "duplicate_threshold": 1,
     }
     right = {
-        "selected_scan_names": ["VCS"],
+        "selected_scan_names": ["Pocket Pivot"],
         "selected_annotation_filters": [],
         "selected_duplicate_subfilters": [],
         "duplicate_threshold": 1,
@@ -60,7 +110,7 @@ def test_tracking_ranking_display_uses_readable_columns_and_hides_benchmark_retu
     ranking = pd.DataFrame(
         [
             {
-                "preset_name": "Orderly Pullback",
+                "preset_name": "Pullback Trigger",
                 "market_env": "bull",
                 "avg_return_pct": 3.25,
                 "benchmark_avg_pct": 1.0,
@@ -68,7 +118,7 @@ def test_tracking_ranking_display_uses_readable_columns_and_hides_benchmark_retu
                 "max_return_pct": 8.0,
                 "min_return_pct": -1.5,
                 "win_rate": 0.75,
-                "detection_count": 4,
+                "detection_count": 35,
             }
         ]
     )
@@ -76,6 +126,7 @@ def test_tracking_ranking_display_uses_readable_columns_and_hides_benchmark_retu
     display = _build_tracking_ranking_display(ranking)
 
     assert list(display.columns) == [
+        "Tier",
         "Preset",
         "Market",
         "Avg Return (%)",
@@ -86,8 +137,129 @@ def test_tracking_ranking_display_uses_readable_columns_and_hides_benchmark_retu
         "Detections",
     ]
     assert "benchmark_avg_pct" not in display.columns
+    assert display.iloc[0]["Tier"] == "Core"
     assert display.iloc[0]["Win Rate (%)"] == "75.0%"
     assert display.iloc[0]["Excess vs Benchmark (%)"] == "+2.25%"
+
+
+def test_tracking_ranking_display_keeps_small_samples_observing() -> None:
+    ranking = pd.DataFrame(
+        [
+            {
+                "preset_name": "Pullback Trigger",
+                "market_env": "bull",
+                "avg_return_pct": 12.0,
+                "benchmark_avg_pct": 1.0,
+                "excess_avg_pct": 11.0,
+                "max_return_pct": 18.0,
+                "min_return_pct": 2.0,
+                "win_rate": 0.9,
+                "detection_count": 29,
+            }
+        ]
+    )
+
+    display = _build_tracking_ranking_display(ranking)
+
+    assert display.iloc[0]["Tier"] == "Observing"
+
+
+def test_entry_signal_connection_candidate_display_keeps_fresh_stage2_measurement_only() -> None:
+    ranking = pd.DataFrame(
+        [
+            {
+                "preset_name": "Fresh Stage 2 Breakout",
+                "market_env": "bull",
+                "avg_return_pct": 4.5,
+                "benchmark_avg_pct": 1.0,
+                "excess_avg_pct": 3.5,
+                "max_return_pct": 11.0,
+                "min_return_pct": -2.0,
+                "win_rate": 0.62,
+                "detection_count": 35,
+            }
+        ]
+    )
+    signal_config = _minimal_entry_signal_config(["Accumulation Breakout", "RS Breakout Setup"])
+
+    display = _build_entry_signal_connection_candidate_display(
+        ranking,
+        signal_config,
+        horizon_days=21,
+        benchmark_ticker="SPY",
+    )
+
+    assert display.iloc[0]["Decision"] == "Connection Candidate"
+    assert display.iloc[0]["Connection Status"] == "Measurement Only"
+    assert display.iloc[0]["Target Signal"] == "Accumulation Breakout Entry"
+    assert display.iloc[0]["Avg 21D Return (%)"] == "+4.50%"
+    assert display.iloc[0]["Excess vs SPY (%)"] == "+3.50%"
+
+
+def test_entry_signal_connection_candidate_display_detects_existing_connection() -> None:
+    ranking = pd.DataFrame(
+        [
+            {
+                "preset_name": "Fresh Stage 2 Breakout",
+                "market_env": "bull",
+                "avg_return_pct": 1.0,
+                "benchmark_avg_pct": 0.5,
+                "excess_avg_pct": 0.5,
+                "max_return_pct": 5.0,
+                "min_return_pct": -3.0,
+                "win_rate": 0.5,
+                "detection_count": 10,
+            }
+        ]
+    )
+    signal_config = _minimal_entry_signal_config(["Fresh Stage 2 Breakout"])
+
+    display = _build_entry_signal_connection_candidate_display(
+        ranking,
+        signal_config,
+        horizon_days=21,
+        benchmark_ticker="SPY",
+    )
+
+    assert display.iloc[0]["Decision"] == "Already Connected"
+    assert display.iloc[0]["Connection Status"] == "Connected"
+
+
+def test_signal_entry_performance_display_formats_entry_ready_outcomes() -> None:
+    performance = pd.DataFrame(
+        [
+            {
+                "action_bucket": "Entry Ready",
+                "signal_name": "orderly_pullback_entry",
+                "market_env": "bull",
+                "event_count": 30,
+                "ticker_count": 25,
+                "avg_return_21d": 4.2,
+                "win_rate_21d": 0.6,
+                "tp1_count": 14,
+                "sl_count": 8,
+                "timeout_count": 8,
+                "ambiguous_count": 0,
+                "tp1_rate": 0.467,
+                "sl_rate": 0.267,
+                "avg_outcome_r": 0.35,
+                "avg_days_to_first_outcome": 6.5,
+                "avg_max_gain_21d": 9.5,
+                "avg_max_drawdown_21d": -3.2,
+                "first_event_date": "2026-04-01",
+                "last_event_date": "2026-05-01",
+            }
+        ]
+    )
+
+    display = _build_signal_entry_performance_display(performance)
+
+    assert display.iloc[0]["Tier"] == "Positive"
+    assert display.iloc[0]["Signal"] == "Orderly Pullback Entry"
+    assert display.iloc[0]["Avg 21D Return (%)"] == "+4.20%"
+    assert display.iloc[0]["21D Win Rate (%)"] == "60.0%"
+    assert display.iloc[0]["TP1 Rate (%)"] == "46.7%"
+    assert display.iloc[0]["SL Rate (%)"] == "26.7%"
 
 
 def test_tracking_detail_display_shows_only_returns_through_selected_horizon() -> None:
@@ -95,7 +267,7 @@ def test_tracking_detail_display_shows_only_returns_through_selected_horizon() -
         [
             {
                 "hit_date": "2026-04-01",
-                "preset_name": "Orderly Pullback",
+                "preset_name": "Pullback Trigger",
                 "market_env": "bull",
                 "ticker": "AAA",
                 "status": "active",
@@ -104,10 +276,12 @@ def test_tracking_detail_display_shows_only_returns_through_selected_horizon() -
                 "close_at_5d": 105.0,
                 "close_at_10d": 110.0,
                 "close_at_20d": 120.0,
+                "close_at_21d": 121.0,
                 "return_1d": 1.0,
                 "return_5d": 5.0,
                 "return_10d": 10.0,
                 "return_20d": 20.0,
+                "return_21d": 21.0,
                 "rs21_at_hit": 88.0,
                 "vcs_at_hit": 70.0,
                 "hybrid_score_at_hit": 91.0,
@@ -126,33 +300,34 @@ def test_tracking_detail_display_shows_only_returns_through_selected_horizon() -
     assert display.iloc[0]["1D Return (%)"] == "+1.00%"
     assert display.iloc[0]["5D Return (%)"] == "+5.00%"
     assert display.iloc[0]["10D Return (%)"] == "-"
-    assert display.iloc[0]["20D Return (%)"] == "-"
+    assert "20D Return (%)" not in display.columns
+    assert display.iloc[0]["21D Return (%)"] == "-"
     assert display.iloc[0]["Excess vs SPY (%)"] == "+2.50%"
 
 
 def test_resolve_selected_watchlist_preset_name_requires_available_preset() -> None:
-    presets = {"Leader Breakout": {"selected_scan_names": ["97 Club"]}}
+    presets = {"RS Breakout Setup": {"selected_scan_names": ["VCS 52 High"]}}
 
-    assert _resolve_selected_watchlist_preset_name(" Leader Breakout ", presets) == "Leader Breakout"
+    assert _resolve_selected_watchlist_preset_name(" RS Breakout Setup ", presets) == "RS Breakout Setup"
     assert _resolve_selected_watchlist_preset_name("Missing Preset", presets) == ""
     assert _resolve_selected_watchlist_preset_name("", presets) == ""
 
 
 def test_duplicate_role_controls_read_required_and_optional_rule() -> None:
     required, optional, threshold = _resolve_duplicate_role_controls(
-        ["Reclaim scan", "Pullback Quality scan", "RS Acceleration"],
+        ["Reclaim scan", "Pullback Quality scan", "Volume Accumulation"],
         {
             "mode": "required_plus_optional_min",
             "required_scans": ["Reclaim scan"],
-            "optional_scans": ["Pullback Quality scan", "RS Acceleration"],
+            "optional_scans": ["Pullback Quality scan", "Volume Accumulation"],
             "optional_min_hits": 2,
         },
         1,
-        ["Reclaim scan", "Pullback Quality scan", "RS Acceleration"],
+        ["Reclaim scan", "Pullback Quality scan", "Volume Accumulation"],
     )
 
     assert required == ["Reclaim scan"]
-    assert optional == ["Pullback Quality scan", "RS Acceleration"]
+    assert optional == ["Pullback Quality scan", "Volume Accumulation"]
     assert threshold == 2
 
 
@@ -164,7 +339,7 @@ def test_duplicate_role_controls_preserve_required_only_ui_state() -> None:
             "min_count": 2,
         },
         2,
-        ["Reclaim scan", "21EMA Pattern H", "RS Acceleration"],
+        ["Reclaim scan", "21EMA Pattern H", "Volume Accumulation"],
         ["Reclaim scan", "21EMA Pattern H"],
         [],
     )
@@ -176,7 +351,7 @@ def test_duplicate_role_controls_preserve_required_only_ui_state() -> None:
 
 def test_watchlist_control_values_persist_card_roles() -> None:
     values = _build_watchlist_control_values(
-        ["Reclaim scan", "21EMA Pattern H", "RS Acceleration"],
+        ["Reclaim scan", "21EMA Pattern H", "Volume Accumulation"],
         [],
         [],
         1,
@@ -184,15 +359,15 @@ def test_watchlist_control_values_persist_card_roles() -> None:
             "mode": "required_plus_optional_min",
             "min_count": 1,
             "required_scans": ["Reclaim scan"],
-            "optional_scans": ["21EMA Pattern H", "RS Acceleration"],
+            "optional_scans": ["21EMA Pattern H", "Volume Accumulation"],
             "optional_min_hits": 1,
         },
         ["Reclaim scan"],
-        ["21EMA Pattern H", "RS Acceleration"],
+        ["21EMA Pattern H", "Volume Accumulation"],
     )
 
     assert values["required_scan_names"] == ["Reclaim scan"]
-    assert values["optional_scan_names"] == ["21EMA Pattern H", "RS Acceleration"]
+    assert values["optional_scan_names"] == ["21EMA Pattern H", "Volume Accumulation"]
 
 
 def test_read_watchlist_preset_values_restores_persisted_required_only_roles() -> None:
@@ -213,7 +388,7 @@ def test_read_watchlist_preset_values_restores_persisted_required_only_roles() -
                 },
             },
         },
-        available_scan_names=["Reclaim scan", "21EMA Pattern H", "RS Acceleration"],
+        available_scan_names=["Reclaim scan", "21EMA Pattern H", "Volume Accumulation"],
         available_annotation_names=[],
         available_duplicate_subfilters=[],
         default_duplicate_threshold=1,
@@ -227,11 +402,11 @@ def test_read_watchlist_preset_values_restores_persisted_required_only_roles() -
 def test_duplicate_role_state_uses_optional_only_as_simple_overlap() -> None:
     selected, threshold, rule = _build_duplicate_role_state(
         [],
-        ["VCS", "97 Club"],
+        ["Pocket Pivot", "VCS 52 High"],
         2,
     )
 
-    assert selected == ["VCS", "97 Club"]
+    assert selected == ["Pocket Pivot", "VCS 52 High"]
     assert threshold == 2
     assert rule["mode"] == "min_count"
     assert rule["min_count"] == 2
@@ -324,11 +499,11 @@ def test_export_watchlist_preset_csvs_writes_daily_folder_and_overwrites_files(t
                 "  card_sections:",
                 "  - scan_name: 21EMA Pattern H",
                 "    display_name: 21EMA",
-                "  - scan_name: VCS",
-                "    display_name: VCS",
+                "  - scan_name: Pocket Pivot",
+                "    display_name: Pocket Pivot",
                 "  watchlist_presets:",
                 "  - preset_name: Momentum Core",
-                "    selected_scan_names: [21EMA Pattern H, VCS]",
+                "    selected_scan_names: [21EMA Pattern H, Pocket Pivot]",
                 "    selected_annotation_filters: []",
                 "    selected_duplicate_subfilters: []",
                 "    duplicate_threshold: 2",
@@ -340,7 +515,7 @@ def test_export_watchlist_preset_csvs_writes_daily_folder_and_overwrites_files(t
                 "    duplicate_threshold: 1",
                 "    preset_status: hidden_enabled",
                 "  - preset_name: Disabled Legacy",
-                "    selected_scan_names: [VCS]",
+                "    selected_scan_names: [Pocket Pivot]",
                 "    selected_annotation_filters: []",
                 "    selected_duplicate_subfilters: []",
                 "    duplicate_threshold: 1",
@@ -362,7 +537,7 @@ def test_export_watchlist_preset_csvs_writes_daily_folder_and_overwrites_files(t
             "schema_version": 1,
             "kind": "watchlist_controls",
             "values": {
-                "selected_scan_names": ["VCS"],
+                "selected_scan_names": ["Pocket Pivot"],
                 "selected_annotation_filters": [],
                 "selected_duplicate_subfilters": [],
                 "duplicate_threshold": 1,
@@ -381,7 +556,7 @@ def test_export_watchlist_preset_csvs_writes_daily_folder_and_overwrites_files(t
             index=watchlist_index,
         )
         hits = pd.DataFrame(
-            [{"ticker": ticker, "name": name, "kind": "scan"} for ticker in watchlist_index for name in ["21EMA Pattern H", "VCS"]]
+            [{"ticker": ticker, "name": name, "kind": "scan"} for ticker in watchlist_index for name in ["21EMA Pattern H", "Pocket Pivot"]]
         )
         return PlatformArtifacts(
             snapshot=pd.DataFrame({"trade_date": [pd.Timestamp("2026-04-09")]}, index=["AAA"]),

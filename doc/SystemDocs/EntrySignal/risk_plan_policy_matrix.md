@@ -22,7 +22,6 @@ The shared policy shape is:
 | `pullback_resumption_entry` | Preset-specific support: 50SMA defense, reclaim pullback low, pullback low, or 21EMA support | Detection 20d high, current 20d high, high since detection, 52w high, then R validation | 10d low or 21EMA trailing after confirmation | Implemented |
 | `momentum_acceleration_entry` | Acceleration-day low, then higher low after detection | 20d high, high since detection, 52w high, then R validation | 10d low trailing after TP1 or pool day 3 | Implemented |
 | `accumulation_breakout_entry` | Breakout support: max detection low / resistance, then 21EMA, pool low, or VCP pivot fallback | 52w high, measured move, VCP measured move, then R validation | 10d low trailing after TP1 or pool day 3 | Implemented |
-| `early_cycle_recovery_entry` | Structure-pivot higher low, then low since detection / detection low fallback | 20d high, SMA50, then R validation | Take 50% at TP1; 21EMA trailing before SMA50 reclaim, SMA50 trailing after reclaim | Implemented |
 | `power_gap_pullback_entry` | Power-gap pullback support: max pool low / 21EMA low, then gap-day low proxy fallback | Max of 20d high / high since detection / detection high, 52w high, then R validation | 21EMA close trailing after TP1 or pool day 3 | Implemented |
 
 ## Implemented Policies
@@ -33,6 +32,5 @@ The shared policy shape is:
 - `momentum_acceleration_entry`: `build_momentum_acceleration_risk_plan`
 - `pullback_resumption_entry`: `build_pullback_resumption_risk_plan`
 - `power_gap_pullback_entry`: `build_power_gap_pullback_risk_plan`
-- `early_cycle_recovery_entry`: `build_early_cycle_recovery_risk_plan`
 
-Any future Entry Signal precision work should first add the signal-specific policy in `risk_plan_policy.py`, then wire both the evaluator R/R and `src/signals/entry_plan.py` to that policy in the same change.
+Entry Signal precision work should keep the signal-specific policy in `risk_plan_policy.py` wired to both the evaluator R/R and `src/signals/entry_plan.py` in the same change.

@@ -4,7 +4,7 @@
 
 The active implementation keeps thresholds, weights, universes, and modes rooted at `config/default.yaml`.
 That entry file is a manifest which includes section-level files under `config/default/`.
-This catalog lists the parameters that are active in the current codebase and calls out shipped keys that are currently inactive.
+This catalog focuses on parameters used by the current UI and runtime workflow.
 
 Archived final discretionary execution, sizing, and trade-management parameters are out of scope for this file. The implemented `entry_signals` timing layer and Analysis database behavior are documented because they are present in the active config and UI.
 
@@ -35,10 +35,6 @@ Archived final discretionary execution, sizing, and trade-management parameters 
 ### app.use_sample_data_if_fetch_fails
 - current default: `false`
 - when true, the pipeline can synthesize sample price, profile, and fundamental data for missing symbols
-
-### app.refresh_on_start
-- present in `config/default/app.yaml`
-- currently not consumed by active code
 
 ## 3. Data and cache
 
@@ -193,10 +189,6 @@ Archived final discretionary execution, sizing, and trade-management parameters 
 ### indicators.atr_pct_from_50sma_overheat
 - current default: `7.0`
 
-### indicators.show_overheat_dot
-- current default: `true`
-- currently not consumed by active UI code
-
 ### indicators.pp_count_window_days
 - current default: `20`
 
@@ -231,6 +223,13 @@ Archived final discretionary execution, sizing, and trade-management parameters 
 - `vcp_t3_shift`: `1`
 - `vcp_pivot_lookback`: `20`
 - `vcp_tight_daily_range_pct`: `3.0`
+- `vcp_base_lookback`: `50`
+- `vcp_tight_window`: `10`
+- `vcp_contraction_ratio`: `0.6`
+- `vcp_adr_ceiling`: `3.5`
+- `vcp_range_ceiling`: `12.0`
+- `vcp_vdu_ratio`: `0.75`
+- `vcp_proximity_band`: `0.08`
 
 ### indicators Stage/Trend Template derived fields
 - `sma150`
@@ -308,17 +307,6 @@ RS scoring also emits `rs_ratio_52w_high`, `rs_ratio_at_52w_high`, `rs_ratio_3y_
 - `near_52w_high_threshold_pct`: `5.0`
 - `near_52w_high_hybrid_min`: `70.0`
 - `three_weeks_tight_vcs_min`: `50.0`
-- `vcp3t_prior_uptrend_min_pct`: `30.0`
-- `vcp3t_t1_min_depth_pct`: `10.0`
-- `vcp3t_t2_to_t1_max_ratio`: `0.85`
-- `vcp3t_t3_to_t2_max_ratio`: `0.75`
-- `vcp3t_t3_max_depth_pct`: `7.0`
-- `vcp3t_tight_days_min`: `3`
-- `vcp3t_volume_dryup_max_ratio`: `0.8`
-- `vcp3t_pivot_extension_max_pct`: `5.0`
-- `vcp3t_breakout_volume_ratio_min`: `1.0`
-- `vcp3t_dcr_min`: `55.0`
-- `vcp3t_rs21_min`: `60.0`
 - `rs_acceleration_rs21_min`: `70.0`
 - `sustained_rs21_min`: `80.0`
 - `sustained_rs63_min`: `70.0`
@@ -347,13 +335,13 @@ RS scoring also emits `rs_ratio_52w_high`, `rs_ratio_at_52w_high`, `rs_ratio_3y_
 - `scan_status_map`: per-scan runtime status map
   - `enabled`: evaluate the scan and keep it available to watchlist card selection and preset composition
   - `disabled`: skip scan evaluation and remove it from watchlist card selection and preset composition
-- `enabled_scan_rules`: legacy enabled scan family list still accepted for backward compatibility
+- `enabled_scan_rules`: enabled scan family list loaded by the current config
 - `default_selected_scan_names`: startup-selected watchlist cards for the watchlist controls
 - `annotation_filter_status_map`: per-annotation-filter runtime status map
   - `enabled`: keep the filter available for UI selection, runtime evaluation, and preset loading
   - `disabled`: keep the filter definition in config but remove it from UI selection and runtime evaluation
 - `enabled_annotation_filters`: startup-enabled post-scan filters; current default is empty
-- `enabled_list_rules`: legacy alias still accepted for annotation rules
+- `enabled_list_rules`: compatibility alias still accepted for annotation rules
 - misplaced scan names inside `enabled_annotation_filters` are coerced into the enabled scan rule set during config loading
 - `annotation_filters`: available annotation-filter definitions and display names
 - built-in annotation filter names include:
@@ -362,7 +350,10 @@ RS scoring also emits `rs_ratio_52w_high`, `rs_ratio_at_52w_high`, `rs_ratio_3y_
   - `PP Count (20d)`
   - `Trend Base`
   - `Stage 2 Confirmed`
+  - `Stage 2 Quality Score`
   - `Trend Template`
+  - `Mature / Late Stage Risk Filter`
+  - `Industry Leadership Gate`
   - `Stage 4 Avoid`
   - `Fund Score > 70`
   - `Resistance Tests >= 2`
@@ -379,13 +370,13 @@ RS scoring also emits `rs_ratio_52w_high`, `rs_ratio_at_52w_high`, `rs_ratio_3y_
   - `preset_status: disabled` hides the preset from the UI and excludes it from automatic preset exports
   - preset-selected annotation filters that are not currently enabled are dropped during config loading
   - a built-in preset that references any non-enabled scan is forced to `preset_status: disabled`
-  - legacy `export_enabled: false` is still accepted and maps to `preset_status: disabled`
+  - compatibility `export_enabled: false` is still accepted and maps to `preset_status: disabled`
 - `preset_csv_export`: automatic preset CSV export settings
   - `enabled`: turn automatic batch export on or off after full pipeline recompute
   - `output_dir`: root output directory for day-based export folders
   - automatic export writes `preset_summary.csv` and `preset_hits.csv` for active built-in presets and saved custom presets
-  - `write_details`: whether to also write the legacy wide `preset_details.csv`
-  - `top_ticker_limit`: legacy setting retained for compatibility; `preset_summary.csv` writes one row per output ticker and lists matching presets in `hit_presets`
+  - `write_details`: whether to also write the wide `preset_details.csv`
+  - `top_ticker_limit`: compatibility setting; `preset_summary.csv` writes one row per output ticker and lists matching presets in `hit_presets`
 - `card_sections`: scan-based card definitions, display names, and optional `sort_columns`
 
 ## 8. Entry signals
@@ -411,7 +402,6 @@ Current built-in entry signal names:
 - `pullback_resumption_entry`
 - `momentum_acceleration_entry`
 - `accumulation_breakout_entry`
-- `early_cycle_recovery_entry` (implemented but disabled by default)
 - `power_gap_pullback_entry`
 
 Each entry signal definition may include an `action` section. These thresholds drive `Action Bucket` classification on the Entry Signal page.
@@ -453,6 +443,20 @@ The same `entry_ready.rr_ratio_min` value is used as the minimum acceptable `R/R
 - `risk_on_ratio_denominator_symbol`: `IWN`
 - `risk_on_ratio_high_window`: `756`
 - `risk_on_ratio_ma_windows`: `[20, 50, 200]`
+- `market_auxiliary_symbols.vix9d_symbol`: `^VIX9D`
+- `market_auxiliary_symbols.vix3m_symbol`: `^VIX3M`
+- `market_auxiliary_symbols.credit_high_yield_symbol`: `HYG`
+- `market_auxiliary_symbols.credit_investment_grade_symbol`: `LQD`
+- `market_auxiliary_symbols.credit_treasury_symbol`: `IEF`
+- `market_auxiliary_symbols.credit_high_yield_oas_symbol`: `BAMLH0A0HYM2`
+- `drawdown_window`: `252`
+- `index_state.symbols`: `[SPY, QQQ]`
+- `index_state.rally_low_lookback`: `25`
+- `index_state.ftd_min_gain_pct`: `1.7`
+- `index_state.ftd_min_rally_day`: `4`
+- `index_state.distribution_decline_pct`: `-0.2`
+- `index_state.distribution_lookback`: `25`
+- `index_state.distribution_pressure_count`: `5`
 
 ### Component weights
 - `pct_above_sma20`: `0.12`
@@ -481,6 +485,8 @@ The same `entry_ready.rr_ratio_min` value is used as the minimum acceptable `R/R
 - `market_report.regime.score_deteriorating_1w`: current default `-3.0`
 - `market_report.regime.score_improving_1m`: current default `5.0`
 - `market_report.regime.score_deteriorating_1m`: current default `-5.0`
+- `market_report.regime.neutral_score_floor`: current default `40.0`; lower bound used by market action mode classification
+- `market_report.regime.positive_score_floor`: current default `60.0`; positive-score threshold used by market action mode classification
 - `market_report.breadth.strong_level`: current default `70.0`
 - `market_report.breadth.weak_level`: current default `50.0`
 - `market_report.breadth.s2w_high_active_level`: current default `30.0`
@@ -539,7 +545,7 @@ The current implementation also maintains preset-hit tracking data in `data_runs
 - detection rows for export-enabled built-in preset duplicate hits
 - detection-to-scan bridge rows
 - detection-to-filter bridge rows
-- horizon closes and returns for 1D, 5D, 10D, and 20D
+- horizon closes and returns for 1D, 5D, 10D, 20D, and 21D
 - SQLite views used by Analysis and repository read APIs
 
 Analysis UI constants currently live in `app/main.py`, not in YAML:

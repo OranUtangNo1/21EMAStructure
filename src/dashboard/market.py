@@ -132,6 +132,20 @@ class MarketConditionConfig:
     risk_on_ratio_denominator_symbol: str = "IWN"
     risk_on_ratio_high_window: int = 756
     risk_on_ratio_ma_windows: tuple[int, ...] = (20, 50, 200)
+    vix9d_symbol: str = "^VIX9D"
+    vix3m_symbol: str = "^VIX3M"
+    credit_high_yield_symbol: str = "HYG"
+    credit_investment_grade_symbol: str = "LQD"
+    credit_treasury_symbol: str = "IEF"
+    credit_high_yield_oas_symbol: str = "BAMLH0A0HYM2"
+    drawdown_window: int = 252
+    index_state_symbols: tuple[str, ...] = ("SPY", "QQQ")
+    index_state_rally_low_lookback: int = 25
+    index_state_ftd_min_gain_pct: float = 1.7
+    index_state_ftd_min_rally_day: int = 4
+    index_state_distribution_decline_pct: float = -0.2
+    index_state_distribution_lookback: int = 25
+    index_state_distribution_pressure_count: int = 5
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> "MarketConditionConfig":
@@ -164,6 +178,22 @@ class MarketConditionConfig:
         )
         if not risk_on_ratio_ma_windows:
             risk_on_ratio_ma_windows = (20, 50, 200)
+        auxiliary_payload = payload.get("market_auxiliary_symbols", {})
+        auxiliary = auxiliary_payload if isinstance(auxiliary_payload, dict) else {}
+        index_state_payload = payload.get("index_state", {})
+        index_state = index_state_payload if isinstance(index_state_payload, dict) else {}
+        index_symbols_raw = index_state.get("symbols", payload.get("index_state_symbols", ["SPY", "QQQ"]))
+        if isinstance(index_symbols_raw, str):
+            index_symbols_iterable = [index_symbols_raw]
+        else:
+            index_symbols_iterable = index_symbols_raw
+        index_state_symbols = tuple(
+            str(symbol).strip().upper()
+            for symbol in index_symbols_iterable
+            if str(symbol).strip()
+        )
+        if not index_state_symbols:
+            index_state_symbols = ("SPY", "QQQ")
         return cls(
             condition_etfs=condition_items,
             leadership_etfs=leadership_items,
@@ -187,6 +217,20 @@ class MarketConditionConfig:
             risk_on_ratio_denominator_symbol=str(payload.get("risk_on_ratio_denominator_symbol", "IWN")).strip().upper() or "IWN",
             risk_on_ratio_high_window=int(payload.get("risk_on_ratio_high_window", 756)),
             risk_on_ratio_ma_windows=risk_on_ratio_ma_windows,
+            vix9d_symbol=str(auxiliary.get("vix9d_symbol", payload.get("vix9d_symbol", "^VIX9D"))).strip().upper() or "^VIX9D",
+            vix3m_symbol=str(auxiliary.get("vix3m_symbol", payload.get("vix3m_symbol", "^VIX3M"))).strip().upper() or "^VIX3M",
+            credit_high_yield_symbol=str(auxiliary.get("credit_high_yield_symbol", payload.get("credit_high_yield_symbol", "HYG"))).strip().upper() or "HYG",
+            credit_investment_grade_symbol=str(auxiliary.get("credit_investment_grade_symbol", payload.get("credit_investment_grade_symbol", "LQD"))).strip().upper() or "LQD",
+            credit_treasury_symbol=str(auxiliary.get("credit_treasury_symbol", payload.get("credit_treasury_symbol", "IEF"))).strip().upper() or "IEF",
+            credit_high_yield_oas_symbol=str(auxiliary.get("credit_high_yield_oas_symbol", payload.get("credit_high_yield_oas_symbol", "BAMLH0A0HYM2"))).strip().upper() or "BAMLH0A0HYM2",
+            drawdown_window=int(payload.get("drawdown_window", 252)),
+            index_state_symbols=index_state_symbols,
+            index_state_rally_low_lookback=int(index_state.get("rally_low_lookback", payload.get("index_state_rally_low_lookback", 25))),
+            index_state_ftd_min_gain_pct=float(index_state.get("ftd_min_gain_pct", payload.get("index_state_ftd_min_gain_pct", 1.7))),
+            index_state_ftd_min_rally_day=int(index_state.get("ftd_min_rally_day", payload.get("index_state_ftd_min_rally_day", 4))),
+            index_state_distribution_decline_pct=float(index_state.get("distribution_decline_pct", payload.get("index_state_distribution_decline_pct", -0.2))),
+            index_state_distribution_lookback=int(index_state.get("distribution_lookback", payload.get("index_state_distribution_lookback", 25))),
+            index_state_distribution_pressure_count=int(index_state.get("distribution_pressure_count", payload.get("index_state_distribution_pressure_count", 5))),
         )
 
 
@@ -207,6 +251,8 @@ class MarketConditionResult:
     label_3m_ago: str | None
     component_scores: dict[str, float]
     breadth_summary: dict[str, float]
+    breadth_momentum_summary: dict[str, float]
+    breadth_internal_summary: dict[str, float]
     participation_summary: dict[str, float]
     metric_deltas: dict[str, dict[str, float]]
     performance_overview: dict[str, float]
@@ -222,6 +268,10 @@ class MarketConditionResult:
     sector_relative_strength: pd.DataFrame = field(default_factory=pd.DataFrame)
     style_pair_summary: pd.DataFrame = field(default_factory=pd.DataFrame)
     defensive_cyclical_summary: dict[str, float] = field(default_factory=dict)
+    volatility_term_structure: dict[str, float] = field(default_factory=dict)
+    credit_risk_proxy: dict[str, float] = field(default_factory=dict)
+    index_state_summary: dict[str, float] = field(default_factory=dict)
+    drawdown_summary: dict[str, float] = field(default_factory=dict)
 
 
 class MarketSnapshotBuilder:
@@ -343,9 +393,19 @@ class MarketConditionScorer:
                 self.config.safe_haven_risk_off_symbol,
                 self.config.risk_on_ratio_numerator_symbol,
                 self.config.risk_on_ratio_denominator_symbol,
+                self.config.vix9d_symbol,
+                self.config.vix3m_symbol,
+                self.config.credit_high_yield_symbol,
+                self.config.credit_investment_grade_symbol,
+                self.config.credit_treasury_symbol,
+                *self.config.index_state_symbols,
             ]
         )
         return list(dict.fromkeys(symbols))
+
+    def required_fred_series(self) -> list[str]:
+        symbols = [self.config.credit_high_yield_oas_symbol]
+        return list(dict.fromkeys(symbol for symbol in symbols if symbol))
 
     def score(
         self,
@@ -375,7 +435,13 @@ class MarketConditionScorer:
         defensive_cyclical_summary = self._defensive_cyclical_summary(market_histories)
         s5th_series = self._build_s5th_series(stock_histories)
         risk_on_ratio_summary = self._risk_on_ratio_summary(market_histories)
+        volatility_term_structure = self._volatility_term_structure(market_histories)
+        credit_risk_proxy = self._credit_risk_proxy(market_histories)
+        index_state_summary = self._index_state_summary(market_histories, benchmark_history)
         metric_deltas = self._market_metric_deltas(stock_histories, market_histories)
+        breadth_momentum_summary = self._breadth_momentum_summary(latest_raw_components, metric_deltas)
+        breadth_internal_summary = self._breadth_internal_summary(stock_histories)
+        drawdown_summary = self._drawdown_summary(market_histories, benchmark_history)
 
         return MarketConditionResult(
             trade_date=self._latest_trade_date(benchmark_history),
@@ -391,6 +457,8 @@ class MarketConditionScorer:
             label_3m_ago=self._label_for_optional_score(score_3m_ago),
             component_scores={key: round(value, 2) for key, value in latest_components.items()},
             breadth_summary={key: round(latest_raw_components[key], 2) for key in self._breadth_keys() if key in latest_raw_components},
+            breadth_momentum_summary={key: round(value, 3) for key, value in breadth_momentum_summary.items()},
+            breadth_internal_summary={key: round(value, 3) for key, value in breadth_internal_summary.items()},
             participation_summary={
                 key: round(latest_raw_components[key], 2)
                 for key in self._participation_keys()
@@ -404,6 +472,10 @@ class MarketConditionScorer:
                 "SAFE HAVEN %": round(self._safe_haven_spread(market_histories, 0), 2),
             },
             risk_on_ratio_summary={key: round(value, 3) for key, value in risk_on_ratio_summary.items()},
+            volatility_term_structure={key: round(value, 3) for key, value in volatility_term_structure.items()},
+            credit_risk_proxy={key: round(value, 3) for key, value in credit_risk_proxy.items()},
+            index_state_summary={key: round(value, 3) for key, value in index_state_summary.items()},
+            drawdown_summary={key: round(value, 3) for key, value in drawdown_summary.items()},
             market_snapshot=market_snapshot,
             leadership_snapshot=leadership_snapshot,
             external_snapshot=external_snapshot,
@@ -432,11 +504,17 @@ class MarketConditionScorer:
             label_3m_ago=None,
             component_scores={},
             breadth_summary={},
+            breadth_momentum_summary={},
+            breadth_internal_summary={},
             participation_summary={},
             metric_deltas={},
             performance_overview={},
             high_vix_summary={},
             risk_on_ratio_summary={},
+            volatility_term_structure={},
+            credit_risk_proxy={},
+            index_state_summary={},
+            drawdown_summary={},
             market_snapshot=empty,
             leadership_snapshot=empty,
             external_snapshot=empty,
@@ -519,6 +597,10 @@ class MarketConditionScorer:
         vix_score = self._vix_score(market_histories.get("^VIX", pd.DataFrame()), offset)
         safe_haven = self._safe_haven_spread(market_histories, offset)
         risk_on_ratio = self._risk_on_ratio_summary(market_histories, offset)
+        volatility_term_structure = self._volatility_term_structure(market_histories, offset)
+        credit_risk_proxy = self._credit_risk_proxy(market_histories, offset)
+        breadth_internal_summary = self._breadth_internal_summary(stock_histories, offset)
+        drawdown_summary = self._drawdown_summary(market_histories, pd.DataFrame(), offset)
 
         enriched = dict(values)
         vix_close = self._close_at_offset(market_histories.get("^VIX", pd.DataFrame()), offset)
@@ -529,6 +611,14 @@ class MarketConditionScorer:
         enriched["safe_haven_score"] = self._safe_haven_score(market_histories, offset)
         for key, value in risk_on_ratio.items():
             enriched[f"risk_on:{key}"] = value
+        for key, value in volatility_term_structure.items():
+            enriched[f"vix_term:{key}"] = value
+        for key, value in credit_risk_proxy.items():
+            enriched[f"credit:{key}"] = value
+        for key, value in breadth_internal_summary.items():
+            enriched[f"breadth_internal:{key}"] = value
+        for key, value in drawdown_summary.items():
+            enriched[f"drawdown:{key}"] = value
         return enriched
 
     def _market_metric_deltas(
@@ -537,7 +627,7 @@ class MarketConditionScorer:
         market_histories: dict[str, pd.DataFrame],
     ) -> dict[str, dict[str, float]]:
         current = self._market_metric_values_at_offset(stock_histories, market_histories, 0)
-        offsets = {"1D": 1, "1W": 5, "1M": 21}
+        offsets = {"1D": 1, "1W": 5, "2W": 10, "1M": 21}
         deltas: dict[str, dict[str, float]] = {}
         for label, offset in offsets.items():
             previous = self._market_metric_values_at_offset(stock_histories, market_histories, offset)
@@ -547,6 +637,137 @@ class MarketConditionScorer:
                     continue
                 deltas.setdefault(key, {})[label] = round(float(current_value) - float(previous_value), 3)
         return deltas
+
+    def _breadth_momentum_summary(
+        self,
+        raw_components: dict[str, float],
+        metric_deltas: dict[str, dict[str, float]],
+    ) -> dict[str, float]:
+        a20 = raw_components.get("pct_above_sma20")
+        if not self._is_finite_number(a20):
+            return {}
+        deltas = metric_deltas.get("pct_above_sma20", {})
+        summary: dict[str, float] = {"A20": float(a20)}
+        for label, output_key in (
+            ("1D", "A20 DELTA 1D"),
+            ("1W", "A20 DELTA 5D"),
+            ("2W", "A20 DELTA 10D"),
+            ("1M", "A20 DELTA 21D"),
+        ):
+            value = deltas.get(label)
+            if self._is_finite_number(value):
+                summary[output_key] = float(value)
+
+        delta_5d = summary.get("A20 DELTA 5D")
+        delta_10d = summary.get("A20 DELTA 10D")
+        if self._is_finite_number(delta_10d) and abs(float(delta_10d)) >= 15.0:
+            summary["A20 MOMENTUM FLAG"] = 1.0 if float(delta_10d) > 0 else -1.0
+        elif self._is_finite_number(delta_5d) and abs(float(delta_5d)) >= 10.0:
+            summary["A20 MOMENTUM FLAG"] = 1.0 if float(delta_5d) > 0 else -1.0
+        else:
+            summary["A20 MOMENTUM FLAG"] = 0.0
+        return summary
+
+    def _breadth_internal_summary(self, stock_histories: dict[str, pd.DataFrame], offset: int = 0) -> dict[str, float]:
+        breadth_frame = self._breadth_internal_frame(stock_histories)
+        if breadth_frame.empty or len(breadth_frame) <= offset:
+            return {}
+        if offset > 0:
+            breadth_frame = breadth_frame.iloc[: len(breadth_frame) - offset]
+        if breadth_frame.empty:
+            return {}
+        latest = breadth_frame.iloc[-1]
+        summary = {
+            "UNIVERSE COUNT": latest.get("universe_count"),
+            "ADVANCERS": latest.get("advancers"),
+            "DECLINERS": latest.get("decliners"),
+            "ADVANCE DECLINE NET": latest.get("advance_decline_net"),
+            "ADVANCE RATIO": latest.get("advance_ratio"),
+            "AD LINE": latest.get("ad_line"),
+            "NEW HIGH 52W COUNT": latest.get("new_high_52w_count"),
+            "NEW LOW 52W COUNT": latest.get("new_low_52w_count"),
+            "NET NEW HIGH LOW": latest.get("net_new_high_low"),
+            "NET NEW HIGH LOW %": latest.get("net_new_high_low_pct"),
+            "STAGE2 %": latest.get("stage2_pct"),
+            "MCCLELLAN OSCILLATOR": latest.get("mcclellan_oscillator"),
+            "MCCLELLAN SUMMATION": latest.get("mcclellan_summation"),
+            "ZWEIG BREADTH THRUST": latest.get("zweig_breadth_thrust"),
+            "ZWEIG THRUST FLAG": latest.get("zweig_thrust_flag"),
+        }
+        return {key: float(value) for key, value in summary.items() if self._is_finite_number(value)}
+
+    def _breadth_internal_frame(self, stock_histories: dict[str, pd.DataFrame]) -> pd.DataFrame:
+        rows: list[pd.DataFrame] = []
+        for history in stock_histories.values():
+            if history.empty or "close" not in history.columns:
+                continue
+            close = pd.to_numeric(history["close"], errors="coerce")
+            high = pd.to_numeric(history["high"], errors="coerce") if "high" in history.columns else close
+            low = pd.to_numeric(history["low"], errors="coerce") if "low" in history.columns else close
+            previous_close = close.shift(1)
+            row = pd.DataFrame(index=history.index)
+            row["valid"] = close.notna() & previous_close.notna()
+            row["advance"] = (close > previous_close) & row["valid"]
+            row["decline"] = (close < previous_close) & row["valid"]
+            if "high_52w" in history.columns:
+                high_52w = pd.to_numeric(history["high_52w"], errors="coerce")
+                row["new_high_52w"] = (high >= high_52w) & high_52w.notna()
+            else:
+                row["new_high_52w"] = False
+            if "low_52w" in history.columns:
+                low_52w = pd.to_numeric(history["low_52w"], errors="coerce")
+                row["new_low_52w"] = (low <= low_52w) & low_52w.notna()
+            else:
+                row["new_low_52w"] = False
+            if "stage_label" in history.columns:
+                row["stage2"] = history["stage_label"].astype(str).eq("stage2_candidate")
+            else:
+                row["stage2"] = False
+            rows.append(row)
+        if not rows:
+            return pd.DataFrame()
+
+        combined = pd.concat(rows, axis=1, keys=range(len(rows))).sort_index()
+        valid = combined.xs("valid", axis=1, level=1).fillna(False)
+        advances = combined.xs("advance", axis=1, level=1).fillna(False)
+        declines = combined.xs("decline", axis=1, level=1).fillna(False)
+        new_highs = combined.xs("new_high_52w", axis=1, level=1).fillna(False)
+        new_lows = combined.xs("new_low_52w", axis=1, level=1).fillna(False)
+        stage2 = combined.xs("stage2", axis=1, level=1).fillna(False)
+
+        universe_count = valid.sum(axis=1).astype(float)
+        advancers = advances.sum(axis=1).astype(float)
+        decliners = declines.sum(axis=1).astype(float)
+        advance_decline_net = advancers - decliners
+        advance_ratio = (advancers / (advancers + decliners).replace(0, np.nan)).fillna(0.5)
+        ratio_adjusted_net = ((advance_ratio - 0.5) * 200.0).where(universe_count > 0)
+        new_high_count = new_highs.sum(axis=1).astype(float)
+        new_low_count = new_lows.sum(axis=1).astype(float)
+        net_new_high_low = new_high_count - new_low_count
+        stage2_count = (stage2 & valid).sum(axis=1).astype(float)
+
+        frame = pd.DataFrame(
+            {
+                "universe_count": universe_count,
+                "advancers": advancers,
+                "decliners": decliners,
+                "advance_decline_net": advance_decline_net,
+                "advance_ratio": advance_ratio,
+                "ad_line": advance_decline_net.fillna(0.0).cumsum(),
+                "new_high_52w_count": new_high_count,
+                "new_low_52w_count": new_low_count,
+                "net_new_high_low": net_new_high_low,
+                "net_new_high_low_pct": (net_new_high_low / universe_count.replace(0, np.nan)) * 100.0,
+                "stage2_pct": (stage2_count / universe_count.replace(0, np.nan)) * 100.0,
+                "mcclellan_oscillator": ratio_adjusted_net.ewm(span=19, adjust=False, min_periods=1).mean()
+                - ratio_adjusted_net.ewm(span=39, adjust=False, min_periods=1).mean(),
+                "zweig_breadth_thrust": advance_ratio.ewm(span=10, adjust=False, min_periods=1).mean(),
+            }
+        )
+        frame["mcclellan_summation"] = frame["mcclellan_oscillator"].fillna(0.0).cumsum()
+        prior_10d_min = frame["zweig_breadth_thrust"].shift(1).rolling(10, min_periods=1).min()
+        frame["zweig_thrust_flag"] = ((prior_10d_min < 0.4) & (frame["zweig_breadth_thrust"] > 0.615)).astype(float)
+        return frame
 
     @staticmethod
     def _is_finite_number(value: object) -> bool:
@@ -733,6 +954,223 @@ class MarketConditionScorer:
             "HIGH LOOKBACK DAYS": float(high_window),
             "ABOVE MA COUNT": float(above_count),
             "MA COUNT": float(available_ma_count),
+        }
+
+    def _volatility_term_structure(self, market_histories: dict[str, pd.DataFrame], offset: int = 0) -> dict[str, float]:
+        summary = self._ratio_diagnostic_summary(
+            market_histories,
+            numerator_symbol="^VIX",
+            denominator_symbol=self.config.vix3m_symbol,
+            offset=offset,
+        )
+        vix_close = self._close_at_offset(market_histories.get("^VIX", pd.DataFrame()), offset)
+        vix9d_close = self._close_at_offset(market_histories.get(self.config.vix9d_symbol, pd.DataFrame()), offset)
+        vix3m_close = self._close_at_offset(market_histories.get(self.config.vix3m_symbol, pd.DataFrame()), offset)
+        if vix_close is not None:
+            summary["VIX"] = vix_close
+        if vix9d_close is not None:
+            summary["VIX9D"] = vix9d_close
+        if vix3m_close is not None:
+            summary["VIX3M"] = vix3m_close
+        ratio = summary.get("RATIO")
+        if ratio is not None and pd.notna(ratio):
+            summary["INVERSION FLAG"] = 1.0 if float(ratio) >= 1.0 else 0.0
+        if vix9d_close is not None and vix_close is not None and float(vix_close) != 0.0:
+            front_ratio = float(vix9d_close) / float(vix_close)
+            summary["VIX9D/VIX RATIO"] = front_ratio
+            summary["FRONT INVERSION FLAG"] = 1.0 if front_ratio >= 1.0 else 0.0
+        if vix9d_close is not None and vix_close is not None and vix3m_close is not None:
+            summary["FULL BACKWARDATION FLAG"] = 1.0 if float(vix9d_close) >= float(vix_close) >= float(vix3m_close) else 0.0
+        return summary
+
+    def _credit_risk_proxy(self, market_histories: dict[str, pd.DataFrame], offset: int = 0) -> dict[str, float]:
+        high_yield = self.config.credit_high_yield_symbol
+        investment_grade = self.config.credit_investment_grade_symbol
+        treasury = self.config.credit_treasury_symbol
+        high_yield_oas = self.config.credit_high_yield_oas_symbol
+        high_yield_vs_credit = self._ratio_diagnostic_summary(
+            market_histories,
+            numerator_symbol=high_yield,
+            denominator_symbol=investment_grade,
+            offset=offset,
+        )
+        high_yield_vs_treasury = self._ratio_diagnostic_summary(
+            market_histories,
+            numerator_symbol=high_yield,
+            denominator_symbol=treasury,
+            offset=offset,
+        )
+        summary: dict[str, float] = {}
+        for prefix, values in (("HYG/LQD", high_yield_vs_credit), ("HYG/IEF", high_yield_vs_treasury)):
+            for key, value in values.items():
+                summary[f"{prefix} {key}"] = value
+        rel_1w_values = [
+            summary.get("HYG/LQD REL 1W %"),
+            summary.get("HYG/IEF REL 1W %"),
+        ]
+        if all(value is not None and pd.notna(value) for value in rel_1w_values):
+            summary["CREDIT RISK-OFF FLAG"] = 1.0 if all(float(value) < 0.0 for value in rel_1w_values) else 0.0
+        oas_close = self._close_at_offset(market_histories.get(high_yield_oas, pd.DataFrame()), offset)
+        if oas_close is not None:
+            summary["HY OAS"] = oas_close
+            previous_5d = self._close_at_offset(market_histories.get(high_yield_oas, pd.DataFrame()), offset + 5)
+            previous_21d = self._close_at_offset(market_histories.get(high_yield_oas, pd.DataFrame()), offset + 21)
+            if previous_5d is not None:
+                delta_5d_bps = (float(oas_close) - float(previous_5d)) * 100.0
+                summary["HY OAS DELTA 5D BPS"] = delta_5d_bps
+                summary["HY OAS WIDENING 5D FLAG"] = 1.0 if delta_5d_bps >= 25.0 else 0.0
+            if previous_21d is not None:
+                summary["HY OAS DELTA 21D BPS"] = (float(oas_close) - float(previous_21d)) * 100.0
+        return summary
+
+    def _drawdown_summary(
+        self,
+        market_histories: dict[str, pd.DataFrame],
+        benchmark_history: pd.DataFrame,
+        offset: int = 0,
+    ) -> dict[str, float]:
+        summary: dict[str, float] = {}
+        for symbol in self.config.index_state_symbols:
+            history = market_histories.get(symbol, pd.DataFrame())
+            if history.empty and symbol == "SPY":
+                history = benchmark_history
+            state = self._single_drawdown_state(history, offset)
+            for key, value in state.items():
+                summary[f"{symbol} {key}"] = value
+        return summary
+
+    def _single_drawdown_state(self, history: pd.DataFrame, offset: int = 0) -> dict[str, float]:
+        if history.empty or "close" not in history.columns:
+            return {}
+        close = pd.to_numeric(history["close"], errors="coerce").dropna().astype(float)
+        if offset > 0:
+            if len(close) <= offset:
+                return {}
+            close = close.iloc[: len(close) - offset]
+        if close.empty:
+            return {}
+        window = max(1, min(self.config.drawdown_window, len(close)))
+        window_close = close.tail(window)
+        high = float(window_close.max())
+        latest = float(window_close.iloc[-1])
+        if high == 0.0 or pd.isna(high):
+            return {}
+        high_positions = np.flatnonzero(np.isclose(window_close.to_numpy(dtype=float), high, equal_nan=False))
+        last_high_position = int(high_positions[-1]) if len(high_positions) else len(window_close) - 1
+        return {
+            "DD 252D %": (latest / high - 1.0) * 100.0,
+            "T_DD": float(len(window_close) - 1 - last_high_position),
+            "ROLLING HIGH": high,
+            "DRAWDOWN WINDOW DAYS": float(window),
+        }
+
+    def _index_state_summary(
+        self,
+        market_histories: dict[str, pd.DataFrame],
+        benchmark_history: pd.DataFrame,
+    ) -> dict[str, float]:
+        summary: dict[str, float] = {}
+        for symbol in self.config.index_state_symbols:
+            history = market_histories.get(symbol, pd.DataFrame())
+            if history.empty and symbol == "SPY":
+                history = benchmark_history
+            state = self._single_index_state(history)
+            for key, value in state.items():
+                summary[f"{symbol} {key}"] = value
+        return summary
+
+    def _single_index_state(self, history: pd.DataFrame) -> dict[str, float]:
+        required_columns = {"close", "volume"}
+        if history.empty or not required_columns.issubset(history.columns):
+            return {}
+        frame = history.loc[:, ["close", "volume"]].copy()
+        frame["close"] = pd.to_numeric(frame["close"], errors="coerce")
+        frame["volume"] = pd.to_numeric(frame["volume"], errors="coerce")
+        frame = frame.dropna()
+        if len(frame) < 2:
+            return {}
+        close = frame["close"].astype(float)
+        volume = frame["volume"].astype(float)
+        daily_return = close.pct_change(fill_method=None) * 100.0
+        previous_volume = volume.shift(1)
+
+        distribution = (daily_return <= self.config.index_state_distribution_decline_pct) & (volume > previous_volume)
+        distribution_lookback = max(1, min(self.config.index_state_distribution_lookback, len(distribution)))
+        distribution_count = float(distribution.tail(distribution_lookback).sum())
+
+        low_lookback = max(2, min(self.config.index_state_rally_low_lookback, len(close)))
+        recent_close = close.tail(low_lookback)
+        low_label = recent_close.idxmin()
+        low_pos = close.index.get_loc(low_label)
+        if isinstance(low_pos, slice):
+            low_pos = low_pos.start
+        low_pos = int(low_pos)
+        latest_pos = len(close) - 1
+        sessions_since_low = latest_pos - low_pos
+        rally_attempt_day = float(sessions_since_low) if sessions_since_low > 0 and close.iloc[-1] > close.iloc[low_pos] else 0.0
+
+        ftd_pos: int | None = None
+        min_rally_day = max(1, self.config.index_state_ftd_min_rally_day)
+        for position in range(low_pos + min_rally_day, latest_pos + 1):
+            gain = daily_return.iloc[position]
+            if pd.isna(gain):
+                continue
+            if (
+                float(gain) >= self.config.index_state_ftd_min_gain_pct
+                and volume.iloc[position] > previous_volume.iloc[position]
+                and close.iloc[position] > close.iloc[low_pos]
+            ):
+                ftd_pos = position
+        ftd_flag = 1.0 if ftd_pos is not None else 0.0
+        ftd_age = float(latest_pos - ftd_pos) if ftd_pos is not None else -1.0
+        under_pressure = 1.0 if distribution_count >= self.config.index_state_distribution_pressure_count else 0.0
+        return {
+            "RALLY ATTEMPT DAY": rally_attempt_day,
+            "FTD FLAG": ftd_flag,
+            "FTD AGE DAYS": ftd_age,
+            "DISTRIBUTION DAY COUNT": distribution_count,
+            "UNDER PRESSURE FLAG": under_pressure,
+        }
+
+    def _ratio_diagnostic_summary(
+        self,
+        market_histories: dict[str, pd.DataFrame],
+        *,
+        numerator_symbol: str,
+        denominator_symbol: str,
+        offset: int = 0,
+    ) -> dict[str, float]:
+        numerator_history = market_histories.get(numerator_symbol, pd.DataFrame())
+        denominator_history = market_histories.get(denominator_symbol, pd.DataFrame())
+        if numerator_history.empty or denominator_history.empty:
+            return {}
+        if "close" not in numerator_history.columns or "close" not in denominator_history.columns:
+            return {}
+        aligned = pd.concat(
+            [
+                numerator_history["close"].astype(float),
+                denominator_history["close"].astype(float),
+            ],
+            axis=1,
+            join="inner",
+        ).dropna()
+        if aligned.empty:
+            return {}
+        aligned = aligned.loc[aligned.iloc[:, 1] != 0]
+        if aligned.empty or len(aligned) <= offset:
+            return {}
+        ratio = aligned.iloc[:, 0] / aligned.iloc[:, 1]
+        ratio = ratio.iloc[: len(ratio) - offset]
+        if ratio.empty:
+            return {}
+        latest_ratio = ratio.iloc[-1]
+        if pd.isna(latest_ratio):
+            return {}
+        return {
+            "RATIO": float(latest_ratio),
+            "REL 1W %": self._ratio_return(ratio, 5),
+            "REL 1M %": self._ratio_return(ratio, 21),
+            "REL 3M %": self._ratio_return(ratio, 63),
         }
 
     def _sector_relative_strength(

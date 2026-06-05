@@ -13,6 +13,7 @@
 ## Pool Definition
 
 - Preset sources: `Accumulation Breakout`, `RS Breakout Setup`, `VCP 3T Breakout`
+- Not a current preset source: `Fresh Stage 2 Breakout`; that preset remains measurement-only in Analysis until expectancy data supports a later routing decision.
 - Detection window: `5` business days
 - Pool persistence: `signal_pool_entry`
 - Daily evaluation persistence: `signal_evaluation`

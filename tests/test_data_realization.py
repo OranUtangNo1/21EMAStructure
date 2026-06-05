@@ -138,6 +138,8 @@ def _sample_market_result(trade_date: pd.Timestamp) -> MarketConditionResult:
         label_3m_ago="Neutral",
         component_scores={"pct_above_sma10": 75.0, "vix_score": 50.0},
         breadth_summary={"pct_above_sma10": 75.0},
+        breadth_momentum_summary={"A20": 68.0, "A20 DELTA 5D": 4.0, "A20 MOMENTUM FLAG": 0.0},
+        breadth_internal_summary={"ADVANCE DECLINE NET": 1.0, "STAGE2 %": 66.7},
         participation_summary={"pct_positive_1w": 80.0},
         metric_deltas={"pct_above_sma10": {"1D": 5.0}},
         performance_overview={"% YTD": 12.3},
@@ -150,6 +152,7 @@ def _sample_market_result(trade_date: pd.Timestamp) -> MarketConditionResult:
         s5th_series=pd.DataFrame(),
         vix_close=17.5,
         update_time="2026-04-08T08:00:00",
+        drawdown_summary={"SPY DD 252D %": 0.0, "SPY T_DD": 0.0},
     )
 
 
@@ -336,6 +339,18 @@ def test_research_platform_reuses_same_day_saved_run(tmp_path: Path) -> None:
         "vcp_volume_dryup_ratio": 0.55,
         "vcp_pivot_breakout": True,
         "vcp_tight_days": 4.0,
+        "vcp_adr_recent_pct": 2.0,
+        "vcp_adr_base_pct": 5.0,
+        "vcp_is_contracting": True,
+        "vcp_recent_span_pct": 6.0,
+        "vcp_is_tight": True,
+        "vcp_volume_recent": 500_000.0,
+        "vcp_volume_base": 1_000_000.0,
+        "vcp_is_dryup": True,
+        "vcp_dist_to_pivot": 0.03,
+        "vcp_is_under_pivot": True,
+        "vcp_stage2_context": True,
+        "vcp_tightening": True,
     }
     for column, value in vcp_fields.items():
         eligible_snapshot[column] = [value]
@@ -436,9 +451,14 @@ def test_research_platform_passes_force_price_refresh_to_price_provider() -> Non
         def get_fundamentals(self, symbols):
             return FundamentalBatchResult(fundamentals=[], statuses={})
 
+    class EmptyFredProvider:
+        def get_series(self, series_ids, *, force_refresh=False):
+            return PriceHistoryBatch(histories={}, statuses={})
+
     platform.price_provider = FakePriceProvider()
     platform.profile_provider = EmptyProfileProvider()
     platform.fundamental_provider = EmptyFundamentalProvider()
+    platform.fred_provider = EmptyFredProvider()
 
     platform._load_data(["AAA"], None, "manual", force_price_refresh=True)
 

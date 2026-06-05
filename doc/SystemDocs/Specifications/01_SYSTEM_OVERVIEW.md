@@ -2,7 +2,7 @@
 
 ## 1. Product Definition
 
-OraTek is an active screening, candidate extraction, and preset-performance review platform for short- to medium-term long-only growth-stock research. The system's primary promise is to prioritize Stage 2 participation candidates and avoid treating bottom-fishing, recovery, or short-side setups as default actionable outputs. The implemented product produces six active app outputs:
+OraTek is an active screening, candidate extraction, and preset-performance review platform for short- to medium-term long-only growth-stock research. The system's primary promise is to prioritize Stage 2 participation candidates through the current default workflow. The implemented product produces six active app outputs:
 
 1. Watchlist
 2. Entry Signal
@@ -24,9 +24,9 @@ The active product scope is limited to:
 - post-scan watchlist projection in the UI
 - duplicate-ticker prioritization from scan overlap
 - Watchlist, Entry Signal, Market Dashboard, RS, Analysis, and Setting rendering
-- SQLite-backed preset-hit tracking for 1, 5, 10, and 20 business-day outcomes
+- SQLite-backed preset-hit tracking for 1, 5, 10, 20, and 21 business-day outcomes
 
-Default actionable screening is long-only and Stage 2 oriented. Recovery, 52-week-low, and pre-confirmation reversal logic can remain implemented for research continuity, but it should be disabled by default and excluded from default Entry Signal promotion.
+Default actionable screening is long-only and Stage 2 oriented. SystemDocs describes the current enabled workflow and excludes non-current recovery, 52-week-low, bottom-fishing, and short-side workflows.
 
 ## 3. Out-Of-Scope Areas
 
@@ -62,6 +62,8 @@ For the resolved universe, the application loads:
 - stock price history
 - benchmark history (`SPY` by default)
 - VIX history (`^VIX` by default)
+- market auxiliary histories for VIX term structure and credit-risk diagnostics (`^VIX3M`, `HYG`, `LQD`, and `IEF` by default)
+- index-state diagnostic histories for FTD, rally-attempt, and distribution-day context (`SPY` and `QQQ` by default)
 - RS Radar ETF histories
 - Market Dashboard ETF histories
 - factor ETF histories
@@ -107,7 +109,7 @@ Each pipeline recompute syncs preset duplicate hits into `data_runs/tracking.db`
 - `hit_date x preset_name x ticker` is unique
 - only one active detection is allowed per `preset_name x ticker`
 - repeated same-preset hits for the same active ticker do not create a new active tracking row
-- forward prices and returns are filled for 1, 5, 10, and 20 business-day target horizons when price history becomes available
+- forward prices and returns are filled for 1, 5, 10, 20, and 21 business-day target horizons when price history becomes available
 
 Legacy CSV files under `data_runs/preset_effectiveness/` can be backfilled into the database through the migration helper, but SQLite is the current tracking store.
 

@@ -91,7 +91,6 @@ Current implemented behavior:
   - `values`
 - preset `values` currently contain those watchlist control fields plus hidden `duplicate_rule` when present
 - the preset picker merges saved presets from the preference store with built-in config presets whose `preset_status` is `enabled`
-- built-in presets marked `hidden_enabled` or `disabled` remain out of the picker
 - maximum saved presets per namespace: 10
 
 ## 3. Today's Watchlist
@@ -133,9 +132,9 @@ The collapsed control panel exposes:
 
 Current defaults:
 
-- legacy card defaults come from `scan.default_selected_scan_names` or all card sections when unspecified and are loaded as optional cards
+- startup card defaults come from `scan.default_selected_scan_names` or all card sections when unspecified and are loaded as optional cards
 - presets with `grouped_threshold` duplicate rules load their required scans and condition groups into the matching controls
-- presets with legacy `required_plus_optional_min` duplicate rules load as one condition group
+- presets with `required_plus_optional_min` duplicate rules load as one condition group
 - annotation-filter defaults come from `scan.enabled_annotation_filters`
 - duplicate-subfilter default is empty
 - each optional condition group threshold defaults to its saved `min_hits`
@@ -192,7 +191,7 @@ Current logic:
 - selected required scans and condition groups determine overlap counting
 - required scans must all hit
 - every condition group is required, and each group has its own `min_hits` threshold
-- legacy optional-only selections still use the simple `min_count` duplicate rule
+- optional-only selections use the simple `min_count` duplicate rule
 - duplicate-only subfilters are applied after duplicate rows are formed
 
 The band currently renders:
@@ -219,7 +218,7 @@ Current card behavior:
 
 ### 3.5 Earnings for today
 
-The page currently does not render the same-day earnings card. The underlying artifact remains available for future re-enablement.
+The page currently does not render the same-day earnings card.
 
 Current source:
 
@@ -280,13 +279,13 @@ Current action-bucket semantics:
 - `Needs Review`: active candidates that do not meet the `Entry Ready` or `Watch Setup` thresholds.
 - `Avoid / Invalid`: inactive, invalidated, expired, or transitioned pool entries.
 
-Action-bucket thresholds are signal-specific and live in `config/default/entry_signals.yaml` under each signal definition's `action` section. This keeps fast momentum entries, pullback entries, early recovery entries, and breakout entries from sharing one coarse global threshold.
+Action-bucket thresholds are signal-specific and live in `config/default/entry_signals.yaml` under each signal definition's `action` section. This keeps fast momentum entries, pullback entries, and breakout entries from sharing one coarse global threshold.
 
 `Missing Piece` is generated from the selected signal's maturity detail, timing detail, risk/reward values, and guard warnings. It should name the blocking condition as specifically as the evaluator can support, such as `waiting for EMA reclaim`, `volume confirmation weak`, `R/R below 2`, `stop is too wide`, or `weak market warning`, instead of only showing a generic timing or R/R label.
 
 Entry plans are generated as EntrySignal outputs for user review only; automated order placement is out of scope. The main table uses `Plan Type`, `Current Price`, `Entry Zone Low`, `Entry Zone High`, `Max Entry Price`, `Stop Loss`, `TP1`, `R/R Current`, `R/R Ideal`, and `Trigger Condition` as the primary execution context. `Ready Now` means the current close satisfies the signal's minimum R/R. `Wait Pullback` means the setup is valid but current R/R is insufficient, while the calculated entry zone would satisfy the minimum R/R if reached. `Wait Trigger` means price and plan quality are acceptable but the signal still needs confirmation. `Poor R/R` and `Invalid` are diagnostic or review states rather than actionable entries. `TP2` is not price-calculated in the active system; it is displayed as `Future trailing stop` for the planned trailing-stop workflow. Plan exclusions and downgrades are traceable through `Plan Reject Codes`, `Plan Reject Reason`, and `Plan Detail`.
 
-Valid `Ready Now` plans are persisted to `signal_entry_event` for outcome review. Tracking refresh updates those event rows with fixed-horizon returns, TP1/SL hit flags, first outcome, result R, and 20D maximum gain/drawdown. These event outcomes are diagnostics for EntrySignal calibration and do not represent broker orders or realized P&L.
+Valid `Ready Now` plans are persisted to `signal_entry_event` for outcome review. Tracking refresh updates those event rows with fixed-horizon returns, TP1/SL hit flags, first outcome, result R, and 20D / 21D maximum gain/drawdown. These event outcomes are diagnostics for EntrySignal calibration and do not represent broker orders or realized P&L.
 
 On app artifact load, the startup-selected EntrySignal set is also evaluated and exported to `data_runs/entry_signals/` as the date-keyed `YYYYMMDD_evaluations.csv` review artifact. Bucket-specific CSV and summary JSON write paths remain available in the runner but are disabled by default. `data_runs/tracking.db` remains the durable source for pool state, evaluations, and entry events.
 
@@ -355,7 +354,7 @@ Analysis is a preset-hit performance analysis page backed by `data_runs/tracking
 Current scope controls:
 
 - `Preset Universe`: multiselect over built-in preset names
-- `Horizon`: one of `1D`, `5D`, `10D`, `20D`
+- `Horizon`: one of `1D`, `5D`, `10D`, `21D`
 - `Hit Date Range`: date range over recorded detection hit dates
 - `Hit Market Env`: multiselect over `bull`, `neutral`, `weak`, and `bear`
 - `Benchmark`: one of `SPY`, `QQQ`, or `IWM`
@@ -363,7 +362,9 @@ Current scope controls:
 Current behavior:
 
 - preset and market-environment filters use OR semantics within each control
+- the default horizon is `21D`
 - horizon selection requires a filled return for that horizon to appear in ranking
+- `20D` outcomes remain stored for compatibility, but are not exposed as a user-selectable Analysis horizon
 - benchmark returns are aligned to each detection hit date and selected horizon, not to the overall analysis period start
 - benchmark prices are loaded through the same yfinance price provider and cache layer used by the app
 - filter state is persisted in Streamlit session state separately from widget state so tab transitions do not reset the selected preset universe
@@ -371,6 +372,8 @@ Current behavior:
 Current result areas:
 
 - `Ranking`: grouped by `preset_name x market_env`
+- `EntrySignal Connection Candidates`: measurement-only preset-to-signal connection review for configured connection candidates
+- `Entry Ready Performance`: signal-level `Ready Now` event performance from `v_signal_entry_performance`, filtered by selected market environments
 - `Detail`: row-level detection detail for the selected scope; horizon return and close columns are shown for all fixed horizons, with horizons later than the selected horizon displayed as `-`
 - `Export Observations CSV`: analysis-oriented observation export with one row per detection horizon that has target data
 - `Export Detection Scans CSV`: bridge export from detection to hit scan names
@@ -378,6 +381,7 @@ Current result areas:
 
 Current ranking columns:
 
+- `Tier`
 - `Preset`
 - `Market`
 - `Avg Return (%)`
@@ -387,7 +391,24 @@ Current ranking columns:
 - `Win Rate (%)`
 - `Detections`
 
+Tier logic:
+
+- `Observing`: `Detections < 30`
+- `Core`: `Detections >= 30`, positive selected-horizon average return, positive benchmark excess return, and win rate at least `55%`
+- `Candidate`: `Detections >= 30`, positive selected-horizon average return, and positive benchmark excess return
+- `Downgrade Review`: `Detections >= 30`, negative selected-horizon average return, and negative benchmark excess return
+- `Mixed` or `Needs Data`: remaining mature or incomplete groups
+
 The ranking table does not display the benchmark return column. Positive excess-return rows are highlighted with a green background and negative excess-return rows with a red background.
+
+Current EntrySignal connection-candidate behavior:
+
+- the initial configured candidate is `Fresh Stage 2 Breakout` toward `Accumulation Breakout Entry`
+- the candidate table is derived from the same selected-scope ranking data and selected horizon
+- it shows connection status, target signal, preset tier, selected-horizon average return, benchmark excess, win rate, and detection count
+- `Fresh Stage 2 Breakout` remains `Measurement Only` while it is absent from every EntrySignal `pool.preset_sources`
+- a preset row can become `Connection Candidate` only after the selected-scope tier is `Core` or `Candidate`
+- the table does not mutate `config/default/entry_signals.yaml`, create signal pools, or change EntrySignal evaluation
 
 Current detail display:
 
@@ -447,6 +468,8 @@ Current `Breadth & Trend Metrics` items:
 - `20 > 50`
 - `50 > 200`
 
+Breadth metric-card labels use a three-state UI threshold: `Strong` at `>= 70.0`, `Mixed` from `50.0` to below `70.0`, and `Weak` below `50.0`. This matches the report breadth reference levels and avoids conflicting current-value interpretation between the dashboard and report text.
+
 Current `Participation Momentum` items:
 
 - `Pos 1W`
@@ -454,6 +477,8 @@ Current `Participation Momentum` items:
 - `Pos 3M`
 - `Pos 1Y`
 - `Pos YTD`
+
+Participation metric-card labels use a display-only three-state threshold: `Strong` at `>= 60.0`, `Mixed` from `50.0` to below `60.0`, and `Weak` below `50.0`. This differs from Breadth because Participation measures positive-return share rather than moving-average trend participation. Future config may promote these display thresholds into `market_report.participation` settings.
 
 Current `Performance Overview` items:
 
@@ -468,6 +493,8 @@ Current `High, VIX & Safe Haven` items:
 - `VIX`
 - `Safe Haven`
 
+`S2W High` uses `Strong` at `>= 30.0`, `Mixed` from `15.0` to below `30.0`, and `Weak` below `15.0`.
+
 Current `Risk-On Ratio IWO/IWN` items:
 
 - `1M` relative ratio change
@@ -475,7 +502,11 @@ Current `Risk-On Ratio IWO/IWN` items:
 - `High Delta` versus the configured lookback high, capped by loaded price history
 - `MA` count of configured ratio moving averages currently below the ratio
 
-Metric cards for breadth, participation, high/VIX/safe-haven, and risk-on ratio values may show compact `Delta 1D / 1W / 1M` text computed from already loaded histories. These deltas do not require extra provider symbols or a longer configured price period.
+Metric cards for breadth, participation, high/VIX/safe-haven, and risk-on ratio values may show compact, color-coded `Delta 1D / 1W / 2W / 1M` text computed from already loaded histories. Percentage deltas are displayed as `pt` because they represent percentage-point changes, not percent returns. These deltas do not require extra provider symbols or a longer configured price period.
+
+Market Dashboard sections expose a circular `?` help control next to the section title. Clicking it opens Japanese explanatory text that describes what the section measures and how the values should be interpreted for short-to-medium-term long-only swing context. This help text is explanatory only and does not change scoring, scans, Watchlist output, or EntrySignal evaluation.
+
+Market Dashboard computation also produces non-scoring diagnostics for `breadth_momentum_summary` (A20 current value and 1D/5D/10D/21D deltas), `breadth_internal_summary` (active-universe advancers/decliners, A/D line, 52W new high-low net, Stage 2 percentage, McClellan oscillator/summation, and Zweig breadth thrust flag), `volatility_term_structure` (`VIX9D/VIX`, `VIX/VIX3M`, front inversion, and full backwardation flags), `credit_risk_proxy` (`HYG/LQD`, `HYG/IEF`, and FRED high-yield OAS / delta OAS), `index_state_summary` (`SPY` / `QQQ` FTD, rally-attempt day, distribution-day count, and pressure flag), and `drawdown_summary` (`DD 252D %`, `T_DD`, and rolling high by configured index). These are persisted in market summary JSON for report inputs; the active UI does not render dedicated cards for them yet.
 
 ### 7.5 Core / Leadership / External
 
@@ -540,7 +571,7 @@ The active Market Dashboard does not render this document or the final report ye
 
 ## 8. Setting
 
-The `Setting` tab is the future home for app-wide settings.
+The `Setting` tab is the tracking diagnostics page.
 
 Current behavior:
 

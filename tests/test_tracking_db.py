@@ -87,12 +87,12 @@ def test_tracking_db_prevents_duplicate_active_detection(tmp_path) -> None:
     try:
         conn.execute(
             "INSERT INTO detection (hit_date, preset_name, ticker, status) VALUES (?, ?, ?, ?)",
-            ("2026-04-17", "Momentum Surge", "AAA", "active"),
+            ("2026-04-17", "Momentum Ignition", "AAA", "active"),
         )
         try:
             conn.execute(
                 "INSERT INTO detection (hit_date, preset_name, ticker, status) VALUES (?, ?, ?, ?)",
-                ("2026-04-20", "Momentum Surge", "AAA", "active"),
+                ("2026-04-20", "Momentum Ignition", "AAA", "active"),
             )
         except sqlite3.IntegrityError:
             pass

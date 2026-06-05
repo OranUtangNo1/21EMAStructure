@@ -16,23 +16,13 @@ DEFAULT_SCAN_RULE_NAMES = (
     "Pullback Quality scan",
     "Reclaim scan",
     "4% bullish",
-    "Vol Up",
     "Volume Accumulation",
     "Momentum 97",
-    "97 Club",
-    "VCS",
     "VCS 52 High",
-    "VCS 52 Low",
     "Pocket Pivot",
     "PP Count",
     "Weekly 20% plus gainers",
-    "Near 52W High",
-    "Three Weeks Tight",
     "VCP 3T",
-    "RS Acceleration",
-    "Sustained Leadership",
-    "Trend Reversal Setup",
-    "Structure Pivot",
     "LL-HL Structure 1st Pivot",
     "LL-HL Structure 2nd Pivot",
     "LL-HL Structure Trend Line Break",
@@ -74,23 +64,13 @@ DEFAULT_CARD_SECTION_PAYLOADS = (
     {"scan_name": "Pullback Quality scan", "display_name": "PB Quality"},
     {"scan_name": "Reclaim scan", "display_name": "Reclaim"},
     {"scan_name": "4% bullish", "display_name": "4% bullish"},
-    {"scan_name": "Vol Up", "display_name": "Vol Up"},
     {"scan_name": "Volume Accumulation", "display_name": "Volume Accumulation"},
     {"scan_name": "Momentum 97", "display_name": "Momentum 97"},
-    {"scan_name": "97 Club", "display_name": "97 Club"},
-    {"scan_name": "VCS", "display_name": "VCS"},
     {"scan_name": "VCS 52 High", "display_name": "VCS 52 High"},
-    {"scan_name": "VCS 52 Low", "display_name": "VCS 52 Low"},
     {"scan_name": "Pocket Pivot", "display_name": "Pocket Pivot"},
     {"scan_name": "PP Count", "display_name": "PP Count"},
     {"scan_name": "Weekly 20% plus gainers", "display_name": "Weekly 20%+ Gainers"},
-    {"scan_name": "Near 52W High", "display_name": "Near 52W High"},
-    {"scan_name": "Three Weeks Tight", "display_name": "3WT"},
     {"scan_name": "VCP 3T", "display_name": "VCP 3T"},
-    {"scan_name": "RS Acceleration", "display_name": "RS Accel"},
-    {"scan_name": "Sustained Leadership", "display_name": "RS Leader"},
-    {"scan_name": "Trend Reversal Setup", "display_name": "Reversal Setup"},
-    {"scan_name": "Structure Pivot", "display_name": "Structure Pivot"},
     {"scan_name": "LL-HL Structure 1st Pivot", "display_name": "LL-HL 1st"},
     {"scan_name": "LL-HL Structure 2nd Pivot", "display_name": "LL-HL 2nd"},
     {"scan_name": "LL-HL Structure Trend Line Break", "display_name": "CT Break"},
@@ -395,45 +375,14 @@ class ScanConfig:
 
     daily_gain_bullish_threshold: float = 4.0
     relative_volume_bullish_threshold: float = 1.0
-    relative_volume_vol_up_threshold: float = 1.5
     momentum_97_weekly_rank: float = 97.0
     momentum_97_quarterly_rank: float = 85.0
-    club_97_hybrid_threshold: float = 90.0
-    club_97_rs21_threshold: float = 97.0
-    vcs_min_threshold: float = 60.0
     vcs_52_high_vcs_min: float = 55.0
     vcs_52_high_rs21_min: float = 25.0
     vcs_52_high_dist_max: float = -20.0
-    vcs_52_low_vcs_min: float = 60.0
-    vcs_52_low_rs21_min: float = 80.0
-    vcs_52_low_dist_max: float = 25.0
-    vcs_52_low_dist_from_52w_high_max: float = -65.0
     vol_accum_ud_ratio_min: float = 1.5
     vol_accum_rel_vol_min: float = 1.0
     weekly_gainer_threshold: float = 20.0
-    near_52w_high_threshold_pct: float = 5.0
-    near_52w_high_hybrid_min: float = 70.0
-    three_weeks_tight_vcs_min: float = 50.0
-    vcp3t_prior_uptrend_min_pct: float = 30.0
-    vcp3t_t1_min_depth_pct: float = 10.0
-    vcp3t_t2_to_t1_max_ratio: float = 0.85
-    vcp3t_t3_to_t2_max_ratio: float = 0.75
-    vcp3t_t3_max_depth_pct: float = 7.0
-    vcp3t_tight_days_min: int = 3
-    vcp3t_volume_dryup_max_ratio: float = 0.8
-    vcp3t_pivot_extension_max_pct: float = 5.0
-    vcp3t_breakout_volume_ratio_min: float = 1.0
-    vcp3t_dcr_min: float = 55.0
-    vcp3t_rs21_min: float = 60.0
-    rs_acceleration_rs21_min: float = 70.0
-    sustained_rs21_min: float = 80.0
-    sustained_rs63_min: float = 70.0
-    sustained_rs126_min: float = 60.0
-    reversal_dist_52w_low_max: float = 40.0
-    reversal_dist_52w_high_min: float = -40.0
-    reversal_rs21_min: float = 50.0
-    structure_pivot_breakout_rel_volume_min: float = 1.4
-    structure_pivot_include_gap_up_breakouts: bool = True
     duplicate_min_count: int = 3
     high_eps_growth_rank_threshold: float = 90.0
     pp_count_scan_min: int = 3
@@ -928,13 +877,6 @@ def _scan_bullish_4pct(row: pd.Series, config: ScanConfig) -> bool:
     )
 
 
-def _scan_vol_up(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(
-        row.get("rel_volume", 0.0) >= config.relative_volume_vol_up_threshold
-        and row.get("daily_change_pct", 0.0) > 0.0
-    )
-
-
 def _scan_volume_accumulation(row: pd.Series, config: ScanConfig) -> bool:
     return bool(
         row.get("ud_volume_ratio", 0.0) >= config.vol_accum_ud_ratio_min
@@ -950,34 +892,12 @@ def _scan_momentum_97(row: pd.Series, config: ScanConfig) -> bool:
     )
 
 
-def _scan_97_club(row: pd.Series, config: ScanConfig) -> bool:
-    raw_rs21 = _raw_rs(row, 21)
-    return bool(
-        row.get("hybrid_score", 0.0) >= config.club_97_hybrid_threshold
-        and raw_rs21 >= config.club_97_rs21_threshold
-    )
-
-
-def _scan_vcs(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(row.get("vcs", 0.0) >= config.vcs_min_threshold)
-
-
 def _scan_vcs_52_high(row: pd.Series, config: ScanConfig) -> bool:
     raw_rs21 = _raw_rs(row, 21)
     return bool(
         row.get("vcs", 0.0) >= config.vcs_52_high_vcs_min
         and raw_rs21 > config.vcs_52_high_rs21_min
         and row.get("dist_from_52w_high", float("nan")) >= config.vcs_52_high_dist_max
-    )
-
-
-def _scan_vcs_52_low(row: pd.Series, config: ScanConfig) -> bool:
-    raw_rs21 = _raw_rs(row, 21)
-    return bool(
-        row.get("vcs", 0.0) >= config.vcs_52_low_vcs_min
-        and raw_rs21 > config.vcs_52_low_rs21_min
-        and row.get("dist_from_52w_low", float("nan")) <= config.vcs_52_low_dist_max
-        and row.get("dist_from_52w_high", float("nan")) <= config.vcs_52_low_dist_from_52w_high_max
     )
 
 
@@ -993,99 +913,9 @@ def _scan_weekly_gainer(row: pd.Series, config: ScanConfig) -> bool:
     return bool(row.get("weekly_return", 0.0) >= config.weekly_gainer_threshold)
 
 
-def _scan_near_52w_high(row: pd.Series, config: ScanConfig) -> bool:
-    high_52w = row.get("high_52w", float("nan"))
-    return bool(
-        pd.notna(high_52w)
-        and high_52w > 0.0
-        and row.get("close", 0.0) >= high_52w * (1.0 - config.near_52w_high_threshold_pct / 100.0)
-        and row.get("hybrid_score", 0.0) >= config.near_52w_high_hybrid_min
-    )
-
-
-def _scan_three_weeks_tight(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(
-        row.get("three_weeks_tight", False)
-        and row.get("vcs", 0.0) >= config.three_weeks_tight_vcs_min
-    )
-
-
 def _scan_vcp_3t(row: pd.Series, config: ScanConfig) -> bool:
-    t1_depth = row.get("vcp_t1_depth_pct", float("nan"))
-    t2_depth = row.get("vcp_t2_depth_pct", float("nan"))
-    t3_depth = row.get("vcp_t3_depth_pct", float("nan"))
-    prior_uptrend = row.get("vcp_prior_uptrend_pct", float("nan"))
-    dryup_ratio = row.get("vcp_volume_dryup_ratio", float("nan"))
-    pivot_proximity = row.get("vcp_pivot_proximity_pct", float("nan"))
-    rs21 = _raw_rs(row, 21)
-    required_values = [t1_depth, t2_depth, t3_depth, prior_uptrend, dryup_ratio, pivot_proximity, rs21]
-    if any(pd.isna(value) for value in required_values):
-        return False
-    return bool(
-        float(prior_uptrend) >= config.vcp3t_prior_uptrend_min_pct
-        and float(t1_depth) >= config.vcp3t_t1_min_depth_pct
-        and float(t2_depth) < float(t1_depth) * config.vcp3t_t2_to_t1_max_ratio
-        and float(t3_depth) < float(t2_depth) * config.vcp3t_t3_to_t2_max_ratio
-        and float(t3_depth) <= config.vcp3t_t3_max_depth_pct
-        and row.get("vcp_tight_days", 0.0) >= config.vcp3t_tight_days_min
-        and float(dryup_ratio) <= config.vcp3t_volume_dryup_max_ratio
-        and row.get("vcp_pivot_breakout", False)
-        and 0.0 <= float(pivot_proximity) <= config.vcp3t_pivot_extension_max_pct
-        and row.get("volume_ratio_20d", 0.0) >= config.vcp3t_breakout_volume_ratio_min
-        and row.get("dcr_percent", 0.0) >= config.vcp3t_dcr_min
-        and float(rs21) >= config.vcp3t_rs21_min
-    )
-
-
-def _scan_rs_acceleration(row: pd.Series, config: ScanConfig) -> bool:
-    rs21 = row.get("rs21", float("nan"))
-    rs63 = row.get("rs63", float("nan"))
-    return bool(
-        pd.notna(rs21)
-        and pd.notna(rs63)
-        and float(rs21) > float(rs63)
-        and float(rs21) >= config.rs_acceleration_rs21_min
-    )
-
-
-def _scan_sustained_leadership(row: pd.Series, config: ScanConfig) -> bool:
-    rs21 = _raw_rs(row, 21)
-    rs63 = row.get("rs63", float("nan"))
-    rs126 = row.get("rs126", float("nan"))
-    return bool(
-        pd.notna(rs21)
-        and float(rs21) >= config.sustained_rs21_min
-        and pd.notna(rs63)
-        and float(rs63) >= config.sustained_rs63_min
-        and pd.notna(rs126)
-        and float(rs126) >= config.sustained_rs126_min
-    )
-
-
-def _scan_trend_reversal_setup(row: pd.Series, config: ScanConfig) -> bool:
-    pocket_pivot_count = row.get("pp_count_30d", row.get("pp_count_window", 0))
-    raw_rs21 = _raw_rs(row, 21)
-    return bool(
-        row.get("close", 0.0) > row.get("sma50", float("inf"))
-        and row.get("sma50", float("inf")) <= row.get("sma200", float("inf"))
-        and row.get("sma50_slope_10d_pct", float("nan")) > 0.0
-        and row.get("dist_from_52w_low", float("nan")) <= config.reversal_dist_52w_low_max
-        and row.get("dist_from_52w_high", float("nan")) >= config.reversal_dist_52w_high_min
-        and raw_rs21 >= config.reversal_rs21_min
-        and pocket_pivot_count >= 1
-    )
-
-
-def _scan_structure_pivot(row: pd.Series, config: ScanConfig) -> bool:
-    if not bool(row.get("structure_pivot_long_active", False)):
-        return False
-    if not bool(row.get("structure_pivot_long_breakout_first_day", False)):
-        return False
-    if float(row.get("rel_volume", float("nan"))) < config.structure_pivot_breakout_rel_volume_min:
-        return False
-    if not config.structure_pivot_include_gap_up_breakouts and bool(row.get("structure_pivot_long_breakout_gap_up", False)):
-        return False
-    return True
+    value = row.get("vcp_tightening", False)
+    return bool(pd.notna(value) and value)
 
 
 def _scan_llhl_1st_pivot(row: pd.Series, config: ScanConfig) -> bool:
@@ -1237,23 +1067,13 @@ SCAN_RULE_REGISTRY: dict[str, RuleEvaluator] = {
     "Pullback Quality scan": _scan_pullback_quality,
     "Reclaim scan": _scan_reclaim,
     "4% bullish": _scan_bullish_4pct,
-    "Vol Up": _scan_vol_up,
     "Volume Accumulation": _scan_volume_accumulation,
     "Momentum 97": _scan_momentum_97,
-    "97 Club": _scan_97_club,
-    "VCS": _scan_vcs,
     "VCS 52 High": _scan_vcs_52_high,
-    "VCS 52 Low": _scan_vcs_52_low,
     "Pocket Pivot": _scan_pocket_pivot,
     "PP Count": _scan_pp_count,
     "Weekly 20% plus gainers": _scan_weekly_gainer,
-    "Near 52W High": _scan_near_52w_high,
-    "Three Weeks Tight": _scan_three_weeks_tight,
     "VCP 3T": _scan_vcp_3t,
-    "RS Acceleration": _scan_rs_acceleration,
-    "Sustained Leadership": _scan_sustained_leadership,
-    "Trend Reversal Setup": _scan_trend_reversal_setup,
-    "Structure Pivot": _scan_structure_pivot,
     "LL-HL Structure 1st Pivot": _scan_llhl_1st_pivot,
     "LL-HL Structure 2nd Pivot": _scan_llhl_2nd_pivot,
     "LL-HL Structure Trend Line Break": _scan_llhl_ct_break,

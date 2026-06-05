@@ -9,7 +9,7 @@ import pandas as pd
 
 from src.data.tracking_db import connect_tracking_db, resolve_tracking_db_path
 
-FORWARD_HORIZONS = (1, 5, 10, 20)
+FORWARD_HORIZONS = (1, 5, 10, 20, 21)
 
 
 @dataclass(slots=True)
@@ -187,6 +187,7 @@ def _detection_payload(event: pd.Series, outcomes_by_horizon: dict[int, pd.Serie
         "close_at_5d": target_closes[5],
         "close_at_10d": target_closes[10],
         "close_at_20d": target_closes[20],
+        "close_at_21d": target_closes[21],
         "rs21_at_hit": _to_float(event.get("rs21")),
         "vcs_at_hit": _to_float(event.get("vcs")),
         "atr_at_hit": _to_float(event.get("atr", event.get("atr14", event.get("atr_14")))),
@@ -196,6 +197,7 @@ def _detection_payload(event: pd.Series, outcomes_by_horizon: dict[int, pd.Serie
         "return_5d": returns[5],
         "return_10d": returns[10],
         "return_20d": returns[20],
+        "return_21d": returns[21],
         "closed_at": closed_at,
         "created_at": _clean_text(event.get("created_at")) or None,
         "hit_scans": hit_scans,
@@ -234,12 +236,12 @@ def _insert_detection(conn: sqlite3.Connection, payload: dict[str, Any]) -> int:
         """
         INSERT INTO detection (
             hit_date, preset_name, ticker, status, market_env, close_at_hit,
-            close_at_1d, close_at_5d, close_at_10d, close_at_20d,
+            close_at_1d, close_at_5d, close_at_10d, close_at_20d, close_at_21d,
             rs21_at_hit, vcs_at_hit, atr_at_hit, hybrid_score_at_hit,
-            duplicate_hit_count, return_1d, return_5d, return_10d, return_20d,
+            duplicate_hit_count, return_1d, return_5d, return_10d, return_20d, return_21d,
             closed_at, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))
         """,
         (
             payload["hit_date"],
@@ -252,6 +254,7 @@ def _insert_detection(conn: sqlite3.Connection, payload: dict[str, Any]) -> int:
             payload["close_at_5d"],
             payload["close_at_10d"],
             payload["close_at_20d"],
+            payload["close_at_21d"],
             payload["rs21_at_hit"],
             payload["vcs_at_hit"],
             payload["atr_at_hit"],
@@ -261,6 +264,7 @@ def _insert_detection(conn: sqlite3.Connection, payload: dict[str, Any]) -> int:
             payload["return_5d"],
             payload["return_10d"],
             payload["return_20d"],
+            payload["return_21d"],
             payload["closed_at"],
             payload["created_at"],
         ),
@@ -281,6 +285,7 @@ def _update_detection_from_payload(conn: sqlite3.Connection, detection_id: int, 
             close_at_5d = COALESCE(?, close_at_5d),
             close_at_10d = COALESCE(?, close_at_10d),
             close_at_20d = COALESCE(?, close_at_20d),
+            close_at_21d = COALESCE(?, close_at_21d),
             rs21_at_hit = COALESCE(?, rs21_at_hit),
             vcs_at_hit = COALESCE(?, vcs_at_hit),
             atr_at_hit = COALESCE(?, atr_at_hit),
@@ -290,6 +295,7 @@ def _update_detection_from_payload(conn: sqlite3.Connection, detection_id: int, 
             return_5d = COALESCE(?, return_5d),
             return_10d = COALESCE(?, return_10d),
             return_20d = COALESCE(?, return_20d),
+            return_21d = COALESCE(?, return_21d),
             closed_at = COALESCE(?, closed_at),
             created_at = COALESCE(?, created_at)
         WHERE id = ?
@@ -303,6 +309,7 @@ def _update_detection_from_payload(conn: sqlite3.Connection, detection_id: int, 
             payload["close_at_5d"],
             payload["close_at_10d"],
             payload["close_at_20d"],
+            payload["close_at_21d"],
             payload["rs21_at_hit"],
             payload["vcs_at_hit"],
             payload["atr_at_hit"],
@@ -312,6 +319,7 @@ def _update_detection_from_payload(conn: sqlite3.Connection, detection_id: int, 
             payload["return_5d"],
             payload["return_10d"],
             payload["return_20d"],
+            payload["return_21d"],
             payload["closed_at"],
             payload["created_at"],
             detection_id,

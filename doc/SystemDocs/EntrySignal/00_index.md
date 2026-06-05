@@ -33,5 +33,4 @@
 | [signal_02_pullback_resumption_entry.md](signal_02_pullback_resumption_entry.md) | `pullback_resumption_entry` | `Pullback Resumption Entry` | `src/signals/evaluators/pullback_resumption.py` |
 | [signal_03_momentum_acceleration_entry.md](signal_03_momentum_acceleration_entry.md) | `momentum_acceleration_entry` | `Momentum Acceleration Entry` | `src/signals/evaluators/momentum_acceleration.py` |
 | [signal_04_accumulation_breakout_entry.md](signal_04_accumulation_breakout_entry.md) | `accumulation_breakout_entry` | `Accumulation Breakout Entry` | `src/signals/evaluators/accumulation_breakout.py` |
-| [signal_05_early_cycle_recovery_entry.md](signal_05_early_cycle_recovery_entry.md) | `early_cycle_recovery_entry` | `Early Cycle Recovery Entry` | `src/signals/evaluators/early_cycle_recovery.py` |
 | [signal_06_power_gap_pullback_entry.md](signal_06_power_gap_pullback_entry.md) | `power_gap_pullback_entry` | `Power Gap Pullback Entry` | `src/signals/evaluators/power_gap_pullback.py` |

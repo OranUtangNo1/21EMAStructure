@@ -41,6 +41,9 @@ def _sample_summary() -> dict[str, object]:
             "SAFE HAVEN %": {"1D": -0.186, "1W": -0.606, "1M": 3.15},
             "safe_haven_score": {"1D": -0.746, "1W": -2.423, "1M": 12.601},
             "risk_on:REL 1M %": {"1D": -0.246, "1W": -1.711, "1M": 1.143},
+            "vix_term:RATIO": {"1D": -0.002, "1W": 0.01, "1M": -0.02},
+            "credit:HYG/LQD REL 1W %": {"1D": 0.1, "1W": 0.4, "1M": 0.7},
+            "credit:HYG/IEF REL 1W %": {"1D": 0.2, "1W": 0.5, "1M": 0.8},
         },
         "performance_overview": {"% YTD": 9.51, "% 1W": 2.27, "% 1M": 6.89},
         "high_vix_summary": {"S2W HIGH %": 26.32, "VIX": 17.26, "SAFE HAVEN %": 8.2},
@@ -52,6 +55,35 @@ def _sample_summary() -> dict[str, object]:
             "HIGH DIST %": -5.045,
             "ABOVE MA COUNT": 3.0,
             "MA COUNT": 3.0,
+        },
+        "volatility_term_structure": {
+            "VIX": 17.26,
+            "VIX3M": 19.5,
+            "RATIO": 0.885,
+            "REL 1W %": 0.4,
+            "REL 1M %": -1.2,
+            "INVERSION FLAG": 0.0,
+        },
+        "credit_risk_proxy": {
+            "HYG/LQD RATIO": 0.72,
+            "HYG/LQD REL 1W %": 0.8,
+            "HYG/LQD REL 1M %": 1.4,
+            "HYG/IEF RATIO": 0.81,
+            "HYG/IEF REL 1W %": 1.1,
+            "HYG/IEF REL 1M %": 2.0,
+            "CREDIT RISK-OFF FLAG": 0.0,
+        },
+        "index_state_summary": {
+            "SPY RALLY ATTEMPT DAY": 8.0,
+            "SPY FTD FLAG": 1.0,
+            "SPY FTD AGE DAYS": 3.0,
+            "SPY DISTRIBUTION DAY COUNT": 2.0,
+            "SPY UNDER PRESSURE FLAG": 0.0,
+            "QQQ RALLY ATTEMPT DAY": 6.0,
+            "QQQ FTD FLAG": 0.0,
+            "QQQ FTD AGE DAYS": -1.0,
+            "QQQ DISTRIBUTION DAY COUNT": 3.0,
+            "QQQ UNDER PRESSURE FLAG": 0.0,
         },
         "vix_close": 17.26,
         "market_snapshot": [
@@ -125,13 +157,34 @@ def test_market_report_builder_creates_evidence_first_sections() -> None:
     assert report.overall_label == "Positive"
     assert report.schema_version == "market_document.v1"
     assert report.document_type == "ai_market_report_input"
+    assert report.executive_context["market_action_mode"]
+    assert report.executive_context["market_action_mode_key"] in {
+        "attack",
+        "selective_attack",
+        "wait",
+        "defense",
+        "overheat_watch",
+        "sector_rotation",
+    }
+    swing_posture = report.executive_context["swing_market_posture"]
+    assert swing_posture["objective"] == "スイング投資における現在の市場認識"
+    assert swing_posture["mode_key"] == report.executive_context["market_action_mode_key"]
+    assert swing_posture["long_exposure_posture"]["label"]
+    assert swing_posture["new_entry_posture"]["guidance"]
+    assert swing_posture["profit_taking_watch"]["reason"]
+    assert swing_posture["risk_management_strictness"]["label"] in {"通常", "やや厳格", "選別厳格", "厳格", "緩和禁止", "厳格化"}
+    assert swing_posture["entry_signal_interpretation"]["guidance"]
+    assert "EntrySignal" in swing_posture["boundary"]
+    assert report.executive_context["confirmation_order"]
     assert report.sections
     assert {section.key for section in report.sections} >= {
         "market_regime",
         "recommendation_inputs",
         "breadth_participation",
-        "volatility_safe_haven",
-        "risk_on_ratio",
+            "volatility_safe_haven",
+            "term_credit_diagnostics",
+            "index_state_diagnostics",
+            "risk_on_ratio",
         "sector_rotation",
         "industry_leadership",
         "factor_style",
@@ -140,13 +193,21 @@ def test_market_report_builder_creates_evidence_first_sections() -> None:
     assert industry.label == "confirmed_industry_leadership"
     assert any("new_high_industries=CIBR Cybersecurity" in fact for fact in industry.facts_for_ai)
     assert any("weak_industries=GDX Gold Miners" in fact for fact in industry.facts_for_ai)
+    recommendation = next(section for section in report.sections if section.key == "recommendation_inputs")
+    assert any("priority_candidate_high=CIBR Cybersecurity" in fact for fact in recommendation.facts_for_ai)
+    assert any("priority_candidate_low_watch=GDX Gold Miners" in fact for fact in recommendation.facts_for_ai)
     assert any(section.trajectory for section in report.sections if section.key == "market_regime")
+    index_state = next(section for section in report.sections if section.key == "index_state_diagnostics")
+    assert index_state.label == "confirmed_rally"
+    assert any("SPY status=confirmed_rally" in fact for fact in index_state.facts_for_ai)
     assert report.watchpoint_candidates
     assert report.analysis_boundary["prohibited_sources"]
     assert all(evidence.source_field for evidence in report.data_appendix)
     assert not any("unknown_future_field" in evidence.source_field for evidence in report.data_appendix)
-    assert any(item.key == "credit_proxy" for item in report.missing_inputs)
+    assert not any(item.key == "credit_risk_proxy" for item in report.missing_inputs)
+    assert not any(item.key == "index_state_summary" for item in report.missing_inputs)
     assert report.report_generation_contract["final_report_owner"] == "skill"
+    assert any("swing_market_posture" in item for item in report.report_generation_contract["must_not_do"])
 
 
 def test_market_report_markdown_uses_structured_result_without_trade_management_terms() -> None:
@@ -157,8 +218,16 @@ def test_market_report_markdown_uses_structured_result_without_trade_management_
     assert "## analysis_boundary" in markdown
     assert "## watchpoint_candidates" in markdown
     assert "### recommendation_inputs" in markdown
+    assert "行動モード" in markdown
+    assert "swing_market_posture" in markdown
+    assert "long_exposure" in markdown
+    assert "new_entry" in markdown
+    assert "risk_management" in markdown
+    assert "entry_signal" in markdown
+    assert "confirmation_order" in markdown
     assert "### industry_leadership" in markdown
     assert "new_high_industries" in markdown
+    assert "priority_candidate_high" in markdown
     assert "priority_sectors" in markdown
     assert "profit_taking_exit_watch" in markdown
     assert "source=score" in markdown

@@ -12,7 +12,7 @@ def test_user_preference_store_persists_grouped_values(tmp_path: Path) -> None:
         "watchlist_controls",
         "config-a",
         {
-            "selected_scan_names": ["Momentum 97", "97 Club"],
+            "selected_scan_names": ["Momentum 97", "VCS 52 High"],
             "selected_annotation_filters": ["RS 21 >= 63"],
             "selected_duplicate_subfilters": ["Top3 HybridRS"],
             "duplicate_threshold": 3,
@@ -23,7 +23,7 @@ def test_user_preference_store_persists_grouped_values(tmp_path: Path) -> None:
     loaded = store.load_group("watchlist_controls", "config-a")
 
     assert loaded == {
-        "selected_scan_names": ["Momentum 97", "97 Club"],
+        "selected_scan_names": ["Momentum 97", "VCS 52 High"],
         "selected_annotation_filters": ["RS 21 >= 63"],
         "selected_duplicate_subfilters": ["Top3 HybridRS"],
         "duplicate_threshold": 3,
@@ -54,7 +54,7 @@ def test_user_preference_store_persists_named_collections(tmp_path: Path) -> Non
             "schema_version": 1,
             "kind": "watchlist_controls",
             "values": {
-                "selected_scan_names": ["Momentum 97", "97 Club"],
+                "selected_scan_names": ["Momentum 97", "VCS 52 High"],
                 "selected_annotation_filters": ["RS 21 >= 63"],
                 "selected_duplicate_subfilters": ["Top3 HybridRS"],
                 "duplicate_threshold": 3,
@@ -69,7 +69,7 @@ def test_user_preference_store_persists_named_collections(tmp_path: Path) -> Non
             "schema_version": 1,
             "kind": "watchlist_controls",
             "values": {
-                "selected_scan_names": ["VCS", "Three Weeks Tight"],
+                "selected_scan_names": ["Pocket Pivot", "VCS 52 High"],
                 "selected_annotation_filters": [],
                 "selected_duplicate_subfilters": [],
                 "duplicate_threshold": 2,
@@ -81,7 +81,7 @@ def test_user_preference_store_persists_named_collections(tmp_path: Path) -> Non
 
     assert list(loaded) == ["Momentum Core", "Tight Bases"]
     assert loaded["Momentum Core"]["values"]["duplicate_threshold"] == 3
-    assert loaded["Tight Bases"]["values"]["selected_scan_names"] == ["VCS", "Three Weeks Tight"]
+    assert loaded["Tight Bases"]["values"]["selected_scan_names"] == ["Pocket Pivot", "VCS 52 High"]
 
 
 def test_user_preference_store_can_delete_named_collection_item(tmp_path: Path) -> None:

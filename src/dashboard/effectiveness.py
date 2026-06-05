@@ -15,7 +15,7 @@ from src.data.providers import YFinancePriceDataProvider
 from src.pipeline import PlatformArtifacts
 from src.scan.rules import ScanConfig, annotation_filter_column_name
 
-FORWARD_HORIZONS = (1, 5, 10, 20)
+FORWARD_HORIZONS = (1, 5, 10, 20, 21)
 
 
 @dataclass(slots=True)
@@ -418,12 +418,16 @@ def _tickers_due_for_detection_update(conn: sqlite3.Connection, trade_date: pd.T
             close_at_5d,
             close_at_10d,
             close_at_20d,
+            close_at_21d,
             return_1d,
             return_5d,
             return_10d,
-            return_20d
+            return_20d,
+            return_21d
         FROM detection
         WHERE status = 'active'
+           OR close_at_21d IS NULL
+           OR return_21d IS NULL
         """
     ).fetchall()
     due_tickers: list[str] = []
@@ -455,15 +459,19 @@ def _tickers_due_for_signal_entry_event_update(conn: sqlite3.Connection, trade_d
             close_at_5d,
             close_at_10d,
             close_at_20d,
+            close_at_21d,
             return_1d,
             return_5d,
             return_10d,
             return_20d,
+            return_21d,
             hit_sl,
             hit_tp1,
             first_outcome,
             max_gain_20d,
-            max_drawdown_20d
+            max_drawdown_20d,
+            max_gain_21d,
+            max_drawdown_21d
         FROM signal_entry_event
         """
     ).fetchall()
@@ -489,6 +497,15 @@ def _tickers_due_for_signal_entry_event_update(conn: sqlite3.Connection, trade_d
         target_20d = (normalized_event_date + BDay(20)).normalize()
         if current_trade_date >= target_20d and (row["max_gain_20d"] is None or row["max_drawdown_20d"] is None):
             due_tickers.append(str(row["ticker"]).upper())
+            continue
+        target_21d = (normalized_event_date + BDay(21)).normalize()
+        if current_trade_date >= target_21d and (
+            row["close_at_21d"] is None
+            or row["return_21d"] is None
+            or row["max_gain_21d"] is None
+            or row["max_drawdown_21d"] is None
+        ):
+            due_tickers.append(str(row["ticker"]).upper())
     return list(dict.fromkeys(due_tickers))
 
 
@@ -503,6 +520,7 @@ def _update_detection_returns(
         """
         SELECT
             id,
+            status,
             hit_date,
             ticker,
             close_at_hit,
@@ -510,16 +528,24 @@ def _update_detection_returns(
             close_at_5d,
             close_at_10d,
             close_at_20d,
+            close_at_21d,
             return_1d,
             return_5d,
             return_10d,
             return_20d,
+            return_21d,
             max_gain_20d,
             max_drawdown_20d,
+            max_gain_21d,
+            max_drawdown_21d,
             closed_above_ema21_5d,
             hit_new_high_20d
         FROM detection
         WHERE status = 'active'
+           OR close_at_21d IS NULL
+           OR return_21d IS NULL
+           OR max_gain_21d IS NULL
+           OR max_drawdown_21d IS NULL
         """
     ).fetchall()
     updated_detection_count = 0
@@ -578,13 +604,26 @@ def _update_detection_returns(
                 updates["max_drawdown_20d"] = float(window_stats["max_drawdown_20d"])
             if row["hit_new_high_20d"] is None and window_stats.get("hit_new_high_20d") is not None:
                 updates["hit_new_high_20d"] = float(int(bool(window_stats["hit_new_high_20d"])))
+        target_21d = (normalized_hit_date + BDay(21)).normalize()
+        if current_trade_date >= target_21d:
+            window_stats_21d = _forward_window_stats(
+                history,
+                normalized_hit_date,
+                target_21d,
+                close_at_hit,
+                prefix="21d",
+            )
+            if row["max_gain_21d"] is None and window_stats_21d.get("max_gain_21d") is not None:
+                updates["max_gain_21d"] = float(window_stats_21d["max_gain_21d"])
+            if row["max_drawdown_21d"] is None and window_stats_21d.get("max_drawdown_21d") is not None:
+                updates["max_drawdown_21d"] = float(window_stats_21d["max_drawdown_21d"])
         if not updates:
             continue
         assignments = ", ".join(f"{column_name} = ?" for column_name in updates)
         values = [*updates.values(), int(row["id"])]
         conn.execute(f"UPDATE detection SET {assignments} WHERE id = ?", values)
         updated_detection_count += 1
-        if row["return_20d"] is not None or "return_20d" in updates:
+        if row["status"] == "active" and (row["return_20d"] is not None or "return_20d" in updates):
             conn.execute(
                 "UPDATE detection SET status = 'closed', closed_at = ? WHERE id = ?",
                 (pd.Timestamp(trade_date).date().isoformat(), int(row["id"])),
@@ -613,10 +652,12 @@ def _update_signal_entry_event_returns(
             close_at_5d,
             close_at_10d,
             close_at_20d,
+            close_at_21d,
             return_1d,
             return_5d,
             return_10d,
             return_20d,
+            return_21d,
             hit_sl,
             hit_tp1,
             hit_sl_date,
@@ -626,14 +667,19 @@ def _update_signal_entry_event_returns(
             days_to_first_outcome,
             outcome_r,
             max_gain_20d,
-            max_drawdown_20d
+            max_drawdown_20d,
+            max_gain_21d,
+            max_drawdown_21d
         FROM signal_entry_event
         WHERE return_20d IS NULL
+           OR return_21d IS NULL
            OR hit_sl IS NULL
            OR hit_tp1 IS NULL
            OR first_outcome IS NULL
            OR max_gain_20d IS NULL
            OR max_drawdown_20d IS NULL
+           OR max_gain_21d IS NULL
+           OR max_drawdown_21d IS NULL
         """
     ).fetchall()
     updated_event_count = 0
@@ -713,6 +759,21 @@ def _update_signal_entry_event_returns(
                     updates["first_outcome_date"] = target_20d.date().isoformat()
                     updates["days_to_first_outcome"] = 20
                     updates["outcome_r"] = result_r
+        target_21d = (normalized_event_date + BDay(21)).normalize()
+        if current_trade_date >= target_21d:
+            outcome_stats_21d = _signal_entry_event_window_stats(
+                history=history,
+                event_date=normalized_event_date,
+                current_trade_date=current_trade_date,
+                entry_price=entry_price,
+                stop_loss=_to_float(row["stop_loss"]),
+                tp1=_to_float(row["tp1"]),
+                window_days=21,
+            )
+            if row["max_gain_21d"] is None and outcome_stats_21d.get("max_gain_21d") is not None:
+                updates["max_gain_21d"] = outcome_stats_21d["max_gain_21d"]
+            if row["max_drawdown_21d"] is None and outcome_stats_21d.get("max_drawdown_21d") is not None:
+                updates["max_drawdown_21d"] = outcome_stats_21d["max_drawdown_21d"]
 
         if not updates:
             continue
@@ -731,7 +792,10 @@ def _signal_entry_event_window_stats(
     entry_price: float,
     stop_loss: float | None,
     tp1: float | None,
+    window_days: int = 20,
 ) -> dict[str, float | int | str | None]:
+    max_gain_key = f"max_gain_{window_days}d"
+    max_drawdown_key = f"max_drawdown_{window_days}d"
     working = _normalized_price_history(history)
     if working.empty:
         return {
@@ -743,10 +807,10 @@ def _signal_entry_event_window_stats(
             "first_outcome_date": None,
             "days_to_first_outcome": None,
             "outcome_r": None,
-            "max_gain_20d": None,
-            "max_drawdown_20d": None,
+            max_gain_key: None,
+            max_drawdown_key: None,
         }
-    end_date = min(current_trade_date.normalize(), (event_date + BDay(20)).normalize())
+    end_date = min(current_trade_date.normalize(), (event_date + BDay(window_days)).normalize())
     window = working.loc[(working.index.normalize() > event_date.normalize()) & (working.index.normalize() <= end_date)].copy()
     if window.empty:
         return {
@@ -758,8 +822,8 @@ def _signal_entry_event_window_stats(
             "first_outcome_date": None,
             "days_to_first_outcome": None,
             "outcome_r": None,
-            "max_gain_20d": None,
-            "max_drawdown_20d": None,
+            max_gain_key: None,
+            max_drawdown_key: None,
         }
 
     high_column = "high" if "high" in window.columns else "close" if "close" in window.columns else None
@@ -774,8 +838,8 @@ def _signal_entry_event_window_stats(
             "first_outcome_date": None,
             "days_to_first_outcome": None,
             "outcome_r": None,
-            "max_gain_20d": None,
-            "max_drawdown_20d": None,
+            max_gain_key: None,
+            max_drawdown_key: None,
         }
 
     low_values = pd.to_numeric(window[low_column], errors="coerce")
@@ -802,8 +866,8 @@ def _signal_entry_event_window_stats(
         "first_outcome_date": first_outcome_date.date().isoformat() if first_outcome_date is not None else None,
         "days_to_first_outcome": days_to_first_outcome,
         "outcome_r": outcome_r,
-        "max_gain_20d": ((max_high / entry_price) - 1.0) * 100.0 if max_high is not None else None,
-        "max_drawdown_20d": ((min_low / entry_price) - 1.0) * 100.0 if min_low is not None else None,
+        max_gain_key: ((max_high / entry_price) - 1.0) * 100.0 if max_high is not None else None,
+        max_drawdown_key: ((min_low / entry_price) - 1.0) * 100.0 if min_low is not None else None,
     }
 
 
@@ -875,31 +939,60 @@ def _twenty_day_window_stats(
     target_20d: pd.Timestamp,
     close_at_hit: float,
 ) -> dict[str, float | bool | None]:
+    return _forward_window_stats(history, hit_date, target_20d, close_at_hit, prefix="20d", include_new_high=True)
+
+
+def _forward_window_stats(
+    history: pd.DataFrame,
+    hit_date: pd.Timestamp,
+    target_date: pd.Timestamp,
+    close_at_hit: float,
+    *,
+    prefix: str,
+    include_new_high: bool = False,
+) -> dict[str, float | bool | None]:
     working = _normalized_price_history(history)
+    max_gain_key = f"max_gain_{prefix}"
+    max_drawdown_key = f"max_drawdown_{prefix}"
+    new_high_key = f"hit_new_high_{prefix}"
     if working.empty:
-        return {"max_gain_20d": None, "max_drawdown_20d": None, "hit_new_high_20d": None}
-    target_row = _row_on_or_after(working, target_20d)
+        result: dict[str, float | bool | None] = {max_gain_key: None, max_drawdown_key: None}
+        if include_new_high:
+            result[new_high_key] = None
+        return result
+    target_row = _row_on_or_after(working, target_date)
     if target_row is None:
-        return {"max_gain_20d": None, "max_drawdown_20d": None, "hit_new_high_20d": None}
+        result = {max_gain_key: None, max_drawdown_key: None}
+        if include_new_high:
+            result[new_high_key] = None
+        return result
     end_date = pd.Timestamp(target_row.name).normalize()
     window = working.loc[(working.index.normalize() > hit_date.normalize()) & (working.index.normalize() <= end_date)].copy()
     if window.empty:
-        return {"max_gain_20d": None, "max_drawdown_20d": None, "hit_new_high_20d": None}
+        result = {max_gain_key: None, max_drawdown_key: None}
+        if include_new_high:
+            result[new_high_key] = None
+        return result
 
     high_column = "high" if "high" in window.columns else "close" if "close" in window.columns else None
     low_column = "low" if "low" in window.columns else "close" if "close" in window.columns else None
     if high_column is None or low_column is None:
-        return {"max_gain_20d": None, "max_drawdown_20d": None, "hit_new_high_20d": None}
+        result = {max_gain_key: None, max_drawdown_key: None}
+        if include_new_high:
+            result[new_high_key] = None
+        return result
 
     max_high = _to_float(window[high_column].max())
     min_low = _to_float(window[low_column].min())
     prior_window = working.loc[working.index.normalize() <= hit_date.normalize()].tail(20)
     prior_high = _to_float(prior_window[high_column].max()) if high_column in prior_window.columns and not prior_window.empty else None
-    return {
-        "max_gain_20d": ((max_high / close_at_hit) - 1.0) * 100.0 if max_high is not None else None,
-        "max_drawdown_20d": ((min_low / close_at_hit) - 1.0) * 100.0 if min_low is not None else None,
-        "hit_new_high_20d": (max_high > prior_high) if max_high is not None and prior_high is not None else None,
+    result = {
+        max_gain_key: ((max_high / close_at_hit) - 1.0) * 100.0 if max_high is not None else None,
+        max_drawdown_key: ((min_low / close_at_hit) - 1.0) * 100.0 if min_low is not None else None,
     }
+    if include_new_high:
+        result[new_high_key] = (max_high > prior_high) if max_high is not None and prior_high is not None else None
+    return result
 
 
 def _row_on_or_after(history: pd.DataFrame, target_date: pd.Timestamp) -> pd.Series | None:

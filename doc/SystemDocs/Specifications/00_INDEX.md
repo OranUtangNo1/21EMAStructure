@@ -12,7 +12,7 @@ Its active responsibility ends at six app outputs:
 5. Analysis
 6. Setting
 
-Entry Signal is an implemented downstream timing-review layer over selected candidate universes and is part of the active product scope. Analysis is an implemented preset-hit performance analysis layer. Setting currently exposes tracking-store diagnostics and is the future home for app-wide settings. Final discretionary chart review, position sizing, trade execution, and trade management remain out of scope and archived.
+Entry Signal is an implemented downstream timing-review layer over selected candidate universes and is part of the active product scope. Analysis is an implemented preset-hit performance analysis layer. Setting exposes tracking-store diagnostics. Final discretionary chart review, position sizing, trade execution, and trade management are not active application behavior.
 
 ---
 
@@ -167,10 +167,3 @@ Related folders:
 7. `app/main.py`
 
 ---
-
-## Out Of Scope And Archive
-
-- `archived/ENTRY_EXIT_AND_RISK_SPEC.md`
-- `archived/ENTRY_STRUCTURE_NOTES.md`
-
-These are preserved for a future entry-decision system and are not part of the active screener.

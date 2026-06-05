@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pandas as pd
 
@@ -57,7 +58,7 @@ def test_entry_signal_config_loads_context_guard() -> None:
                     "momentum_acceleration_entry": {
                         "weak_market_score_threshold": 40.0,
                     },
-                    "early_cycle_recovery_entry": {
+                    "power_gap_pullback_entry": {
                         "weak_market_score_threshold": 20.0,
                     },
                 },
@@ -74,7 +75,7 @@ def test_entry_signal_config_loads_context_guard() -> None:
     assert config.context_guard.earnings_today_field == "earnings_today"
     assert config.context_guard.weak_market_threshold_for("orderly_pullback_entry") == 30.0
     assert config.context_guard.weak_market_threshold_for("momentum_acceleration_entry") == 40.0
-    assert config.context_guard.weak_market_threshold_for("early_cycle_recovery_entry") == 20.0
+    assert config.context_guard.weak_market_threshold_for("power_gap_pullback_entry") == 20.0
 
 
 def test_entry_signal_config_loads_action_thresholds() -> None:
@@ -294,14 +295,14 @@ def test_entry_signal_plan_treats_tiny_rr_boundary_diff_as_in_zone() -> None:
     signal_config = EntrySignalConfig.from_dict(
         {
             "definitions": {
-                "early_cycle_recovery_entry": {
-                    **_definition_payload("Early Cycle Recovery Entry"),
+                "boundary_entry": {
+                    **_definition_payload("Boundary Entry"),
                     "action": {
                         "entry_ready": {
                             "entry_strength_min": 52.0,
                             "timing_min": 50.0,
                             "risk_reward_min": 55.0,
-                            "rr_ratio_min": 2.5,
+                            "rr_ratio_min": 2.0,
                             "setup_maturity_min": 45.0,
                         },
                         "watch_setup": {
@@ -313,12 +314,12 @@ def test_entry_signal_plan_treats_tiny_rr_boundary_diff_as_in_zone() -> None:
             },
         }
     )
-    definition = signal_config.definition_for("early_cycle_recovery_entry")
+    definition = signal_config.definition_for("boundary_entry")
     pool_entry = SignalPoolEntry(
         id=1,
-        signal_name="early_cycle_recovery_entry",
+        signal_name="boundary_entry",
         ticker="LTH",
-        preset_sources=("Early Cycle Recovery",),
+        preset_sources=("RS Breakout Setup",),
         first_detected_date=pd.Timestamp("2026-05-08"),
         latest_detected_date=pd.Timestamp("2026-05-08"),
         detection_count=1,
@@ -327,7 +328,7 @@ def test_entry_signal_plan_treats_tiny_rr_boundary_diff_as_in_zone() -> None:
         invalidated_reason=None,
         snapshot_at_detection={"low": 30.559999465942383},
         low_since_detection=30.559999465942383,
-        high_since_detection=36.0,
+        high_since_detection=36.5000001,
     )
 
     plan = build_entry_plan(
@@ -352,7 +353,7 @@ def test_entry_signal_plan_treats_tiny_rr_boundary_diff_as_in_zone() -> None:
 
     assert plan.plan_type == "Wait Trigger"
     assert "rr_current_below_min" not in plan.plan_reject_codes
-    assert plan.trigger_condition == "Wait for recovery reclaim to hold and reversal confirmation"
+    assert plan.trigger_condition == "Wait for signal-specific trigger confirmation"
 
 
 def test_orderly_pullback_plan_uses_ema21_fallback_when_pullback_low_is_too_wide() -> None:
@@ -411,13 +412,13 @@ def test_entry_signal_runner_builds_pool_and_persists_evaluation(tmp_path) -> No
     scan_config = ScanConfig.from_dict(
         {
             "card_sections": [
-                {"scan_name": "97 Club", "display_name": "97 Club"},
+                {"scan_name": "VCS 52 High", "display_name": "VCS 52 High"},
                 {"scan_name": "Pocket Pivot", "display_name": "Pocket Pivot"},
             ],
             "watchlist_presets": [
                 {
-                    "preset_name": "Orderly Pullback",
-                    "selected_scan_names": ["97 Club", "Pocket Pivot"],
+                    "preset_name": "Pullback Trigger",
+                    "selected_scan_names": ["VCS 52 High", "Pocket Pivot"],
                     "duplicate_threshold": 1,
                     "preset_status": "enabled",
                 }
@@ -463,11 +464,12 @@ def test_entry_signal_runner_builds_pool_and_persists_evaluation(tmp_path) -> No
         ),
         scan_hits=pd.DataFrame(
             [
-                {"ticker": "AAA", "kind": "scan", "name": "97 Club"},
+                {"ticker": "AAA", "kind": "scan", "name": "VCS 52 High"},
                 {"ticker": "AAA", "kind": "scan", "name": "Pocket Pivot"},
             ]
         ),
         trade_date="2026-04-24",
+        market_result=SimpleNamespace(label="Positive"),
     )
 
     result = runner.sync_and_evaluate(
@@ -478,7 +480,7 @@ def test_entry_signal_runner_builds_pool_and_persists_evaluation(tmp_path) -> No
 
     assert list(result["Ticker"]) == ["AAA"]
     assert result.iloc[0]["Signal"] == "Orderly Pullback Entry"
-    assert result.iloc[0]["Preset Sources"] == "Orderly Pullback"
+    assert result.iloc[0]["Preset Sources"] == "Pullback Trigger"
     assert result.iloc[0]["Display Bucket"] == "Signal Detected"
     assert float(result.iloc[0]["Entry Strength"]) >= 50.0
     assert float(result.iloc[0]["R/R Ratio"]) > 1.0
@@ -559,7 +561,8 @@ def test_entry_signal_runner_builds_pool_and_persists_evaluation(tmp_path) -> No
         ).fetchone()
         event_row = conn.execute(
             """
-            SELECT signal_name, ticker, event_date, plan_type, entry_price, stop_loss, tp1, rr_current
+            SELECT signal_name, ticker, event_date, action_bucket, market_env, plan_type,
+                   entry_price, stop_loss, tp1, rr_current
             FROM signal_entry_event
             """
         ).fetchone()
@@ -589,6 +592,8 @@ def test_entry_signal_runner_builds_pool_and_persists_evaluation(tmp_path) -> No
     assert event_row["signal_name"] == "orderly_pullback_entry"
     assert event_row["ticker"] == "AAA"
     assert event_row["event_date"] == "2026-04-24"
+    assert event_row["action_bucket"] == "Entry Ready"
+    assert event_row["market_env"] == "bull"
     assert event_row["plan_type"] == "Ready Now"
     assert float(event_row["rr_current"]) >= 2.0
 
@@ -597,12 +602,12 @@ def test_entry_signal_runner_syncs_same_day_saved_run_idempotently(tmp_path) -> 
     scan_config = ScanConfig.from_dict(
         {
             "card_sections": [
-                {"scan_name": "97 Club", "display_name": "97 Club"},
+                {"scan_name": "VCS 52 High", "display_name": "VCS 52 High"},
             ],
             "watchlist_presets": [
                 {
-                    "preset_name": "Orderly Pullback",
-                    "selected_scan_names": ["97 Club"],
+                    "preset_name": "Pullback Trigger",
+                    "selected_scan_names": ["VCS 52 High"],
                     "duplicate_threshold": 1,
                     "preset_status": "enabled",
                 }
@@ -646,7 +651,7 @@ def test_entry_signal_runner_syncs_same_day_saved_run_idempotently(tmp_path) -> 
             },
             index=["AAA"],
         ),
-        scan_hits=pd.DataFrame([{"ticker": "AAA", "kind": "scan", "name": "97 Club"}]),
+        scan_hits=pd.DataFrame([{"ticker": "AAA", "kind": "scan", "name": "VCS 52 High"}]),
         trade_date="2026-04-24",
     )
     artifacts.artifact_origin = "same_day_saved_run"
@@ -679,13 +684,13 @@ def test_entry_signal_context_guard_caps_detected_signal(tmp_path) -> None:
     scan_config = ScanConfig.from_dict(
         {
             "card_sections": [
-                {"scan_name": "97 Club", "display_name": "97 Club"},
+                {"scan_name": "VCS 52 High", "display_name": "VCS 52 High"},
                 {"scan_name": "Pocket Pivot", "display_name": "Pocket Pivot"},
             ],
             "watchlist_presets": [
                 {
-                    "preset_name": "Orderly Pullback",
-                    "selected_scan_names": ["97 Club", "Pocket Pivot"],
+                    "preset_name": "Pullback Trigger",
+                    "selected_scan_names": ["VCS 52 High", "Pocket Pivot"],
                     "duplicate_threshold": 1,
                     "preset_status": "enabled",
                 }
@@ -742,7 +747,7 @@ def test_entry_signal_context_guard_caps_detected_signal(tmp_path) -> None:
         ),
         scan_hits=pd.DataFrame(
             [
-                {"ticker": "AAA", "kind": "scan", "name": "97 Club"},
+                {"ticker": "AAA", "kind": "scan", "name": "VCS 52 High"},
                 {"ticker": "AAA", "kind": "scan", "name": "Pocket Pivot"},
             ]
         ),
@@ -847,13 +852,13 @@ def test_entry_signal_runner_invalidates_broken_active_setup(tmp_path) -> None:
     scan_config = ScanConfig.from_dict(
         {
             "card_sections": [
-                {"scan_name": "97 Club", "display_name": "97 Club"},
+                {"scan_name": "VCS 52 High", "display_name": "VCS 52 High"},
                 {"scan_name": "Pocket Pivot", "display_name": "Pocket Pivot"},
             ],
             "watchlist_presets": [
                 {
-                    "preset_name": "Orderly Pullback",
-                    "selected_scan_names": ["97 Club", "Pocket Pivot"],
+                    "preset_name": "Pullback Trigger",
+                    "selected_scan_names": ["VCS 52 High", "Pocket Pivot"],
                     "duplicate_threshold": 1,
                     "preset_status": "enabled",
                 }
@@ -898,7 +903,7 @@ def test_entry_signal_runner_invalidates_broken_active_setup(tmp_path) -> None:
         ),
         scan_hits=pd.DataFrame(
             [
-                {"ticker": "AAA", "kind": "scan", "name": "97 Club"},
+                {"ticker": "AAA", "kind": "scan", "name": "VCS 52 High"},
                 {"ticker": "AAA", "kind": "scan", "name": "Pocket Pivot"},
             ]
         ),
@@ -1549,135 +1554,6 @@ def test_accumulation_breakout_invalidates_broken_setup(tmp_path) -> None:
     assert reason == "close_below_sma50"
 
 
-def test_early_cycle_recovery_runner_scores_structure_reclaim_and_rr(tmp_path) -> None:
-    scan_config = ScanConfig.from_dict(
-        {
-            "card_sections": [
-                {"scan_name": "Trend Reversal Setup", "display_name": "Trend Reversal Setup"},
-                {"scan_name": "Pocket Pivot", "display_name": "Pocket Pivot"},
-                {"scan_name": "VCS 52 Low", "display_name": "VCS 52 Low"},
-                {"scan_name": "Volume Accumulation", "display_name": "Volume Accumulation"},
-            ],
-            "watchlist_presets": [
-                {
-                    "preset_name": "Early Cycle Recovery",
-                    "selected_scan_names": ["Trend Reversal Setup", "Pocket Pivot", "VCS 52 Low", "Volume Accumulation"],
-                    "duplicate_threshold": 1,
-                    "preset_status": "enabled",
-                }
-            ],
-        }
-    )
-    signal_config = EntrySignalConfig.from_dict(
-        {"definitions": {"early_cycle_recovery_entry": _early_cycle_recovery_definition_payload()}}
-    )
-    runner = EntrySignalRunner(signal_config, scan_config)
-    artifacts = _build_platform_artifacts(
-        watchlist=_early_cycle_recovery_watchlist(close=44.0, dcr_percent=78.0, rs21=62.0),
-        scan_hits=pd.DataFrame(
-            [
-                {"ticker": "AAA", "kind": "scan", "name": "Trend Reversal Setup"},
-                {"ticker": "AAA", "kind": "scan", "name": "Pocket Pivot"},
-                {"ticker": "AAA", "kind": "scan", "name": "VCS 52 Low"},
-                {"ticker": "AAA", "kind": "scan", "name": "Volume Accumulation"},
-            ]
-        ),
-        trade_date="2026-04-24",
-    )
-
-    result = runner.sync_and_evaluate(artifacts, ["early_cycle_recovery_entry"], root_dir=tmp_path)
-
-    assert list(result["Ticker"]) == ["AAA"]
-    assert result.iloc[0]["Signal"] == "Early Cycle Recovery Entry"
-    assert result.iloc[0]["Preset Sources"] == "Early Cycle Recovery"
-    assert result.iloc[0]["Display Bucket"] == "Signal Detected"
-    assert float(result.iloc[0]["R/R Ratio"]) >= 2.0
-    assert result.iloc[0]["Stop Price"] == result.iloc[0]["Stop Loss"]
-    assert result.iloc[0]["Reward Target"] == result.iloc[0]["TP1"]
-    assert round(float(result.iloc[0]["R/R Ratio"]), 4) == round(float(result.iloc[0]["R/R Current"]), 4)
-    assert result.iloc[0]["SL Source"] == "structure_pivot_hl"
-    assert result.iloc[0]["TP1 Source"] == "rolling_20d_close_high"
-    assert "50%" in str(result.iloc[0]["TP2 Plan"])
-    assert "pivot_trigger" in str(result.iloc[0]["Timing Detail"])
-
-
-def test_early_cycle_recovery_risk_cap_blocks_detected_signal(tmp_path) -> None:
-    scan_config = ScanConfig.from_dict(
-        {
-            "card_sections": [{"scan_name": "Trend Reversal Setup", "display_name": "Trend Reversal Setup"}],
-            "watchlist_presets": [
-                {
-                    "preset_name": "Early Cycle Recovery",
-                    "selected_scan_names": ["Trend Reversal Setup"],
-                    "duplicate_threshold": 1,
-                    "preset_status": "enabled",
-                }
-            ],
-        }
-    )
-    signal_config = EntrySignalConfig.from_dict(
-        {"definitions": {"early_cycle_recovery_entry": _early_cycle_recovery_definition_payload()}}
-    )
-    runner = EntrySignalRunner(signal_config, scan_config)
-    artifacts = _build_platform_artifacts(
-        watchlist=_early_cycle_recovery_watchlist(close=50.0, dcr_percent=78.0, rs21=62.0),
-        scan_hits=pd.DataFrame([{"ticker": "AAA", "kind": "scan", "name": "Trend Reversal Setup"}]),
-        trade_date="2026-04-24",
-    )
-
-    result = runner.sync_and_evaluate(artifacts, ["early_cycle_recovery_entry"], root_dir=tmp_path)
-
-    assert list(result["Ticker"]) == ["AAA"]
-    assert result.iloc[0]["Display Bucket"] == "Approaching"
-    assert float(result.iloc[0]["Risk In ATR"]) > 2.25
-    assert "risk_cap_reason" in str(result.iloc[0]["Timing Detail"])
-
-
-def test_early_cycle_recovery_low_dcr_caps_detected_signal(tmp_path) -> None:
-    scan_config = ScanConfig.from_dict(
-        {
-            "card_sections": [{"scan_name": "Trend Reversal Setup", "display_name": "Trend Reversal Setup"}],
-            "watchlist_presets": [
-                {
-                    "preset_name": "Early Cycle Recovery",
-                    "selected_scan_names": ["Trend Reversal Setup"],
-                    "duplicate_threshold": 1,
-                    "preset_status": "enabled",
-                }
-            ],
-        }
-    )
-    signal_config = EntrySignalConfig.from_dict(
-        {"definitions": {"early_cycle_recovery_entry": _early_cycle_recovery_definition_payload()}}
-    )
-    runner = EntrySignalRunner(signal_config, scan_config)
-    artifacts = _build_platform_artifacts(
-        watchlist=_early_cycle_recovery_watchlist(close=44.0, dcr_percent=42.0, rs21=62.0),
-        scan_hits=pd.DataFrame([{"ticker": "AAA", "kind": "scan", "name": "Trend Reversal Setup"}]),
-        trade_date="2026-04-24",
-    )
-
-    result = runner.sync_and_evaluate(artifacts, ["early_cycle_recovery_entry"], root_dir=tmp_path)
-
-    assert list(result["Ticker"]) == ["AAA"]
-    assert result.iloc[0]["Display Bucket"] == "Approaching"
-    assert "low_dcr_warning" in str(result.iloc[0]["Timing Detail"])
-
-
-def test_early_cycle_recovery_invalidates_weak_rs() -> None:
-    config = EntrySignalConfig.from_dict(
-        {"definitions": {"early_cycle_recovery_entry": _early_cycle_recovery_definition_payload()}}
-    )
-    definition = config.definition_for("early_cycle_recovery_entry")
-
-    reason = evaluate_invalidation(
-        definition,
-        {"close": 42.0, "sma50": 40.0, "rs21": 34.0, "daily_change_pct": 0.0},
-    )
-
-    assert reason == "rs21_below_35"
-
-
 def test_power_gap_pullback_runner_scores_reclaim_and_rr(tmp_path) -> None:
     scan_config = ScanConfig.from_dict(
         {
@@ -1844,7 +1720,7 @@ def _definition_payload(display_name: str) -> dict[str, object]:
         "signal_version": "1.0",
         "description": "test definition",
         "pool": {
-            "preset_sources": ["Orderly Pullback", "Trend Pullback"],
+            "preset_sources": ["Pullback Trigger", "Pullback Trigger"],
             "detection_window_days": 10,
             "invalidation": [
                 {"field": "close", "condition": "below", "reference": "sma50"},
@@ -2235,156 +2111,6 @@ def _accumulation_breakout_definition_payload() -> dict[str, object]:
     }
 
 
-def _early_cycle_recovery_definition_payload() -> dict[str, object]:
-    return {
-        "display_name": "Early Cycle Recovery Entry",
-        "signal_version": "1.0",
-        "description": "test early cycle recovery definition",
-        "pool": {
-            "preset_sources": ["Early Cycle Recovery", "Screening Thesis"],
-            "detection_window_days": 8,
-            "invalidation": [
-                {"field": "rs21", "condition": "below", "threshold": 35.0},
-                {"field": "daily_change_pct", "condition": "below", "threshold": -5.0},
-                {"field": "close", "condition": "below", "reference": "sma50", "reference_multiplier": 0.95},
-            ],
-            "snapshot_fields": [
-                "close",
-                "open",
-                "high",
-                "low",
-                "atr",
-                "ema21_close",
-                "sma50",
-                "sma200",
-                "rs21",
-                "vcs",
-                "rel_volume",
-                "volume_ratio_20d",
-                "dcr_percent",
-                "daily_change_pct",
-                "weekly_return_rank",
-                "quarterly_return_rank",
-                "rolling_20d_close_high",
-                "dist_from_52w_low",
-                "dist_from_52w_high",
-                "atr_21ema_zone",
-                "atr_50sma_zone",
-                "close_crossed_above_ema21",
-                "close_crossed_above_sma50",
-                "sma50_slope_10d_pct",
-                "structure_pivot_long_active",
-                "structure_pivot_long_breakout_first_day",
-                "structure_pivot_long_hl_price",
-                "structure_pivot_1st_break",
-                "structure_pivot_2nd_break",
-                "ct_trendline_break",
-                "pocket_pivot",
-                "pp_count_window",
-                "hit_scans",
-            ],
-            "pool_tracking": ["low_since_detection", "high_since_detection"],
-        },
-        "setup_maturity": {
-            "indicators": {
-                "structure_reversal_quality": {"weight": 0.35},
-                "low_to_recovery_position": {"weight": 0.20},
-                "accumulation_evidence": {"weight": 0.20},
-                "trend_repair": {"weight": 0.15},
-                "rs_recovery": {"weight": 0.10},
-            }
-        },
-        "timing": {
-            "indicators": {
-                "pivot_trigger": {"weight": 0.35},
-                "ma_reclaim": {"weight": 0.25},
-                "volume_confirmation": {
-                    "weight": 0.20,
-                    "field": "rel_volume",
-                    "breakpoints": [[0.80, 10], [1.00, 35], [1.30, 70], [1.80, 95], [3.00, 100], [5.00, 70]],
-                },
-                "close_quality": {
-                    "weight": 0.20,
-                    "field": "dcr_percent",
-                    "breakpoints": [[30, 5], [40, 15], [50, 35], [65, 75], [80, 100]],
-                },
-            }
-        },
-        "risk_reward": {
-            "stop": {
-                "reference": "recovery_pivot_adaptive",
-                "atr_buffer": 0.25,
-                "min_distance_atr": 0.50,
-                "structural_penalty": 0.80,
-            },
-            "reward": {
-                "primary": "rolling_20d_close_high",
-                "secondary": "sma50",
-                "fallback": "rr_validation_target",
-            },
-            "scoring": {
-                "breakpoints": [[0.5, 5], [1.0, 25], [1.5, 50], [2.0, 70], [2.5, 85], [3.0, 95]],
-            },
-        },
-        "entry_strength": {
-            "weights": {"setup_maturity": 0.35, "timing": 0.35, "risk_reward": 0.30},
-            "floor_gate": {"min_axis_threshold": 18, "capped_strength": 30},
-        },
-        "display": {"thresholds": {"signal_detected": 52, "approaching": 35, "tracking": 0}},
-        "action": {
-            "entry_ready": {
-                "entry_strength_min": 52,
-                "timing_min": 50,
-                "risk_reward_min": 55,
-                "rr_ratio_min": 2.5,
-                "setup_maturity_min": 45,
-            },
-            "watch_setup": {"setup_maturity_min": 45, "risk_reward_min": 35},
-        },
-    }
-
-
-def _early_cycle_recovery_watchlist(*, close: float, dcr_percent: float, rs21: float) -> pd.DataFrame:
-    return pd.DataFrame(
-        {
-            "close": [close],
-            "open": [42.0],
-            "high": [close + 1.0],
-            "low": [41.5],
-            "atr": [2.0],
-            "ema21_close": [42.0],
-            "sma50": [40.0],
-            "sma200": [55.0],
-            "rs21": [rs21],
-            "vcs": [55.0],
-            "rel_volume": [1.8],
-            "volume_ratio_20d": [1.5],
-            "dcr_percent": [dcr_percent],
-            "daily_change_pct": [3.0],
-            "weekly_return_rank": [78.0],
-            "quarterly_return_rank": [72.0],
-            "rolling_20d_close_high": [51.0],
-            "dist_from_52w_low": [22.0],
-            "dist_from_52w_high": [-35.0],
-            "atr_21ema_zone": [0.5],
-            "atr_50sma_zone": [1.0],
-            "close_crossed_above_ema21": [True],
-            "close_crossed_above_sma50": [False],
-            "sma50_slope_10d_pct": [-0.02],
-            "structure_pivot_long_active": [True],
-            "structure_pivot_long_breakout_first_day": [True],
-            "structure_pivot_long_hl_price": [41.0],
-            "structure_pivot_1st_break": [True],
-            "structure_pivot_2nd_break": [True],
-            "ct_trendline_break": [True],
-            "pocket_pivot": [True],
-            "pp_count_window": [3.0],
-            "hit_scans": ["Trend Reversal Setup, Pocket Pivot, VCS 52 Low, Volume Accumulation"],
-        },
-        index=["AAA"],
-    )
-
-
 def _power_gap_pullback_definition_payload() -> dict[str, object]:
     return {
         "display_name": "Power Gap Pullback Entry",
@@ -2536,6 +2262,7 @@ def _build_platform_artifacts(
     watchlist: pd.DataFrame,
     scan_hits: pd.DataFrame,
     trade_date: str,
+    market_result: object | None = None,
 ) -> PlatformArtifacts:
     snapshot = pd.DataFrame({"trade_date": [trade_date]}, index=["AAA"])
     eligible_snapshot = watchlist.copy()
@@ -2549,7 +2276,7 @@ def _build_platform_artifacts(
         scan_hits=scan_hits,
         benchmark_history=pd.DataFrame(),
         vix_history=pd.DataFrame(),
-        market_result=None,
+        market_result=market_result,
         radar_result=None,
         used_sample_data=False,
         data_source_label="test",

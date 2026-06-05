@@ -38,7 +38,7 @@ def _build_artifacts(
     hits = pd.DataFrame(
         [
             {"ticker": "AAA", "name": "21EMA Pattern H", "kind": "scan"},
-            {"ticker": "AAA", "name": "VCS", "kind": "scan"},
+            {"ticker": "AAA", "name": "Pocket Pivot", "kind": "scan"},
         ]
     )
     snapshot = pd.DataFrame(
@@ -81,11 +81,11 @@ def test_sync_preset_effectiveness_logs_creates_db_detection_records(tmp_path: P
                 "  card_sections:",
                 "  - scan_name: 21EMA Pattern H",
                 "    display_name: 21EMA",
-                "  - scan_name: VCS",
-                "    display_name: VCS",
+                "  - scan_name: Pocket Pivot",
+                "    display_name: Pocket Pivot",
                 "  watchlist_presets:",
                 "  - preset_name: Momentum Core",
-                "    selected_scan_names: [21EMA Pattern H, VCS]",
+                "    selected_scan_names: [21EMA Pattern H, Pocket Pivot]",
                 "    selected_annotation_filters: []",
                 "    selected_duplicate_subfilters: []",
                 "    duplicate_threshold: 2",
@@ -126,7 +126,7 @@ def test_sync_preset_effectiveness_logs_creates_db_detection_records(tmp_path: P
     assert detections[0]["market_env"] == "bull"
     assert detections[0]["close_at_hit"] == 100.0
     assert len(scan_hits) == 2
-    assert {row["scan_name"] for row in detection_scans} == {"21EMA Pattern H", "VCS"}
+    assert {row["scan_name"] for row in detection_scans} == {"21EMA Pattern H", "Pocket Pivot"}
 
 
 def test_sync_preset_effectiveness_logs_updates_db_returns_from_target_date_history(tmp_path: Path, monkeypatch) -> None:
@@ -138,11 +138,11 @@ def test_sync_preset_effectiveness_logs_updates_db_returns_from_target_date_hist
                 "  card_sections:",
                 "  - scan_name: 21EMA Pattern H",
                 "    display_name: 21EMA",
-                "  - scan_name: VCS",
-                "    display_name: VCS",
+                "  - scan_name: Pocket Pivot",
+                "    display_name: Pocket Pivot",
                 "  watchlist_presets:",
                 "  - preset_name: Momentum Core",
-                "    selected_scan_names: [21EMA Pattern H, VCS]",
+                "    selected_scan_names: [21EMA Pattern H, Pocket Pivot]",
                 "    selected_annotation_filters: []",
                 "    selected_duplicate_subfilters: []",
                 "    duplicate_threshold: 2",
@@ -279,11 +279,11 @@ def test_sync_preset_effectiveness_logs_updates_twenty_day_tracking_metrics(tmp_
                 "  card_sections:",
                 "  - scan_name: 21EMA Pattern H",
                 "    display_name: 21EMA",
-                "  - scan_name: VCS",
-                "    display_name: VCS",
+                "  - scan_name: Pocket Pivot",
+                "    display_name: Pocket Pivot",
                 "  watchlist_presets:",
                 "  - preset_name: Momentum Core",
-                "    selected_scan_names: [21EMA Pattern H, VCS]",
+                "    selected_scan_names: [21EMA Pattern H, Pocket Pivot]",
                 "    selected_annotation_filters: []",
                 "    selected_duplicate_subfilters: []",
                 "    duplicate_threshold: 2",
@@ -298,10 +298,10 @@ def test_sync_preset_effectiveness_logs_updates_twenty_day_tracking_metrics(tmp_
         _build_artifacts("2026-04-09", close=100.0),
         root_dir=tmp_path,
     )
-    dates = pd.bdate_range("2026-04-09", periods=21)
-    close_values = [100.0, 102.0, 104.0, 106.0, 108.0, 120.0, *([121.0] * 14), 130.0]
-    high_values = [105.0, 108.0, 110.0, 112.0, 114.0, 123.0, *([150.0] * 14), 145.0]
-    low_values = [98.0, 96.0, 94.0, 92.0, 91.0, 90.0, *([100.0] * 14), 110.0]
+    dates = pd.bdate_range("2026-04-09", periods=22)
+    close_values = [100.0, 102.0, 104.0, 106.0, 108.0, 120.0, *([121.0] * 14), 130.0, 140.0]
+    high_values = [105.0, 108.0, 110.0, 112.0, 114.0, 123.0, *([150.0] * 14), 145.0, 160.0]
+    low_values = [98.0, 96.0, 94.0, 92.0, 91.0, 90.0, *([100.0] * 14), 110.0, 85.0]
     history = pd.DataFrame(
         {
             "open": close_values,
@@ -337,8 +337,11 @@ def test_sync_preset_effectiveness_logs_updates_twenty_day_tracking_metrics(tmp_
             SELECT
                 return_5d,
                 return_20d,
+                return_21d,
                 max_gain_20d,
                 max_drawdown_20d,
+                max_gain_21d,
+                max_drawdown_21d,
                 closed_above_ema21_5d,
                 hit_new_high_20d,
                 status,
@@ -353,8 +356,11 @@ def test_sync_preset_effectiveness_logs_updates_twenty_day_tracking_metrics(tmp_
 
     assert round(float(detection["return_5d"]), 4) == 20.0
     assert round(float(detection["return_20d"]), 4) == 30.0
+    assert round(float(detection["return_21d"]), 4) == 40.0
     assert round(float(detection["max_gain_20d"]), 4) == 50.0
     assert round(float(detection["max_drawdown_20d"]), 4) == -10.0
+    assert round(float(detection["max_gain_21d"]), 4) == 60.0
+    assert round(float(detection["max_drawdown_21d"]), 4) == -15.0
     assert detection["closed_above_ema21_5d"] == 1
     assert detection["hit_new_high_20d"] == 1
     assert detection["status"] == "closed"
@@ -388,10 +394,10 @@ def test_refresh_tracking_detection_prices_updates_signal_entry_event_outcome(tm
     finally:
         conn.close()
 
-    dates = pd.bdate_range("2026-04-09", periods=21)
-    close_values = [100.0, 101.0, 111.0, *([112.0] * 17), 115.0]
-    high_values = [100.0, 108.0, 111.0, *([120.0] * 17), 118.0]
-    low_values = [100.0, 96.0, 97.0, *([99.0] * 17), 105.0]
+    dates = pd.bdate_range("2026-04-09", periods=22)
+    close_values = [100.0, 101.0, 111.0, *([112.0] * 17), 115.0, 116.0]
+    high_values = [100.0, 108.0, 111.0, *([120.0] * 17), 118.0, 125.0]
+    low_values = [100.0, 96.0, 97.0, *([99.0] * 17), 105.0, 94.0]
     history = pd.DataFrame(
         {
             "open": close_values,
@@ -426,6 +432,7 @@ def test_refresh_tracking_detection_prices_updates_signal_entry_event_outcome(tm
             SELECT
                 return_1d,
                 return_20d,
+                return_21d,
                 hit_sl,
                 hit_tp1,
                 hit_sl_date,
@@ -435,7 +442,9 @@ def test_refresh_tracking_detection_prices_updates_signal_entry_event_outcome(tm
                 days_to_first_outcome,
                 outcome_r,
                 max_gain_20d,
-                max_drawdown_20d
+                max_drawdown_20d,
+                max_gain_21d,
+                max_drawdown_21d
             FROM signal_entry_event
             WHERE signal_name = ? AND ticker = ?
             """,
@@ -446,6 +455,7 @@ def test_refresh_tracking_detection_prices_updates_signal_entry_event_outcome(tm
 
     assert round(float(event["return_1d"]), 4) == 1.0
     assert round(float(event["return_20d"]), 4) == 15.0
+    assert round(float(event["return_21d"]), 4) == 16.0
     assert event["hit_sl"] == 0
     assert event["hit_tp1"] == 1
     assert event["hit_sl_date"] is None
@@ -456,6 +466,8 @@ def test_refresh_tracking_detection_prices_updates_signal_entry_event_outcome(tm
     assert round(float(event["outcome_r"]), 4) == 1.0
     assert round(float(event["max_gain_20d"]), 4) == 20.0
     assert round(float(event["max_drawdown_20d"]), 4) == -4.0
+    assert round(float(event["max_gain_21d"]), 4) == 25.0
+    assert round(float(event["max_drawdown_21d"]), 4) == -6.0
 
 
 def test_signal_entry_event_hit_flags_are_not_closed_before_twenty_day_window(tmp_path: Path, monkeypatch) -> None:

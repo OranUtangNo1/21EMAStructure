@@ -69,7 +69,7 @@ Signal key: `orderly_pullback_entry`
 
 ## Runtime Notes
 
-- `Pullback Trigger` is the active preset source for this signal. It avoids the disabled `Orderly Pullback` / `Trend Pullback` preset dependency chain while retaining the same orderly pullback entry evaluator.
+- `Pullback Trigger` is the active preset source for this signal.
 - The common Entry Signal context guard can cap otherwise detected rows below `Signal Detected` when `market_score < 30.0`, `earnings_in_7d` is true, or `earnings_today` is true.
 - Structural TP1 candidates must provide at least `1.5R`; otherwise the policy falls back to the minimum-R/R validation target.
 - Entry Ready currently keeps `rr_ratio_min = 2.0`; lowering this to `1.5R` requires separate detection-quality review.

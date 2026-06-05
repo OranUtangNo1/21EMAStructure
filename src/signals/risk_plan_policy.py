@@ -24,9 +24,6 @@ PULLBACK_ENTRY_ZONE_DISTANCE_ATR = 0.5
 POWER_GAP_MAX_RISK_ATR = 2.0
 POWER_GAP_MIN_STRUCTURAL_TP_RR = 1.5
 POWER_GAP_ENTRY_ZONE_DISTANCE_ATR = 0.5
-EARLY_CYCLE_MAX_RISK_ATR = 2.25
-EARLY_CYCLE_MIN_STRUCTURAL_TP_RR = 1.5
-EARLY_CYCLE_ENTRY_ZONE_DISTANCE_ATR = 0.5
 PULLBACK_TRIGGER_PRESET = "Pullback Trigger"
 RECLAIM_TRIGGER_PRESET = "Reclaim Trigger"
 FIFTY_SMA_DEFENSE_PRESET = "50SMA Defense"
@@ -499,95 +496,6 @@ def build_power_gap_pullback_risk_plan(
     )
 
 
-def build_early_cycle_recovery_risk_plan(
-    row: dict[str, object],
-    pool_entry: SignalPoolEntry,
-    definition: EntrySignalDefinition,
-) -> RiskPlanPolicyResult:
-    entry_price = _to_float(row.get("close"))
-    atr = _to_float(row.get("atr"))
-    if entry_price is None or atr is None or atr <= 0.0:
-        return RiskPlanPolicyResult(reject_codes=("entry_or_atr_unavailable",))
-
-    sl_candidates = _early_cycle_sl_candidates(entry_price, atr, row, pool_entry, definition)
-    selected_sl = _select_early_cycle_sl(sl_candidates)
-    reject_codes: list[str] = []
-    if selected_sl is None:
-        reject_codes.append("sl_unavailable")
-
-    risk_in_atr = _to_float(selected_sl.get("risk_in_atr")) if selected_sl else None
-    stop_adjusted = bool(selected_sl.get("adjusted")) if selected_sl else False
-    sl_quality = _early_cycle_sl_quality(selected_sl, risk_in_atr, row, pool_entry)
-    if risk_in_atr is not None and risk_in_atr > EARLY_CYCLE_MAX_RISK_ATR:
-        reject_codes.append("sl_too_wide")
-    if sl_quality == "Weak":
-        reject_codes.append("sl_quality_weak")
-
-    tp1_candidates = _early_cycle_tp1_candidates(entry_price, row, pool_entry, selected_sl, definition)
-    selected_tp1 = _select_early_cycle_tp1(tp1_candidates)
-    if selected_tp1 is None:
-        reject_codes.append("tp1_unavailable")
-
-    rr_current = None
-    rr_ideal = None
-    max_entry_price = None
-    entry_zone_low = None
-    entry_zone_high = None
-    distance_to_entry_zone_pct = None
-    reward_in_atr = None
-    if selected_sl is not None and selected_tp1 is not None:
-        stop_price = _to_float(selected_sl.get("price"))
-        tp1_price = _to_float(selected_tp1.get("price"))
-        if stop_price is None:
-            reject_codes.append("sl_unavailable")
-        elif tp1_price is None:
-            reject_codes.append("tp1_unavailable")
-        else:
-            rr_current = _rr_for_entry(entry_price, stop_price, tp1_price)
-            if rr_current is None:
-                if stop_price >= entry_price:
-                    reject_codes.append("sl_not_below_entry")
-                elif tp1_price <= entry_price:
-                    reject_codes.append("tp1_not_above_entry")
-            reward_in_atr = max(0.0, (tp1_price - entry_price) / atr) if tp1_price > entry_price else None
-            max_entry_price = _max_entry_for_rr(
-                stop_loss=stop_price,
-                tp1=tp1_price,
-                min_rr=definition.action.entry_ready_rr_ratio_min,
-            )
-            if max_entry_price is not None and max_entry_price > stop_price:
-                entry_zone_high = min(max_entry_price, tp1_price)
-                entry_zone_low = stop_price + atr * EARLY_CYCLE_ENTRY_ZONE_DISTANCE_ATR
-                if entry_zone_low > entry_zone_high:
-                    reject_codes.append("entry_zone_invalid")
-                else:
-                    ideal_entry = entry_price if entry_zone_low <= entry_price <= entry_zone_high else entry_zone_high
-                    rr_ideal = _rr_for_entry(ideal_entry, stop_price, tp1_price)
-                    if entry_price > entry_zone_high:
-                        distance_to_entry_zone_pct = (entry_price / entry_zone_high - 1.0) * 100.0
-                    elif entry_price < entry_zone_low:
-                        distance_to_entry_zone_pct = (entry_price / entry_zone_low - 1.0) * 100.0
-
-    return RiskPlanPolicyResult(
-        sl_candidates=sl_candidates,
-        selected_sl=selected_sl,
-        tp1_candidates=tp1_candidates,
-        selected_tp1=selected_tp1,
-        tp2_plan=_early_cycle_tp2_plan(selected_tp1),
-        rr_current=rr_current,
-        rr_ideal=rr_ideal,
-        max_entry_price=max_entry_price,
-        entry_zone_low=entry_zone_low,
-        entry_zone_high=entry_zone_high,
-        distance_to_entry_zone_pct=distance_to_entry_zone_pct,
-        risk_in_atr=risk_in_atr,
-        reward_in_atr=reward_in_atr,
-        stop_adjusted=stop_adjusted,
-        sl_quality=sl_quality,
-        reject_codes=tuple(dict.fromkeys(reject_codes)),
-    )
-
-
 def _momentum_sl_candidates(
     entry_price: float,
     atr: float,
@@ -825,46 +733,6 @@ def _power_gap_sl_candidates(
     return _dedupe_candidates(candidates)
 
 
-def _early_cycle_sl_candidates(
-    entry_price: float,
-    atr: float,
-    row: dict[str, object],
-    pool_entry: SignalPoolEntry,
-    definition: EntrySignalDefinition,
-) -> list[dict[str, object]]:
-    pivot_hl = _to_float(row.get("structure_pivot_long_hl_price"))
-    if pivot_hl is None:
-        pivot_hl = _to_float(pool_entry.snapshot_at_detection.get("structure_pivot_long_hl_price"))
-    raw_candidates = [
-        ("structure_pivot_hl", pivot_hl, 0.25),
-        ("low_since_detection", _to_float(pool_entry.low_since_detection), 0.25),
-        ("snapshot_low", _to_float(pool_entry.snapshot_at_detection.get("low")), 0.25),
-    ]
-
-    candidates: list[dict[str, object]] = []
-    for candidate_source, reference, atr_buffer in raw_candidates:
-        stop = calculate_buffered_stop(
-            entry_price,
-            atr,
-            reference,
-            definition.risk_reward,
-            atr_buffer=atr_buffer,
-        )
-        if stop.stop_price is None or stop.stop_price >= entry_price:
-            continue
-        candidates.append(
-            {
-                "source": candidate_source,
-                "reference": reference,
-                "price": round(stop.stop_price, 4),
-                "risk_in_atr": round(stop.risk_in_atr, 4) if stop.risk_in_atr is not None else None,
-                "adjusted": stop.stop_adjusted,
-                "atr_buffer": atr_buffer,
-            }
-        )
-    return _dedupe_candidates(candidates)
-
-
 def _select_momentum_sl(candidates: list[dict[str, object]]) -> dict[str, object] | None:
     valid = [candidate for candidate in candidates if _to_float(candidate.get("price")) is not None]
     if not valid:
@@ -975,40 +843,6 @@ def _select_power_gap_sl(candidates: list[dict[str, object]]) -> dict[str, objec
     ]
     if proxy:
         return proxy[0]
-    return min(valid, key=lambda candidate: float(candidate.get("risk_in_atr") or 99.0))
-
-
-def _select_early_cycle_sl(candidates: list[dict[str, object]]) -> dict[str, object] | None:
-    valid = [candidate for candidate in candidates if _to_float(candidate.get("price")) is not None]
-    if not valid:
-        return None
-    primary = [
-        candidate
-        for candidate in valid
-        if candidate.get("source") == "structure_pivot_hl"
-        and _to_float(candidate.get("risk_in_atr")) is not None
-        and float(candidate["risk_in_atr"]) <= EARLY_CYCLE_MAX_RISK_ATR
-    ]
-    if primary:
-        return primary[0]
-    current_low = [
-        candidate
-        for candidate in valid
-        if candidate.get("source") == "low_since_detection"
-        and _to_float(candidate.get("risk_in_atr")) is not None
-        and float(candidate["risk_in_atr"]) <= EARLY_CYCLE_MAX_RISK_ATR
-    ]
-    if current_low:
-        return current_low[0]
-    snapshot_low = [
-        candidate
-        for candidate in valid
-        if candidate.get("source") == "snapshot_low"
-        and _to_float(candidate.get("risk_in_atr")) is not None
-        and float(candidate["risk_in_atr"]) <= EARLY_CYCLE_MAX_RISK_ATR
-    ]
-    if snapshot_low:
-        return snapshot_low[0]
     return min(valid, key=lambda candidate: float(candidate.get("risk_in_atr") or 99.0))
 
 
@@ -1250,49 +1084,6 @@ def _power_gap_tp1_candidates(
     return _dedupe_candidates(candidates)
 
 
-def _early_cycle_tp1_candidates(
-    entry_price: float,
-    row: dict[str, object],
-    pool_entry: SignalPoolEntry,
-    selected_sl: dict[str, object] | None,
-    definition: EntrySignalDefinition,
-) -> list[dict[str, object]]:
-    structural_sources = [
-        ("rolling_20d_close_high", _to_float(row.get("rolling_20d_close_high"))),
-        ("sma50", _to_float(row.get("sma50"))),
-    ]
-    candidates: list[dict[str, object]] = []
-    stop_price = _to_float(selected_sl.get("price")) if selected_sl else None
-    for source, price in structural_sources:
-        if price is None or price <= entry_price:
-            continue
-        rr = _rr_for_entry(entry_price, stop_price, price) if stop_price is not None else None
-        candidates.append(
-            {
-                "source": source,
-                "price": round(price, 4),
-                "rr": round(rr, 4) if rr is not None else None,
-                "target_type": "structural",
-            }
-        )
-
-    validation_target = _rr_target(
-        entry_price,
-        selected_sl,
-        definition.action.entry_ready_rr_ratio_min,
-    )
-    if validation_target is not None:
-        candidates.append(
-            {
-                "source": "rr_validation_target",
-                "price": round(validation_target, 4),
-                "rr": definition.action.entry_ready_rr_ratio_min,
-                "target_type": "validation",
-            }
-        )
-    return _dedupe_candidates(candidates)
-
-
 def _select_momentum_tp1(candidates: list[dict[str, object]]) -> dict[str, object] | None:
     structural = [
         candidate
@@ -1364,22 +1155,6 @@ def _select_power_gap_tp1(candidates: list[dict[str, object]]) -> dict[str, obje
         if candidate.get("target_type") == "structural"
         and _to_float(candidate.get("rr")) is not None
         and float(candidate["rr"]) >= POWER_GAP_MIN_STRUCTURAL_TP_RR
-    ]
-    if structural:
-        return structural[0]
-    validation = [candidate for candidate in candidates if candidate.get("target_type") == "validation"]
-    if validation:
-        return validation[0]
-    return None
-
-
-def _select_early_cycle_tp1(candidates: list[dict[str, object]]) -> dict[str, object] | None:
-    structural = [
-        candidate
-        for candidate in candidates
-        if candidate.get("target_type") == "structural"
-        and _to_float(candidate.get("rr")) is not None
-        and float(candidate["rr"]) >= EARLY_CYCLE_MIN_STRUCTURAL_TP_RR
     ]
     if structural:
         return structural[0]
@@ -1510,32 +1285,6 @@ def _power_gap_sl_quality(
     return "Weak"
 
 
-def _early_cycle_sl_quality(
-    selected_sl: dict[str, object] | None,
-    risk_in_atr: float | None,
-    row: dict[str, object],
-    pool_entry: SignalPoolEntry,
-) -> str:
-    if selected_sl is None or risk_in_atr is None:
-        return "Invalid"
-    if risk_in_atr < EARLY_CYCLE_ENTRY_ZONE_DISTANCE_ATR:
-        return "Invalid"
-    if risk_in_atr > EARLY_CYCLE_MAX_RISK_ATR:
-        return "Weak"
-    dcr_percent = _to_float(row.get("dcr_percent"))
-    if dcr_percent is not None and dcr_percent < 50.0:
-        return "Weak"
-    source = str(selected_sl.get("source", ""))
-    if source == "structure_pivot_hl":
-        return "Strong" if risk_in_atr <= 1.75 else "OK"
-    if source == "low_since_detection":
-        sources = set(pool_entry.preset_sources)
-        return "OK" if "Early Cycle Recovery" in sources else "Weak"
-    if source == "snapshot_low":
-        return "Weak"
-    return "Weak"
-
-
 def _momentum_tp2_plan(selected_tp1: dict[str, object] | None) -> str:
     if selected_tp1 is not None and selected_tp1.get("target_type") == "validation":
         return "No structural TP1; manage with 10-day low trailing from pool day 3"
@@ -1564,12 +1313,6 @@ def _power_gap_tp2_plan(selected_tp1: dict[str, object] | None) -> str:
     if selected_tp1 is not None and selected_tp1.get("target_type") == "validation":
         return "No structural TP1; manage with 21EMA close trailing from pool day 3"
     return "After TP1, trail with 21EMA close; exit on two consecutive closes below 21EMA"
-
-
-def _early_cycle_tp2_plan(selected_tp1: dict[str, object] | None) -> str:
-    if selected_tp1 is not None and selected_tp1.get("target_type") == "validation":
-        return "No structural TP1; take 50% at validation target, then trail 21EMA until SMA50 reclaim"
-    return "Take 50% at TP1; before SMA50 reclaim trail 21EMA close, after SMA50 reclaim trail SMA50 close"
 
 
 def _primary_pool_source(pool_entry: SignalPoolEntry) -> str:

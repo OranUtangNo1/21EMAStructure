@@ -9,8 +9,7 @@ Column meaning:
 - `Startup`: selected by default in Watchlist controls.
 
 Current totals:
-- enabled: 10
-- disabled: 0
+- active enabled: 13
 - startup selected: 0
 
 | Annotation filter | Status | Startup |
@@ -20,7 +19,10 @@ Current totals:
 | `PP Count (20d)` | `enabled` | `no` |
 | `Trend Base` | `enabled` | `no` |
 | `Stage 2 Confirmed` | `enabled` | `no` |
+| `Stage 2 Quality Score` | `enabled` | `no` |
 | `Trend Template` | `enabled` | `no` |
+| `Mature / Late Stage Risk Filter` | `enabled` | `no` |
+| `Industry Leadership Gate` | `enabled` | `no` |
 | `Stage 4 Avoid` | `enabled` | `no` |
 | `Fund Score > 70` | `enabled` | `no` |
 | `Resistance Tests >= 2` | `enabled` | `no` |

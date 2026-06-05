@@ -8,7 +8,7 @@ The tracking system answers:
 
 - which export-enabled preset hit which ticker on which hit date
 - which scans and selected filters were attached at detection time
-- what the ticker returned after 1, 5, 10, and 20 business days
+- what the ticker returned after 1, 5, 10, 20, and 21 business days
 - how preset performance compares with a selected benchmark over the same hit-date-aligned horizon
 - which valid `Ready Now` EntrySignal events reached TP1, reached SL, or timed out over the 20-business-day review window
 
@@ -52,8 +52,8 @@ Core fields:
 - `status`: `active` or `closed`
 - `market_env`
 - `close_at_hit`
-- `close_at_1d`, `close_at_5d`, `close_at_10d`, `close_at_20d`
-- `return_1d`, `return_5d`, `return_10d`, `return_20d`
+- `close_at_1d`, `close_at_5d`, `close_at_10d`, `close_at_20d`, `close_at_21d`
+- `return_1d`, `return_5d`, `return_10d`, `return_20d`, `return_21d`
 - `rs21_at_hit`
 - `vcs_at_hit`
 - `atr_at_hit`
@@ -140,8 +140,9 @@ Grain:
 Current role:
 
 - records the exact Entry Plan snapshot used for outcome tracking
-- stores fixed 1D, 5D, 10D, and 20D closes and returns from `entry_price`
-- stores TP1/SL hit flags, first hit dates, first outcome, days to first outcome, result R, 20D maximum gain, and 20D maximum drawdown
+- stores `action_bucket` and normalized `market_env` for Entry Ready origin analysis
+- stores fixed 1D, 5D, 10D, 20D, and 21D closes and returns from `entry_price`
+- stores TP1/SL hit flags, first hit dates, first outcome, days to first outcome, result R, and 20D / 21D maximum gain and drawdown
 - treats same-day TP1-and-SL hits as `ambiguous_same_day` and assigns the conservative `-1R` outcome
 
 ## 4. Write And Refresh Flow
@@ -178,6 +179,7 @@ Forward horizons are fixed:
 - 5 business days
 - 10 business days
 - 20 business days
+- 21 business days
 
 Target dates are calculated from `hit_date + BDay(horizon_days)`.
 
@@ -187,7 +189,7 @@ Refresh behavior:
 - fill `close_at_hit` from the first close on or after `hit_date`
 - fill each horizon close from the first close on or after the target business date
 - compute return percentage from `close_at_hit` to the horizon close
-- mark a detection `closed` after the 20D return is filled
+- mark a detection `closed` after the 20D return is filled; continue to backfill 21D fields on later refreshes
 
 This design allows non-trading days and missing price dates to be handled by using the next available close.
 
@@ -197,13 +199,13 @@ EntrySignal event refresh is limited to rows in `signal_entry_event`.
 
 Refresh behavior:
 
-- select only events that still need a horizon return, TP1/SL outcome, first outcome, or 20D excursion metric
+- select only events that still need a horizon return, TP1/SL outcome, first outcome, or 20D / 21D excursion metric
 - load price histories only for due event tickers
-- compute fixed 1D, 5D, 10D, and 20D returns from `entry_price`
+- compute fixed 1D, 5D, 10D, 20D, and 21D returns from `entry_price`
 - scan future daily bars after `event_date` through the 20-business-day window for SL and TP1 touches
 - set `first_outcome` to `tp1`, `sl`, `ambiguous_same_day`, or `time_20d`
 - compute `outcome_r` as `1.0` for TP1 first, `-1.0` for SL first or same-day ambiguity, or the 20D close result in R units for timeouts
-- compute `max_gain_20d` and `max_drawdown_20d` from the future high/low window
+- compute `max_gain_20d`, `max_drawdown_20d`, `max_gain_21d`, and `max_drawdown_21d` from the future high/low windows
 
 ### 4.5 Manual refresh helper
 
@@ -222,12 +224,15 @@ The SQLite schema defines these views:
 - `v_preset_scan_performance`
 - `v_preset_summary`
 - `v_scan_combo_performance`
+- `v_signal_entry_performance`
 - `v_preset_overlap`
 
 Current app usage:
 
 - Analysis reads `v_detection_detail` through `read_detection_detail()`
-- repository functions expose horizon and scan performance views for analysis and future UI use
+- repository functions expose horizon, scan, and Entry Ready event performance views for analysis and future UI use
+
+`v_signal_entry_performance` groups EntrySignal events by `action_bucket`, `signal_name`, and `market_env`. It reports event/ticker counts, 5D/10D/21D returns, 21D win rate, TP1/SL counts and rates, timeout and ambiguous outcome counts, average result R, average days to first outcome, and 21D MFE/MAE.
 
 ## 6. Analysis UI
 
@@ -238,21 +243,25 @@ Page owner:
 Filters:
 
 - `Preset Universe`: multiselect over built-in preset names
-- `Horizon`: one selected value from `1`, `5`, `10`, `20`
+- `Horizon`: one selected value from `1`, `5`, `10`, `21`
 - `Hit Date Range`: detection `hit_date` range
 - `Hit Market Env`: multiselect over `bull`, `neutral`, `weak`, `bear`
 - `Benchmark`: one selected value from `SPY`, `QQQ`, `IWM`
 
 Benchmark behavior:
 
+- the default Analysis horizon is `21D`
 - benchmark return is calculated per hit date and selected horizon
 - the comparison window is not the overall UI date range
 - the benchmark target date uses the same business-day horizon logic as detections
 - benchmark prices are loaded through `YFinancePriceDataProvider` and the normal cache layer
+- `20D` outcome columns are retained for persisted-data compatibility and internal backfill, but the Analysis UI exposes `21D` as the main monthly horizon instead
 
 Result areas:
 
 - `Ranking`: grouped preset performance for the selected scope and horizon
+- `EntrySignal Connection Candidates`: selected-scope connection review for configured preset-to-signal candidates, currently `Fresh Stage 2 Breakout` toward `Accumulation Breakout Entry`
+- `Entry Ready Performance`: signal-level `Ready Now` event performance from `v_signal_entry_performance`, grouped by action bucket, signal name, and market environment
 - `Detail`: row-level detection records for the selected scope, including fixed horizon close and return columns through the selected horizon
 - observation CSV export: one row per detection horizon with available target data
 - detection-scan CSV export: one row per detection and hit scan
@@ -260,9 +269,13 @@ Result areas:
 
 Ranking display:
 
-- uses readable column names such as `Preset`, `Market`, `Avg Return (%)`, `Excess vs Benchmark (%)`, `Win Rate (%)`, and `Detections`
+- uses readable column names such as `Tier`, `Preset`, `Market`, `Avg Return (%)`, `Excess vs Benchmark (%)`, `Win Rate (%)`, and `Detections`
 - does not display the raw benchmark return column
 - highlights positive excess-return rows green and negative excess-return rows red
+
+Preset tier logic keeps groups with `Detections < 30` in `Observing` regardless of apparent return strength. Mature groups can become `Core`, `Candidate`, `Mixed`, `Downgrade Review`, or `Needs Data` based on selected-horizon average return, benchmark excess return, and win rate.
+
+The connection-candidate table reuses the same preset tier logic and the same selected horizon. It is a review surface only. It identifies whether the candidate preset is currently `Connected`, `Connected Elsewhere`, or `Measurement Only`, and shows `Connection Candidate` only when the selected-scope tier is `Core` or `Candidate`. It does not write to `signal_pool_entry`, does not change `entry_signals.yaml`, and does not directly connect a preset to EntrySignal evaluation.
 
 Detail display:
 

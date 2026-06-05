@@ -8,6 +8,7 @@ import io
 import logging
 import time
 from typing import Any
+from urllib.parse import quote
 
 import pandas as pd
 
@@ -466,6 +467,107 @@ class YFinancePriceDataProvider(PriceDataProvider):
         note: str | None = None,
     ) -> FetchStatus:
         return FetchStatus(symbol=symbol, dataset="price", source=source, has_data=has_data, fetched_at=fetched_at, note=note)
+
+
+class FredSeriesProvider:
+    """Fetch FRED daily series as OHLC-like histories for market diagnostics."""
+
+    def __init__(
+        self,
+        cache: CacheLayer,
+        series_ttl_hours: int = 24,
+        allow_stale_cache_on_failure: bool = True,
+    ) -> None:
+        self.cache = cache
+        self.series_ttl_hours = series_ttl_hours
+        self.allow_stale_cache_on_failure = allow_stale_cache_on_failure
+
+    def get_series(self, series_ids: list[str], *, force_refresh: bool = False) -> PriceHistoryBatch:
+        histories: dict[str, pd.DataFrame] = {}
+        statuses: dict[str, FetchStatus] = {}
+        normalized_ids = list(dict.fromkeys(str(series_id).strip().upper() for series_id in series_ids if str(series_id).strip()))
+        for series_id in normalized_ids:
+            cache_key = self._cache_key(series_id)
+            if not force_refresh:
+                cached = self.cache.load_csv(cache_key, ttl_hours=self.series_ttl_hours)
+                if cached is not None and not cached.empty:
+                    histories[series_id] = cached
+                    statuses[series_id] = self._status(series_id, "cache_fresh", True, self.cache.get_modified_at(cache_key, "csv"))
+                    continue
+
+            stale = self.cache.load_csv(cache_key, ttl_hours=self.series_ttl_hours, allow_stale=True)
+            fetched_at = datetime.now()
+            try:
+                downloaded = self._download_series(series_id)
+            except Exception as exc:
+                if self.allow_stale_cache_on_failure and stale is not None and not stale.empty:
+                    histories[series_id] = stale
+                    statuses[series_id] = self._status(
+                        series_id,
+                        "cache_stale",
+                        True,
+                        self.cache.get_modified_at(cache_key, "csv"),
+                        f"fred fetch failed: {type(exc).__name__}",
+                    )
+                    continue
+                statuses[series_id] = self._status(series_id, "missing", False, None, f"fred fetch failed: {type(exc).__name__}")
+                continue
+
+            if downloaded.empty:
+                if self.allow_stale_cache_on_failure and stale is not None and not stale.empty:
+                    histories[series_id] = stale
+                    statuses[series_id] = self._status(series_id, "cache_stale", True, self.cache.get_modified_at(cache_key, "csv"), "fred fetch returned no rows")
+                    continue
+                statuses[series_id] = self._status(series_id, "missing", False, None, "fred fetch returned no rows")
+                continue
+
+            histories[series_id] = downloaded
+            self.cache.save_csv(cache_key, downloaded)
+            statuses[series_id] = self._status(series_id, "live", True, fetched_at)
+        return PriceHistoryBatch(histories=histories, statuses=statuses)
+
+    def _download_series(self, series_id: str) -> pd.DataFrame:
+        url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={quote(series_id)}"
+        raw = pd.read_csv(url)
+        return self._normalize_download(series_id, raw)
+
+    def _normalize_download(self, series_id: str, frame: pd.DataFrame) -> pd.DataFrame:
+        if frame.empty:
+            return pd.DataFrame(columns=["open", "high", "low", "close", "adjusted_close", "volume"])
+        date_column = "observation_date" if "observation_date" in frame.columns else str(frame.columns[0])
+        value_column = series_id if series_id in frame.columns else str(frame.columns[-1])
+        dates = pd.to_datetime(frame[date_column], errors="coerce")
+        values = pd.to_numeric(frame[value_column].replace(".", pd.NA), errors="coerce")
+        close = pd.Series(values.to_numpy(), index=dates, name="close").dropna()
+        close = close.loc[close.index.notna()].sort_index()
+        if close.empty:
+            return pd.DataFrame(columns=["open", "high", "low", "close", "adjusted_close", "volume"])
+        result = pd.DataFrame(
+            {
+                "open": close,
+                "high": close,
+                "low": close,
+                "close": close,
+                "adjusted_close": close,
+                "volume": 0.0,
+            }
+        )
+        result.index.name = "date"
+        return result
+
+    def _cache_key(self, series_id: str) -> str:
+        return f"fred_{series_id}"
+
+    def _status(
+        self,
+        series_id: str,
+        source: str,
+        has_data: bool,
+        fetched_at: datetime | None,
+        note: str | None = None,
+    ) -> FetchStatus:
+        return FetchStatus(symbol=series_id, dataset="market_external", source=source, has_data=has_data, fetched_at=fetched_at, note=note)
+
 
 class YFinanceProfileDataProvider(ProfileDataProvider):
     """Profile provider backed by yfinance info payload with cache fallback."""

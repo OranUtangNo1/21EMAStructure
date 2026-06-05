@@ -16,7 +16,7 @@
 - Reads only precomputed indicator fields.
 - All conditions are combined with `AND`.
 - Intended as a deep pullback reclaim trigger scan for stocks that pierced the 21EMA low band intraday and recovered by close.
-- This scan replaces the broad legacy `21EMA scan` for the low-band defense pattern.
+- This is the current low-band 21EMA defense card exposed in Watchlist controls.
 
 ## Canonical Boolean Definition
 
@@ -53,4 +53,3 @@ None. `_scan_21ema_pattern_l` uses hard-coded thresholds only in v1.
 - `atr_21emaL_zone = (close - ema21_low) / atr`
 - `ema21_low = EMA(low, 21)`
 - `prev_high = high.shift(1)`
-

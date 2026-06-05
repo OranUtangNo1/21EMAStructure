@@ -15,7 +15,7 @@ from src.data.finviz_provider import (
     build_fundamental_batch_from_snapshot,
     build_profile_batch_from_snapshot,
 )
-from src.data.providers import YFinancePriceDataProvider
+from src.data.providers import FredSeriesProvider, YFinancePriceDataProvider
 
 
 def test_finviz_screener_provider_discovers_filtered_snapshot(monkeypatch) -> None:
@@ -100,7 +100,9 @@ def test_finviz_screener_provider_discovers_filtered_snapshot(monkeypatch) -> No
     result = provider.discover()
 
     assert list(result.snapshot["ticker"]) == ["NVDA", "IBM"]
-    assert result.snapshot.loc[result.snapshot["ticker"] == "NVDA", "earnings_date"].iloc[0] == date(2026, 4, 30)
+    nvda_earnings_date = result.snapshot.loc[result.snapshot["ticker"] == "NVDA", "earnings_date"].iloc[0]
+    assert nvda_earnings_date >= date.today()
+    assert (nvda_earnings_date.month, nvda_earnings_date.day) == (4, 30)
     assert result.snapshot.loc[result.snapshot["ticker"] == "IBM", "earnings_date"].iloc[0] >= date.today()
     assert result.snapshot.loc[result.snapshot["ticker"] == "NVDA", "eps_growth"].iloc[0] == 45.0
     assert result.metadata["provider"] == "finviz"
@@ -290,6 +292,31 @@ def test_yfinance_price_provider_suppresses_download_console_noise(tmp_path, mon
     assert captured.out == ""
     assert captured.err == ""
     assert result.statuses["AL"].source == "missing"
+
+
+def test_fred_series_provider_fetches_and_normalizes_series(tmp_path, monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_read_csv(url):
+        calls.append(str(url))
+        return pd.DataFrame(
+            {
+                "observation_date": ["2026-03-27", "2026-03-30", "2026-03-31"],
+                "BAMLH0A0HYM2": ["3.55", ".", "3.42"],
+            }
+        )
+
+    monkeypatch.setattr("src.data.providers.pd.read_csv", fake_read_csv)
+
+    provider = FredSeriesProvider(CacheLayer(tmp_path), series_ttl_hours=24, allow_stale_cache_on_failure=True)
+    result = provider.get_series(["BAMLH0A0HYM2"])
+
+    assert calls == ["https://fred.stlouisfed.org/graph/fredgraph.csv?id=BAMLH0A0HYM2"]
+    assert result.statuses["BAMLH0A0HYM2"].source == "live"
+    assert result.statuses["BAMLH0A0HYM2"].dataset == "market_external"
+    assert list(result.histories["BAMLH0A0HYM2"].columns) == ["open", "high", "low", "close", "adjusted_close", "volume"]
+    assert result.histories["BAMLH0A0HYM2"].loc[pd.Timestamp("2026-03-31"), "close"] == 3.42
+    assert pd.Timestamp("2026-03-30") not in result.histories["BAMLH0A0HYM2"].index
 
 
 def _raw_history(base_close: float, index: pd.DatetimeIndex) -> pd.DataFrame:

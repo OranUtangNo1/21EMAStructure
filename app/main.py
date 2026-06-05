@@ -4,6 +4,7 @@ import html
 import importlib
 import inspect
 import sys
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -21,12 +22,13 @@ from src.dashboard.effectiveness import sync_preset_effectiveness_logs
 from src.dashboard.watchlist import WatchlistViewModelBuilder
 from src.data.cache import CacheLayer
 from src.data.providers import YFinancePriceDataProvider
-from src.data.tracking_repository import read_detection_detail, read_preset_horizon_performance
+from src.data.tracking_repository import read_detection_detail, read_signal_entry_performance
 from src.pipeline import PlatformArtifacts, ResearchPlatform
 from src.scan.rules import DuplicateRuleConfig, ScanConfig, WatchlistPresetConfig
 from src.signals.rules import EntrySignalConfig
 from src.signals.runner import EntrySignalRunner
 from src.ui_preferences import UserPreferenceStore
+from src.utils import StartupTimer
 
 
 st.set_page_config(
@@ -194,8 +196,16 @@ div[data-testid="stDataFrame"], div[data-testid="stExpander"] { background:rgba(
 .oratek-priority-item-rs { color:#2d6cdf; font-size:.74rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase; margin-bottom:.18rem; }
 .oratek-priority-item-ticker { color:var(--text); font-size:.98rem; font-weight:800; }
 .oratek-market-panel { background:rgba(255,255,255,.95); border:1px solid var(--panel-border); border-radius:24px; box-shadow:0 18px 36px rgba(34,48,69,.06); padding:.92rem 1rem 1rem; margin-bottom:.85rem; }
-.oratek-market-panel-title { color:var(--text); font-size:.82rem; font-weight:800; text-transform:uppercase; letter-spacing:.08em; margin-bottom:.85rem; }
-.oratek-market-panel-title.centered { text-align:center; }
+.oratek-market-panel-title-row { position:relative; display:flex; justify-content:center; align-items:center; gap:.42rem; margin-bottom:.85rem; }
+.oratek-market-panel-title-text { color:var(--text); font-size:.82rem; font-weight:800; text-transform:uppercase; letter-spacing:.08em; line-height:1.2; }
+.oratek-market-help { position:relative; display:inline-flex; align-items:center; justify-content:center; }
+.oratek-market-help summary { width:1.35rem; height:1.35rem; border-radius:999px; border:1px solid #cfd9ea; background:#fbfcff; color:#53627a; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; font-size:.82rem; font-weight:900; line-height:1; list-style:none; user-select:none; }
+.oratek-market-help summary::-webkit-details-marker { display:none; }
+.oratek-market-help[open] summary, .oratek-market-help summary:hover { border-color:#2d6cdf; color:#2d6cdf; background:#f3f7ff; }
+.oratek-market-help-body { position:absolute; z-index:80; top:calc(100% + .55rem); left:50%; transform:translateX(-50%); width:min(34rem, 82vw); background:#fff; border:1px solid #dbe4f3; border-radius:16px; box-shadow:0 18px 42px rgba(34,48,69,.16); padding:.9rem 1rem; text-align:left; }
+.oratek-market-help-body::before { content:""; position:absolute; top:-7px; left:50%; transform:translateX(-50%) rotate(45deg); width:12px; height:12px; background:#fff; border-left:1px solid #dbe4f3; border-top:1px solid #dbe4f3; }
+.oratek-market-help-title { color:var(--text); font-size:.86rem; font-weight:800; margin-bottom:.4rem; }
+.oratek-market-help-copy { color:var(--muted); font-size:.83rem; line-height:1.62; margin:.42rem 0 0; }
 .oratek-market-copy-head { color:var(--text); font-size:.88rem; font-weight:800; margin-bottom:.35rem; }
 .oratek-market-copy { color:var(--muted); font-size:.84rem; line-height:1.55; }
 .oratek-market-score-chip { display:inline-flex; align-items:center; justify-content:center; gap:.45rem; padding:.62rem .95rem; border-radius:16px; margin:.45rem 0 .35rem; font-size:1rem; font-weight:800; min-width:136px; }
@@ -229,16 +239,21 @@ div[data-testid="stDataFrame"], div[data-testid="stExpander"] { background:rgba(
 .oratek-market-metric-card { background:#fbfcff; border:1px solid #e6edf9; border-radius:18px; padding:.76rem .68rem; text-align:center; min-height:142px; display:flex; flex-direction:column; justify-content:space-between; gap:.3rem; }
 .oratek-market-metric-name { color:var(--muted); font-size:.74rem; font-weight:800; text-transform:uppercase; letter-spacing:.05em; }
 .oratek-market-metric-value { color:var(--text); font-size:1.06rem; font-weight:800; margin:.18rem 0 0; }
-.oratek-market-metric-delta { display:grid; gap:.12rem; align-content:center; min-height:3.45rem; width:100%; }
+.oratek-market-metric-delta { display:grid; gap:.2rem; align-content:center; min-height:4.7rem; width:100%; }
 .oratek-market-metric-delta.empty { visibility:hidden; }
-.oratek-market-metric-delta-row { display:flex; justify-content:center; align-items:baseline; gap:.28rem; color:#7f8ca6; font-size:.64rem; font-weight:800; line-height:1.15; white-space:nowrap; }
-.oratek-market-metric-delta-period { min-width:2.35rem; text-align:right; text-transform:uppercase; }
-.oratek-market-metric-delta-value { min-width:3.35rem; text-align:left; font-variant-numeric:tabular-nums; }
+.oratek-market-metric-delta-row { display:flex; justify-content:center; align-items:baseline; gap:.35rem; color:#63718a; font-size:.74rem; font-weight:900; line-height:1.22; white-space:nowrap; border-radius:999px; padding:.18rem .38rem; }
+.oratek-market-metric-delta-row.positive { color:#167a53; background:rgba(33,164,111,.13); }
+.oratek-market-metric-delta-row.negative { color:#b93d3d; background:rgba(223,91,91,.13); }
+.oratek-market-metric-delta-row.neutral { color:#63718a; background:rgba(127,140,166,.13); }
+.oratek-market-metric-delta-period { min-width:2.55rem; text-align:right; text-transform:uppercase; }
+.oratek-market-metric-delta-value { min-width:3.65rem; text-align:left; font-variant-numeric:tabular-nums; }
 .oratek-market-pill { display:inline-flex; align-items:center; justify-content:center; border-radius:999px; padding:.34rem .65rem; font-size:.74rem; font-weight:800; }
 .oratek-market-pill.positive { background:rgba(33,164,111,.14); color:#21a46f; }
 .oratek-market-pill.negative { background:rgba(223,91,91,.14); color:#df5b5b; }
 .oratek-market-pill.neutral { background:rgba(127,140,166,.14); color:#7f8ca6; }
 .oratek-market-stage-head { margin:.28rem 0 .55rem; }
+.oratek-market-stage-head .oratek-market-panel-title-row { margin-bottom:.18rem; }
+.oratek-market-stage-head .oratek-market-panel-title-text { font-size:1rem; }
 .oratek-market-stage-title { color:var(--text); font-size:1rem; font-weight:800; text-align:center; }
 .oratek-market-stage-caption { color:var(--muted); font-size:.78rem; text-align:center; margin-top:.18rem; }
 .oratek-market-snapshot-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(205px, 1fr)); gap:.85rem; }
@@ -316,9 +331,17 @@ APP_PAGES: tuple[AppPageDefinition, ...] = (
 APP_PAGE_KEYS = tuple(page.key for page in APP_PAGES)
 APP_PAGE_LABELS = {page.key: page.label for page in APP_PAGES}
 DEFAULT_PAGE_KEY = APP_PAGES[0].key
-TRACKING_HORIZON_OPTIONS = (1, 5, 10, 20)
+TRACKING_HORIZON_OPTIONS = (1, 5, 10, 21)
+DEFAULT_TRACKING_HORIZON = 21
 TRACKING_MARKET_ENV_OPTIONS = ("bull", "neutral", "weak", "bear")
 TRACKING_BENCHMARK_OPTIONS = ("SPY", "QQQ", "IWM")
+ENTRY_SIGNAL_CONNECTION_CANDIDATES = (
+    {
+        "preset_name": "Fresh Stage 2 Breakout",
+        "target_signal": "accumulation_breakout_entry",
+        "target_label": "Accumulation Breakout Entry",
+    },
+)
 
 def inject_global_styles() -> None:
     st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
@@ -352,9 +375,9 @@ def _tone_class(value: object) -> str:
             return "negative"
         return "neutral"
     text = str(value).strip().lower()
-    if any(token in text for token in ["positive", "bull", "high", "above"]):
+    if any(token in text for token in ["positive", "bull", "high", "above", "strong"]):
         return "positive"
-    if any(token in text for token in ["negative", "bear", "low", "below"]):
+    if any(token in text for token in ["negative", "bear", "low", "below", "weak"]):
         return "negative"
     return "neutral"
 
@@ -552,6 +575,14 @@ def get_research_platform_class() -> type[ResearchPlatform]:
     return ResearchPlatform
 
 
+def _create_research_platform(config_path: str, startup_timer: StartupTimer | None = None) -> ResearchPlatform:
+    platform_class = get_research_platform_class()
+    signature = inspect.signature(platform_class)
+    if startup_timer is not None and "startup_timer" in signature.parameters:
+        return platform_class(config_path, startup_timer=startup_timer)
+    return platform_class(config_path)
+
+
 def load_artifacts(
     config_path: str,
     symbols: list[str],
@@ -560,20 +591,50 @@ def load_artifacts(
     force_recompute_from_cache: bool = False,
     *,
     prefer_saved_run: bool = True,
+    startup_timer: StartupTimer | None = None,
 ) -> PlatformArtifacts:
-    platform = get_research_platform_class()(config_path)
+    if startup_timer is not None:
+        startup_timer.mark(
+            "app.load_artifacts.start",
+            symbols=len(symbols),
+            prefer_saved_run=prefer_saved_run,
+            force_universe_refresh=force_universe_refresh,
+            force_price_refresh=force_price_refresh,
+            force_recompute_from_cache=force_recompute_from_cache,
+        )
+    with startup_timer.step("app.platform_init", config_path=config_path) if startup_timer is not None else nullcontext():
+        platform = _create_research_platform(config_path, startup_timer)
     if prefer_saved_run and not force_universe_refresh and not force_price_refresh and not force_recompute_from_cache:
-        saved = platform.load_latest_run_artifacts(
+        with startup_timer.step("app.saved_run_restore") if startup_timer is not None else nullcontext():
+            saved = platform.load_latest_run_artifacts(
+                symbols or None,
+                force_universe_refresh=force_universe_refresh,
+            )
+        if saved is not None:
+            if startup_timer is not None:
+                startup_timer.mark(
+                    "app.load_artifacts.ready",
+                    origin=saved.artifact_origin,
+                    resolved_symbols=len(saved.resolved_symbols),
+                    watchlist=len(saved.watchlist),
+                    scan_hits=len(saved.scan_hits),
+                )
+            return saved
+    with startup_timer.step("app.pipeline_run") if startup_timer is not None else nullcontext():
+        artifacts = platform.run(
             symbols or None,
             force_universe_refresh=force_universe_refresh,
+            force_price_refresh=force_price_refresh,
         )
-        if saved is not None:
-            return saved
-    return platform.run(
-        symbols or None,
-        force_universe_refresh=force_universe_refresh,
-        force_price_refresh=force_price_refresh,
-    )
+    if startup_timer is not None:
+        startup_timer.mark(
+            "app.load_artifacts.ready",
+            origin=artifacts.artifact_origin,
+            resolved_symbols=len(artifacts.resolved_symbols),
+            watchlist=len(artifacts.watchlist),
+            scan_hits=len(artifacts.scan_hits),
+        )
+    return artifacts
 
 
 def load_scan_config(config_path: str) -> ScanConfig:
@@ -2373,6 +2434,30 @@ def _breadth_label(value: float) -> str:
     return "Neutral"
 
 
+def _trend_breadth_label(value: float) -> str:
+    if value >= 70.0:
+        return "Strong"
+    if value < 50.0:
+        return "Weak"
+    return "Mixed"
+
+
+def _participation_label(value: float) -> str:
+    if value >= 60.0:
+        return "Strong"
+    if value < 50.0:
+        return "Weak"
+    return "Mixed"
+
+
+def _s2w_high_label(value: float) -> str:
+    if value >= 30.0:
+        return "Strong"
+    if value < 15.0:
+        return "Weak"
+    return "Mixed"
+
+
 def _performance_label(value: float) -> str:
     if value > 0:
         return "Positive"
@@ -2437,8 +2522,9 @@ def render_market_conditions_panel(result) -> None:
     arc_length = 282.743
     filled = arc_length * (score_pct / 100.0)
     remaining = max(arc_length - filled, 0.0)
+    title_html = _market_panel_title_html("Market Conditions")
     st.markdown(
-        f"<div class='oratek-market-panel'><div class='oratek-market-panel-title'>Market Conditions</div><div class='oratek-market-score-chip {tone}'>{html.escape(str(result.label))} {_format_market_number(result.score, 0)}</div><div class='oratek-market-gauge'><svg class='oratek-market-gauge-svg' viewBox='0 0 220 120' aria-hidden='true'><path class='oratek-market-gauge-track' d='M20 110 A90 90 0 0 1 200 110'></path><path class='oratek-market-gauge-value {tone}' d='M20 110 A90 90 0 0 1 200 110' style='--market-score-filled:{filled:.3f}; --market-score-remaining:{remaining:.3f};'></path><path class='oratek-market-gauge-inner' d='M49 110 A61 61 0 0 1 171 110'></path><path class='oratek-market-gauge-core' d='M67 110 A43 43 0 0 1 153 110 L153 110 L67 110 Z'></path></svg></div><div class='oratek-market-gauge-caption'>Composite score (0-100)</div></div>",
+        f"<div class='oratek-market-panel'>{title_html}<div class='oratek-market-score-chip {tone}'>{html.escape(str(result.label))} {_format_market_number(result.score, 0)}</div><div class='oratek-market-gauge'><svg class='oratek-market-gauge-svg' viewBox='0 0 220 120' aria-hidden='true'><path class='oratek-market-gauge-track' d='M20 110 A90 90 0 0 1 200 110'></path><path class='oratek-market-gauge-value {tone}' d='M20 110 A90 90 0 0 1 200 110' style='--market-score-filled:{filled:.3f}; --market-score-remaining:{remaining:.3f};'></path><path class='oratek-market-gauge-inner' d='M49 110 A61 61 0 0 1 171 110'></path><path class='oratek-market-gauge-core' d='M67 110 A43 43 0 0 1 153 110 L153 110 L67 110 Z'></path></svg></div><div class='oratek-market-gauge-caption'>Composite score (0-100)</div></div>",
         unsafe_allow_html=True,
     )
 
@@ -2456,13 +2542,100 @@ def render_market_history_stack(result) -> None:
         cards.append(
             f"<div class='oratek-market-mini-card'><div class='oratek-market-mini-head'><div><div class='oratek-market-mini-title'>{html.escape(title)}</div><div class='oratek-market-mini-state'>{html.escape(label or 'N/A')}</div></div><div class='oratek-market-mini-score {tone}'>{html.escape(_format_market_number(score, 1))}</div></div></div>"
         )
-    st.markdown("<div class='oratek-market-timeline-stack'>" + "".join(cards) + "</div>", unsafe_allow_html=True)
+    title_html = _market_panel_title_html("Score History")
+    st.markdown(
+        f"<div class='oratek-market-panel'>{title_html}<div class='oratek-market-timeline-stack'>{''.join(cards)}</div></div>",
+        unsafe_allow_html=True,
+    )
+
+
+MARKET_SECTION_HELP: dict[str, tuple[str, ...]] = {
+    "Market Conditions": (
+        "ブレッドス、参加率、ボラティリティ、安全資産選好、リスクオン度合いを合成した Market Score(0-100)と状態ラベルで、いまの市場環境を一目で確認します。",
+        "スコアが 80 以上で Bullish、60 以上で Positive、40 以上で Neutral、20 以上で Negative、20 未満で Bearish です。Positive / Bullish はロングオンリーの短中期スイング候補を通常通り確認しやすい環境、Neutral(40-60)は銘柄選別を強める局面、Negative / Bearish は新規ブレイクアウトの失敗率上昇に注意する局面として読みます。",
+    ),
+    "Score History": (
+        "Market Score の現在値と、1日前・1週間前・1か月前・3か月前を並べ、内部環境が改善しているか悪化しているかを確認します。",
+        "このカードは現在水準ではなく変化を読む場所です。スコアが上昇していればリスク環境の改善、低下していれば現在のラベルがまだ良く見えていても内部環境が悪化している可能性があります。現在値が Positive 以上でもスコアが連続して低下している場合は、新規ロングの選別を強めます。",
+    ),
+    "Breadth & Trend Metrics": (
+        "対象ユニバースのうち主要移動平均線を上回る銘柄の割合(SMA10 / 20 / 50 / 200)と、短期線が中長期線を上回るトレンド整合性を確認します。",
+        "SMA20 / SMA50 の Breadth は、70% 以上を強い参加、50% 未満を弱い参加として扱い、50-70% は中立から混在状態です。現在値がまず判断の軸ですが、1W / 1M の変化が悪化している場合は、現在値が中立以上でも新規ロングの選別を強めます。",
+    ),
+    "Participation Momentum": (
+        "1週間・1か月・3か月・1年・年初来でプラスの銘柄割合を確認し、上昇が一部銘柄だけか市場全体に広がっているかを見ます。",
+        "1M / 3M のプラス銘柄比率が 60% 以上なら参加が広がっている状態、50% 未満なら参加が弱い状態として注意します。ただし Participation は Breadth よりも時系列変化を重視し、1W / 1M の急低下をブレイクアウト候補の失敗率上昇シグナルとして扱います。",
+    ),
+    "Performance Overview": (
+        "主要ベンチマークの年初来・1週・1か月・1年のパフォーマンスを確認します。",
+        "指数が強くても、Breadth や Participation が伴わない場合は一部大型株だけの上昇である可能性があります。指数の強さと市場内部の強さが一致しているときに、ロング候補を確認しやすい環境と判断します。",
+    ),
+    "High, VIX & Safe Haven": (
+        "短期高値参加率、VIX、SPY と TLT の関係から、現在のリスク選好とストレス状態を確認します。",
+        "短期高値参加率は 30% 以上で活性、15% 未満で弱いと見ます。VIX は 17 付近が中立で、25 を超えると警戒、30 を超えるとストレス局面です。Safe Haven は SPY と TLT の20日リターン差で見て、SPY が優位(差がプラス)ならリスクオン寄り、TLT が優位ならリスクオフ寄りです。高値参加が広く、VIX が低水準で、SPY が TLT に対して優位なときがリスクオン環境です。",
+    ),
+    "Risk-On Ratio IWO/IWN": (
+        "IWO / IWN の比率で、グロース・小型成長株がバリュー株に対して優位かを確認します。",
+        "現在比率が 20 / 50 / 200 日移動平均の何本を上回っているか(Above MA Count = n / 3)と、756日高値からの距離で読みます。3 本すべてを上回り高値に近いほどグロース・小型成長へのリスク許容度が高い状態、上回る本数が少ないほどリスクオフ寄りです。指数が強くてもこの比率が弱い場合、成長株系の候補は選別を強めます。",
+    ),
+    "Core": (
+        "主要指数、サイズ別、均等加重、セクター ETF の現在状態(価格、日次変化、出来高、21EMA 位置)を一覧で確認します。",
+        "複数の Core ETF が 21EMA High を上回り出来高も健全であれば、ロング候補を確認しやすい環境です。均等加重(RSP / QQQE)や小型株(IWM / IJR)が 21EMA を割っている場合、指数上昇が狭い主導株に偏っている可能性として読みます。",
+    ),
+    "Sector Rotation / Sector RS": (
+        "各セクター ETF が S&P 500 に対してどれだけ優位か(REL 1W / 1M / 3M)と、相対順位の変化(RANK DELTA 1W / 1M)を確認します。",
+        "REL 1M が強く RANK DELTA 1W / 1M が改善しているセクターは資金流入が続いている可能性が高く、関連する Watchlist 候補の優先度を上げます。逆に相対劣後や順位低下が続くセクターは、個別形状が良くても選別を強めます。",
+    ),
+    "Factors vs SP500": (
+        "グロース、バリュー、モメンタム、大型・中型・小型などの factor ETF が S&P 500 に対して優位か劣後しているかを確認します。",
+        "いまどの属性に資金が向かっているかを把握し、Watchlist 候補の属性と市場で優位なファクターが一致しているほど、候補の質を高く見ます。",
+    ),
+    "Style Pair Summary": (
+        "グロース対バリュー、モメンタム対市場、小型対大型など、資金がどのスタイルへ偏っているかを pair ratio で確認します。",
+        "比率の 1M / 3M が上昇し、移動平均を上回る数が多いほど、そのスタイルへの資金流入が強い状態です。Watchlist 候補の属性と強いスタイルが一致する場合、候補の優先度を上げます。",
+    ),
+    "Defensive / Cyclical Summary": (
+        "ディフェンシブセクター(XLP / XLU / XLV)に対して、景気敏感・グロース系セクター(XLC / XLE / XLF / XLI / XLK / XLY)が優位かを確認します。",
+        "Cyclical / Growth 側が優位ならリスクオン、Defensive 側が優位ならリスクオフ寄りです。短中期ロングでは、リスクオン優位のときにブレイクアウトや押し目再開候補の信頼度を高く見ます。",
+    ),
+    "Leadership": (
+        "半導体、ソフトウェア、テーマ業種など、主導業種に近いリーダー ETF が市場を確認しているかを見ます。",
+        "Leadership が強い(21EMA を維持し高値圏にある)場合、関連業種の Watchlist 候補は追い風を受けやすくなります。Leadership が弱い場合、指数が上昇していても攻めすぎない判断材料にします。",
+    ),
+    "External": (
+        "米国外、グローバル、中国関連(EEM / FXI / KWEB)など、外部市場のリスク選好を確認します。",
+        "米国個別株の判断を直接上書きするものではありませんが、外部市場が大きく悪化している場合は、市場全体のリスク許容度低下として扱います。",
+    ),
+}
+
+
+def _market_section_help_html(title: str) -> str:
+    paragraphs = MARKET_SECTION_HELP.get(title)
+    if not paragraphs:
+        return ""
+    copy_html = "".join(f"<p class='oratek-market-help-copy'>{html.escape(paragraph)}</p>" for paragraph in paragraphs)
+    return (
+        "<details class='oratek-market-help'>"
+        f"<summary aria-label='{html.escape(title)} の説明'>?</summary>"
+        f"<div class='oratek-market-help-body'><div class='oratek-market-help-title'>{html.escape(title)}</div>{copy_html}</div>"
+        "</details>"
+    )
+
+
+def _market_panel_title_html(title: str) -> str:
+    return (
+        "<div class='oratek-market-panel-title-row'>"
+        f"<div class='oratek-market-panel-title-text'>{html.escape(title)}</div>"
+        f"{_market_section_help_html(title)}"
+        "</div>"
+    )
 
 
 def render_market_metric_panel(title: str, items: list[tuple[str, ...]], columns: int, empty_text: str) -> None:
+    title_html = _market_panel_title_html(title)
     if not items:
         st.markdown(
-            f"<div class='oratek-market-panel'><div class='oratek-market-panel-title centered'>{html.escape(title)}</div><div class='oratek-empty-state'>{html.escape(empty_text)}</div></div>",
+            f"<div class='oratek-market-panel'>{title_html}<div class='oratek-empty-state'>{html.escape(empty_text)}</div></div>",
             unsafe_allow_html=True,
         )
         return
@@ -2475,7 +2648,7 @@ def render_market_metric_panel(title: str, items: list[tuple[str, ...]], columns
             f"<div class='oratek-market-metric-card'><div class='oratek-market-metric-name'>{html.escape(name)}</div><div class='oratek-market-metric-value'>{html.escape(value)}</div>{delta_html}<div class='oratek-market-pill {html.escape(tone)}'>{html.escape(status)}</div></div>"
         )
     st.markdown(
-        f"<div class='oratek-market-panel'><div class='oratek-market-panel-title centered'>{html.escape(title)}</div><div class='oratek-market-metric-grid cols-{columns}'>{''.join(cards)}</div></div>",
+        f"<div class='oratek-market-panel'>{title_html}<div class='oratek-market-metric-grid cols-{columns}'>{''.join(cards)}</div></div>",
         unsafe_allow_html=True,
     )
 
@@ -2490,8 +2663,9 @@ def _market_metric_delta_html(delta: str) -> str:
         period, _, value = part.partition(" ")
         if not period or not value:
             continue
+        tone = _tone_class(value)
         rows.append(
-            "<div class='oratek-market-metric-delta-row'>"
+            f"<div class='oratek-market-metric-delta-row {tone}'>"
             f"<span class='oratek-market-metric-delta-period'>Δ {html.escape(period)}</span>"
             f"<span class='oratek-market-metric-delta-value'>{html.escape(value)}</span>"
             "</div>"
@@ -2526,11 +2700,11 @@ def _risk_ratio_ma_label(above_count: float | None, total_count: float | None) -
     return "Neutral"
 
 
-def _metric_delta_text(result, key: str, decimals: int = 1, unit: str = "pp") -> str:
+def _metric_delta_text(result, key: str, decimals: int = 1, unit: str = "pt") -> str:
     deltas = getattr(result, "metric_deltas", {}) or {}
     values = deltas.get(key, {})
     parts = []
-    for period in ("1D", "1W", "1M"):
+    for period in ("1D", "1W", "2W", "1M"):
         value = values.get(period)
         if value is None or pd.isna(value):
             continue
@@ -2550,7 +2724,7 @@ def _market_metric_items(result) -> tuple[list[tuple[str, ...]], list[tuple[str,
     breadth_items = []
     for key, label in breadth_keys:
         value = result.breadth_summary.get(key)
-        status = _breadth_label(float(value)) if value is not None and not pd.isna(value) else "Neutral"
+        status = _trend_breadth_label(float(value)) if value is not None and not pd.isna(value) else "Mixed"
         breadth_items.append((label, _format_market_percent(value, signed=False, decimals=2), status, _tone_class(status), _metric_delta_text(result, key)))
 
     participation_keys = (
@@ -2564,7 +2738,7 @@ def _market_metric_items(result) -> tuple[list[tuple[str, ...]], list[tuple[str,
     participation_summary = getattr(result, "participation_summary", {}) or {}
     for key, label in participation_keys:
         value = participation_summary.get(key)
-        status = _breadth_label(float(value)) if value is not None and not pd.isna(value) else "Neutral"
+        status = _participation_label(float(value)) if value is not None and not pd.isna(value) else "Mixed"
         participation_items.append((label, _format_market_percent(value, signed=False, decimals=2), status, _tone_class(status), _metric_delta_text(result, key)))
 
     performance_keys = ("% YTD", "% 1W", "% 1M", "% 1Y")
@@ -2575,7 +2749,7 @@ def _market_metric_items(result) -> tuple[list[tuple[str, ...]], list[tuple[str,
         performance_items.append((key, _format_market_percent(value, signed=True, decimals=2), status, _tone_class(status)))
 
     high_value = result.high_vix_summary.get("S2W HIGH %")
-    high_status = _breadth_label(float(high_value)) if high_value is not None and not pd.isna(high_value) else "Neutral"
+    high_status = _s2w_high_label(float(high_value)) if high_value is not None and not pd.isna(high_value) else "Mixed"
     vix_value = result.high_vix_summary.get("VIX")
     vix_status = _vix_label_from_score(result.component_scores.get("vix_score"))
     safe_haven_value = result.high_vix_summary.get("SAFE HAVEN %")
@@ -2650,6 +2824,13 @@ def render_market_factors_panel(frame: pd.DataFrame) -> None:
     st.markdown(f"<div class='oratek-market-factors-panel'><div class='oratek-market-factor-list'>{''.join(rows_html)}</div></div>", unsafe_allow_html=True)
 
 
+def render_market_stage_heading(title: str, caption: str) -> None:
+    st.markdown(
+        f"<div class='oratek-market-stage-head'>{_market_panel_title_html(title)}<div class='oratek-market-stage-caption'>{html.escape(caption)}</div></div>",
+        unsafe_allow_html=True,
+    )
+
+
 def render_market_dashboard(artifacts: PlatformArtifacts) -> None:
     result = artifacts.market_result
     updated_meta = f"Updated: {result.update_time.split('T')[-1]}" if result.update_time else "Updated: N/A"
@@ -2679,18 +2860,18 @@ def render_market_dashboard(artifacts: PlatformArtifacts) -> None:
 
     core_col, factor_col = st.columns([2.0, 1.0])
     with core_col:
-        st.markdown("<div class='oratek-market-stage-head'><div class='oratek-market-stage-title'>Core</div><div class='oratek-market-stage-caption'>Used for Market Score. Vol % vs 50D Avg.</div></div>", unsafe_allow_html=True)
+        render_market_stage_heading("Core", "Used for Market Score. Vol % vs 50D Avg.")
         render_market_snapshot_panel(result.market_snapshot)
     with factor_col:
-        st.markdown("<div class='oratek-market-stage-head'><div class='oratek-market-stage-title'>Factors vs SP500</div><div class='oratek-market-stage-caption'>Factors-only universe. Relative performance vs S&P 500 (1W, 1M, 1Y).</div></div>", unsafe_allow_html=True)
+        render_market_stage_heading("Factors vs SP500", "Factors-only universe. Relative performance vs S&P 500 (1W, 1M, 1Y).")
         render_market_factors_panel(result.factors_vs_sp500)
 
     leadership_col, external_col = st.columns([1.0, 1.0])
     with leadership_col:
-        st.markdown("<div class='oratek-market-stage-head'><div class='oratek-market-stage-title'>Leadership</div><div class='oratek-market-stage-caption'>Display-only leadership universe.</div></div>", unsafe_allow_html=True)
+        render_market_stage_heading("Leadership", "Display-only leadership universe.")
         render_market_snapshot_panel(result.leadership_snapshot)
     with external_col:
-        st.markdown("<div class='oratek-market-stage-head'><div class='oratek-market-stage-title'>External</div><div class='oratek-market-stage-caption'>Display-only external universe.</div></div>", unsafe_allow_html=True)
+        render_market_stage_heading("External", "Display-only external universe.")
         render_market_snapshot_panel(result.external_snapshot)
 
     render_data_health_table(artifacts)
@@ -2965,11 +3146,31 @@ def _tracking_value_until_horizon(row: pd.Series, column_name: str, horizon: int
     return formatter(row.get(column_name))
 
 
+def _classify_preset_tier(row: pd.Series, *, min_detection_count: int = 30) -> str:
+    detection_count = _coerce_number(row.get("detection_count")) or 0.0
+    avg_return = _coerce_number(row.get("avg_return_pct"))
+    excess_return = _coerce_number(row.get("excess_avg_pct"))
+    win_rate = _coerce_number(row.get("win_rate"))
+    if detection_count < min_detection_count:
+        return "Observing"
+    if excess_return is None or avg_return is None or win_rate is None:
+        return "Needs Data"
+    if excess_return > 0 and avg_return > 0 and win_rate >= 0.55:
+        return "Core"
+    if excess_return > 0 and avg_return > 0:
+        return "Candidate"
+    if excess_return < 0 and avg_return < 0:
+        return "Downgrade Review"
+    return "Mixed"
+
+
 def _build_tracking_ranking_display(ranking: pd.DataFrame) -> pd.DataFrame:
     if ranking.empty:
         return pd.DataFrame()
+    tier = ranking.apply(_classify_preset_tier, axis=1)
     return pd.DataFrame(
         {
+            "Tier": tier,
             "Preset": ranking["preset_name"].astype(str),
             "Market": ranking["market_env"].astype(str),
             "Avg Return (%)": ranking["avg_return_pct"].map(_format_tracking_percent),
@@ -2978,6 +3179,128 @@ def _build_tracking_ranking_display(ranking: pd.DataFrame) -> pd.DataFrame:
             "Min Return (%)": ranking["min_return_pct"].map(_format_tracking_percent),
             "Win Rate (%)": ranking["win_rate"].map(_format_tracking_win_rate),
             "Detections": ranking["detection_count"].map(_format_tracking_count),
+        }
+    )
+
+
+def _entry_signal_connection_status(
+    *,
+    preset_name: str,
+    target_signal: str,
+    signal_config: EntrySignalConfig,
+) -> str:
+    definitions = signal_config.resolved_definitions()
+    target_definition = definitions.get(target_signal)
+    if target_definition is not None and preset_name in target_definition.pool.preset_sources:
+        return "Connected"
+    connected_signals = [
+        definition.display_name
+        for definition in definitions.values()
+        if preset_name in definition.pool.preset_sources
+    ]
+    if connected_signals:
+        return "Connected Elsewhere"
+    return "Measurement Only"
+
+
+def _classify_entry_signal_connection_decision(row: pd.Series, *, connection_status: str) -> str:
+    if connection_status == "Connected":
+        return "Already Connected"
+    if connection_status == "Connected Elsewhere":
+        return "Review Existing Route"
+    tier = str(row.get("connection_tier", "")).strip()
+    if tier in {"Core", "Candidate"}:
+        return "Connection Candidate"
+    if tier == "Downgrade Review":
+        return "Do Not Connect"
+    if tier == "Needs Data":
+        return "Needs Data"
+    return "Keep Measuring"
+
+
+def _build_entry_signal_connection_candidate_display(
+    ranking: pd.DataFrame,
+    signal_config: EntrySignalConfig,
+    *,
+    horizon_days: int,
+    benchmark_ticker: str,
+) -> pd.DataFrame:
+    if ranking.empty:
+        return pd.DataFrame()
+    rows: list[dict[str, object]] = []
+    for candidate in ENTRY_SIGNAL_CONNECTION_CANDIDATES:
+        preset_name = str(candidate["preset_name"])
+        target_signal = str(candidate["target_signal"])
+        target_label = str(candidate["target_label"])
+        connection_status = _entry_signal_connection_status(
+            preset_name=preset_name,
+            target_signal=target_signal,
+            signal_config=signal_config,
+        )
+        candidate_rows = ranking.loc[ranking["preset_name"].astype(str) == preset_name].copy()
+        if candidate_rows.empty:
+            continue
+        candidate_rows["connection_tier"] = candidate_rows.apply(_classify_preset_tier, axis=1)
+        for _, row in candidate_rows.iterrows():
+            rows.append(
+                {
+                    "Decision": _classify_entry_signal_connection_decision(row, connection_status=connection_status),
+                    "Connection Status": connection_status,
+                    "Preset": preset_name,
+                    "Target Signal": target_label,
+                    "Tier": row.get("connection_tier"),
+                    "Market": row.get("market_env"),
+                    f"Avg {horizon_days}D Return (%)": _format_tracking_percent(row.get("avg_return_pct")),
+                    f"Excess vs {benchmark_ticker} (%)": _format_tracking_percent(row.get("excess_avg_pct")),
+                    "Win Rate (%)": _format_tracking_win_rate(row.get("win_rate")),
+                    "Detections": _format_tracking_count(row.get("detection_count")),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _format_signal_name(value: object) -> str:
+    text = str(value).strip()
+    if not text:
+        return ""
+    return text.replace("_", " ").title()
+
+
+def _classify_signal_performance_tier(row: pd.Series, *, min_event_count: int = 30) -> str:
+    event_count = _coerce_number(row.get("event_count")) or 0.0
+    avg_outcome_r = _coerce_number(row.get("avg_outcome_r"))
+    avg_return = _coerce_number(row.get("avg_return_21d"))
+    if event_count < min_event_count:
+        return "Observing"
+    if avg_outcome_r is None or avg_return is None:
+        return "Needs Data"
+    if avg_outcome_r > 0 and avg_return > 0:
+        return "Positive"
+    if avg_outcome_r < 0 and avg_return < 0:
+        return "Downgrade Review"
+    return "Mixed"
+
+
+def _build_signal_entry_performance_display(performance: pd.DataFrame) -> pd.DataFrame:
+    if performance.empty:
+        return pd.DataFrame()
+    working = performance.copy()
+    working["performance_tier"] = working.apply(_classify_signal_performance_tier, axis=1)
+    return pd.DataFrame(
+        {
+            "Tier": working["performance_tier"],
+            "Action": working["action_bucket"].astype(str),
+            "Signal": working["signal_name"].map(_format_signal_name),
+            "Market": working["market_env"].astype(str),
+            "Avg 21D Return (%)": working["avg_return_21d"].map(_format_tracking_percent),
+            "21D Win Rate (%)": working["win_rate_21d"].map(_format_tracking_win_rate),
+            "Avg R": working["avg_outcome_r"].map(_format_tracking_metric),
+            "TP1 Rate (%)": working["tp1_rate"].map(_format_tracking_win_rate),
+            "SL Rate (%)": working["sl_rate"].map(_format_tracking_win_rate),
+            "Avg MFE 21D (%)": working["avg_max_gain_21d"].map(_format_tracking_percent),
+            "Avg MAE 21D (%)": working["avg_max_drawdown_21d"].map(_format_tracking_percent),
+            "Events": working["event_count"].map(_format_tracking_count),
+            "Tickers": working["ticker_count"].map(_format_tracking_count),
         }
     )
 
@@ -3092,9 +3415,9 @@ def render_analysis() -> None:
     if not persisted_presets:
         persisted_presets = list(preset_universe)
 
-    persisted_horizon = st.session_state.get(selected_horizon_state_key, TRACKING_HORIZON_OPTIONS[0])
+    persisted_horizon = st.session_state.get(selected_horizon_state_key, DEFAULT_TRACKING_HORIZON)
     if persisted_horizon not in TRACKING_HORIZON_OPTIONS:
-        persisted_horizon = TRACKING_HORIZON_OPTIONS[0]
+        persisted_horizon = DEFAULT_TRACKING_HORIZON
 
     default_date_range: tuple[object, object] | tuple[()] = ()
     if not valid_dates.empty:
@@ -3284,6 +3607,55 @@ def render_analysis() -> None:
             hide_index=True,
             height=min(620, 110 + max(1, len(ranking)) * 32),
         )
+        render_section_heading(
+            "EntrySignal Connection Candidates",
+            "Fresh Stage 2 Breakout remains measurement-only until selected-horizon expectancy supports connection.",
+        )
+        connection_display = _build_entry_signal_connection_candidate_display(
+            ranking,
+            load_entry_signal_config(config_path),
+            horizon_days=selected_horizon,
+            benchmark_ticker=selected_benchmark,
+        )
+        if connection_display.empty:
+            st.caption("No connection-candidate preset rows matched the selected scope.")
+        else:
+            st.caption(f"{len(connection_display):,} rows")
+            st.dataframe(
+                _style_tracking_excess_rows(connection_display, f"Excess vs {selected_benchmark} (%)"),
+                width="stretch",
+                hide_index=True,
+                height=min(360, 110 + max(1, len(connection_display)) * 32),
+            )
+
+    render_section_heading(
+        "Entry Ready Performance",
+        "Signal-level outcome summary from persisted Ready Now entry events.",
+    )
+    signal_performance = read_signal_entry_performance()
+    if not signal_performance.empty:
+        signal_performance = signal_performance.copy()
+        signal_performance["market_env"] = (
+            signal_performance["market_env"].astype(str).str.strip().str.lower().map(_normalize_tracking_market_env)
+        )
+        signal_performance = signal_performance.loc[signal_performance["action_bucket"].astype(str) == "Entry Ready"].copy()
+        if selected_market_envs:
+            signal_performance = signal_performance.loc[signal_performance["market_env"].isin(selected_market_envs)].copy()
+    if signal_performance.empty:
+        st.caption("No Entry Ready signal performance rows matched the selected market environment.")
+    else:
+        signal_performance = signal_performance.sort_values(
+            ["avg_outcome_r", "avg_return_21d", "event_count"],
+            ascending=[False, False, False],
+        ).reset_index(drop=True)
+        signal_display = _build_signal_entry_performance_display(signal_performance)
+        st.caption(f"{len(signal_display):,} rows")
+        st.dataframe(
+            _style_tracking_excess_rows(signal_display, "Avg R"),
+            width="stretch",
+            hide_index=True,
+            height=min(520, 110 + max(1, len(signal_display)) * 32),
+        )
 
     render_section_heading(
         "Detail",
@@ -3382,9 +3754,12 @@ def render_active_page(
 
 
 def main() -> None:
+    startup_timer = StartupTimer("streamlit_startup", ROOT / "data_runs" / "startup_timing.log")
+    startup_timer.mark("app.main.start")
     inject_global_styles()
     default_config = ROOT / "config" / "default.yaml"
     page_key = current_page_key()
+    startup_timer.mark("app.initial_context.ready", page=page_key)
     watchlist_state: WatchlistControlState | None = None
     signal_state: EntrySignalPageState | None = None
 
@@ -3403,41 +3778,53 @@ def main() -> None:
             help="Bypass same-day saved-run restore and rebuild local run artifacts from the current cache without forcing a live price refresh.",
         )
         refresh = st.button("Refresh data", type="secondary")
+    startup_timer.mark(
+        "app.run_options.rendered",
+        force_universe_refresh=force_universe_refresh,
+        force_price_refresh=force_price_refresh,
+        force_recompute_from_cache=force_recompute_from_cache,
+        refresh_clicked=refresh,
+    )
 
     cache_key = (config_path, tuple(symbols), force_universe_refresh, force_price_refresh, force_recompute_from_cache)
     if refresh or st.session_state.get("artifacts_key") != cache_key:
         with st.spinner("Loading screening artifacts..."):
-            artifacts = load_artifacts(
-                config_path,
-                symbols,
-                force_universe_refresh,
-                force_price_refresh,
-                force_recompute_from_cache,
-                prefer_saved_run=not refresh,
-            )
+            with startup_timer.step("app.load_artifacts.total"):
+                artifacts = load_artifacts(
+                    config_path,
+                    symbols,
+                    force_universe_refresh,
+                    force_price_refresh,
+                    force_recompute_from_cache,
+                    prefer_saved_run=not refresh,
+                    startup_timer=startup_timer,
+                )
             st.session_state["artifacts"] = artifacts
             if artifacts.artifact_origin == "pipeline_recomputed":
-                try:
-                    preset_export_dir = export_watchlist_preset_csvs(config_path, artifacts)
-                except Exception as exc:
-                    preset_export_dir = None
-                    st.session_state["preset_export_error"] = str(exc)
-                else:
-                    st.session_state["preset_export_error"] = ""
+                with startup_timer.step("app.preset_export"):
+                    try:
+                        preset_export_dir = export_watchlist_preset_csvs(config_path, artifacts)
+                    except Exception as exc:
+                        preset_export_dir = None
+                        st.session_state["preset_export_error"] = str(exc)
+                    else:
+                        st.session_state["preset_export_error"] = ""
                 st.session_state["preset_export_directory"] = str(preset_export_dir) if preset_export_dir is not None else ""
-                effectiveness_sync = sync_preset_effectiveness_logs(
-                    config_path,
-                    artifacts,
-                    register_detections=True,
-                )
+                with startup_timer.step("app.effectiveness_sync", origin=artifacts.artifact_origin):
+                    effectiveness_sync = sync_preset_effectiveness_logs(
+                        config_path,
+                        artifacts,
+                        register_detections=True,
+                    )
             else:
                 st.session_state["preset_export_directory"] = ""
                 st.session_state["preset_export_error"] = ""
-                effectiveness_sync = sync_preset_effectiveness_logs(
-                    config_path,
-                    artifacts,
-                    register_detections=True,
-                )
+                with startup_timer.step("app.effectiveness_sync", origin=artifacts.artifact_origin):
+                    effectiveness_sync = sync_preset_effectiveness_logs(
+                        config_path,
+                        artifacts,
+                        register_detections=True,
+                    )
             st.session_state["preset_effectiveness_directory"] = (
                 effectiveness_sync.tracking_db_path if effectiveness_sync is not None else ""
             )
@@ -3457,30 +3844,39 @@ def main() -> None:
                 if effectiveness_sync is not None
                 else {}
             )
-            entry_signal_config = load_entry_signal_config(config_path)
-            entry_signal_runner = EntrySignalRunner(
-                entry_signal_config,
-                load_scan_config(config_path),
-                config_path=config_path,
-            )
-            entry_signal_runner.sync_tracking(artifacts)
-            app_settings = load_settings(config_path).get("app", {})
-            entry_signal_export = entry_signal_runner.export_run_outputs(
-                artifacts,
-                list(entry_signal_config.startup_selected_signal_names()),
-                ROOT / str(app_settings.get("snapshot_dir", "data_runs")) / "entry_signals",
-            )
+            with startup_timer.step("app.entry_signal_sync_export"):
+                entry_signal_config = load_entry_signal_config(config_path)
+                entry_signal_runner = EntrySignalRunner(
+                    entry_signal_config,
+                    load_scan_config(config_path),
+                    config_path=config_path,
+                )
+                entry_signal_runner.sync_tracking(artifacts)
+                app_settings = load_settings(config_path).get("app", {})
+                entry_signal_export = entry_signal_runner.export_run_outputs(
+                    artifacts,
+                    list(entry_signal_config.startup_selected_signal_names()),
+                    ROOT / str(app_settings.get("snapshot_dir", "data_runs")) / "entry_signals",
+                )
             st.session_state["entry_signal_export_directory"] = entry_signal_export.output_dir
             st.session_state["entry_signal_export_count"] = entry_signal_export.evaluation_count
             st.session_state["artifacts_key"] = cache_key
+            startup_timer.mark(
+                "app.artifacts.session_state.saved",
+                origin=artifacts.artifact_origin,
+                watchlist=len(artifacts.watchlist),
+                scan_hits=len(artifacts.scan_hits),
+            )
 
     artifacts: PlatformArtifacts = st.session_state["artifacts"]
     page_key = render_page_tabs()
+    startup_timer.mark("app.page_tabs.rendered", page=page_key)
     render_context_strip([f"Data source: {artifacts.data_source_label}"])
     render_data_health_banner(artifacts)
     if page_key == "watchlist" and watchlist_state is None:
         with st.expander("Watchlist presets and controls", expanded=False):
-            watchlist_state = render_watchlist_controls(config_path)
+            with startup_timer.step("app.watchlist_controls"):
+                watchlist_state = render_watchlist_controls(config_path)
 
     if (
         page_key == "watchlist"
@@ -3515,12 +3911,22 @@ def main() -> None:
             st.caption("Exports the selected preset's duplicate tickers and each selected scan card's hit tickers.")
 
     if page_key == "entry_signals" and signal_state is None:
-        signal_state = EntrySignalPageState(
-            signal_config=load_entry_signal_config(config_path),
-            selected_signal_names=list(load_entry_signal_config(config_path).startup_selected_signal_names()),
-        )
+        with startup_timer.step("app.entry_signal_state"):
+            signal_config = load_entry_signal_config(config_path)
+            signal_state = EntrySignalPageState(
+                signal_config=signal_config,
+                selected_signal_names=list(signal_config.startup_selected_signal_names()),
+            )
 
-    render_active_page(page_key, config_path, artifacts, watchlist_state, signal_state)
+    with startup_timer.step("app.render_active_page", page=page_key):
+        render_active_page(page_key, config_path, artifacts, watchlist_state, signal_state)
+    startup_timer.mark(
+        "app.main.end",
+        page=page_key,
+        origin=artifacts.artifact_origin,
+        resolved_symbols=len(artifacts.resolved_symbols),
+        watchlist=len(artifacts.watchlist),
+    )
 
 
 if __name__ == "__main__":

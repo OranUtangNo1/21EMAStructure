@@ -9,7 +9,6 @@ from src.data.signal_tracking import ACTIVE_POOL_STATUS
 from src.signals.pool import SignalPoolEntry
 from src.signals.risk_plan_policy import (
     build_accumulation_breakout_risk_plan,
-    build_early_cycle_recovery_risk_plan,
     build_momentum_acceleration_risk_plan,
     build_orderly_pullback_risk_plan,
     build_power_gap_pullback_risk_plan,
@@ -128,7 +127,6 @@ def build_entry_plan(
         "orderly_pullback_entry",
         "momentum_acceleration_entry",
         "power_gap_pullback_entry",
-        "early_cycle_recovery_entry",
         "pullback_resumption_entry",
     }:
         if definition.signal_key == "momentum_acceleration_entry":
@@ -139,8 +137,6 @@ def build_entry_plan(
             risk_plan = build_orderly_pullback_risk_plan(row, pool_entry, definition)
         elif definition.signal_key == "power_gap_pullback_entry":
             risk_plan = build_power_gap_pullback_risk_plan(row, pool_entry, definition)
-        elif definition.signal_key == "early_cycle_recovery_entry":
-            risk_plan = build_early_cycle_recovery_risk_plan(row, pool_entry, definition)
         else:
             risk_plan = build_pullback_resumption_risk_plan(row, pool_entry, definition)
         sl_candidates = risk_plan.sl_candidates
@@ -272,8 +268,6 @@ def build_entry_plan(
         sl_safety = "Orderly pullback policy: pullback low buffer; max risk 1.8 ATR; 21EMA fallback"
     elif definition.signal_key == "power_gap_pullback_entry":
         sl_safety = "Power gap policy: pullback/21EMA-low support buffer; max risk 2 ATR; gap low proxy fallback"
-    elif definition.signal_key == "early_cycle_recovery_entry":
-        sl_safety = "Early recovery policy: structure-pivot HL buffer; max risk 2.25 ATR; current low fallback"
     elif definition.signal_key == "pullback_resumption_entry":
         sl_safety = "Pullback policy: preset-specific support buffer; max risk 2.5 ATR; reclaim/defense quality check"
     else:
@@ -450,13 +444,6 @@ def _sl_candidate_sources(
             ("low_since_detection", pool_entry.low_since_detection),
             ("snapshot_low", _to_float(pool_entry.snapshot_at_detection.get("low"))),
         ]
-    if signal_key == "early_cycle_recovery_entry":
-        return [
-            ("recovery_pivot_low", pool_entry.low_since_detection),
-            ("snapshot_low", _to_float(pool_entry.snapshot_at_detection.get("low"))),
-            ("sma50", _to_float(row.get("sma50"))),
-            ("sma200", _to_float(row.get("sma200"))),
-        ]
     return common + moving_support
 
 
@@ -489,13 +476,6 @@ def _tp1_candidate_sources(
             ("momentum_8pct", momentum_8pct, "target"),
             ("high_52w", _to_float(row.get("high_52w")), "resistance"),
             ("rolling_20d_close_high", _to_float(row.get("rolling_20d_close_high")), "resistance"),
-        ]
-    if signal_key == "early_cycle_recovery_entry":
-        return [
-            ("rr_2x", rr_2x, "target"),
-            ("rolling_20d_close_high", _to_float(row.get("rolling_20d_close_high")), "resistance"),
-            ("resistance_level_lookback", _to_float(row.get("resistance_level_lookback")), "resistance"),
-            ("high_52w", _to_float(row.get("high_52w")), "resistance"),
         ]
     if signal_key == "pullback_resumption_entry":
         return structural + [("rr_2x", rr_2x, "target")]
@@ -659,8 +639,6 @@ def _trigger_condition(signal_key: str, plan_type: str) -> str:
         return "Wait for breakout/follow-through confirmation with volume"
     if signal_key in {"orderly_pullback_entry", "pullback_resumption_entry", "power_gap_pullback_entry"}:
         return "Wait for pullback reversal or reclaim confirmation"
-    if signal_key == "early_cycle_recovery_entry":
-        return "Wait for recovery reclaim to hold and reversal confirmation"
     return "Wait for signal-specific trigger confirmation"
 
 

@@ -8,8 +8,14 @@ from src.dashboard.market import MarketConditionConfig, MarketConditionScorer
 from src.indicators.core import IndicatorCalculator, IndicatorConfig
 
 
-def _make_history(values: list[float], dates: pd.DatetimeIndex, volume_scale: float = 1_000_000) -> pd.DataFrame:
+def _make_history(
+    values: list[float],
+    dates: pd.DatetimeIndex,
+    volume_scale: float = 1_000_000,
+    volumes: list[float] | None = None,
+) -> pd.DataFrame:
     close = pd.Series(values, index=dates, dtype=float)
+    volume_values = volumes if volumes is not None else np.linspace(volume_scale, volume_scale * 1.5, len(close))
     return pd.DataFrame(
         {
             "open": close * 0.995,
@@ -17,7 +23,7 @@ def _make_history(values: list[float], dates: pd.DatetimeIndex, volume_scale: fl
             "low": close * 0.99,
             "close": close,
             "adjusted_close": close,
-            "volume": np.linspace(volume_scale, volume_scale * 1.5, len(close)),
+            "volume": volume_values,
         },
         index=dates,
     )
@@ -34,15 +40,24 @@ def test_market_dashboard_result_contains_expanded_sections() -> None:
         "LDR": _make_history([120.0 - (i * 0.08) for i in range(320)], dates),
         "EXT": _make_history([60.0 - (i * 0.05) for i in range(320)], dates),
         "^VIX": _make_history([18.0 - (i * 0.01) for i in range(320)], dates, volume_scale=100_000),
+        "^VIX9D": _make_history([17.0 - (i * 0.012) for i in range(320)], dates, volume_scale=100_000),
+        "^VIX3M": _make_history([20.0 - (i * 0.005) for i in range(320)], dates, volume_scale=100_000),
         "FFF": _make_history([70.0 + (i * 0.18) for i in range(320)], dates),
         "IWO": _make_history([95.0 + (i * 0.24) for i in range(320)], dates),
         "IWN": _make_history([92.0 + (i * 0.08) for i in range(320)], dates),
+        "HYG": _make_history([74.0 + (i * 0.04) for i in range(320)], dates),
+        "LQD": _make_history([108.0 + (i * 0.01) for i in range(320)], dates),
+        "IEF": _make_history([96.0 - (i * 0.005) for i in range(320)], dates),
+        "BAMLH0A0HYM2": _make_history([4.2 - (i * 0.002) for i in range(320)], dates, volume_scale=0),
+        "SPY": _make_history([100.0 + (i * 0.12) for i in range(320)], dates),
+        "QQQ": _make_history([110.0 + (i * 0.14) for i in range(320)], dates),
     }
     market_histories = {ticker: calculator.calculate(history) for ticker, history in market_raw.items()}
     benchmark_history = calculator.calculate(benchmark_raw)
     stock_histories = {
         "NVDA": calculator.calculate(_make_history([50.0 + (i * 0.30) for i in range(320)], dates)),
         "META": calculator.calculate(_make_history([60.0 + (i * 0.22) for i in range(320)], dates)),
+        "LAG": calculator.calculate(_make_history([120.0 - (i * 0.12) for i in range(320)], dates)),
     }
 
     config = MarketConditionConfig.from_dict(
@@ -85,6 +100,20 @@ def test_market_dashboard_result_contains_expanded_sections() -> None:
     assert "pct_above_sma10" in result.component_scores
     assert "safe_haven_score" in result.component_scores
     assert "pct_above_sma200" in result.breadth_summary
+    assert result.breadth_momentum_summary["A20"] == pytest.approx(result.breadth_summary["pct_above_sma20"])
+    assert "A20 DELTA 10D" in result.breadth_momentum_summary
+    assert result.breadth_momentum_summary["A20 MOMENTUM FLAG"] in {-1.0, 0.0, 1.0}
+    assert result.breadth_internal_summary["UNIVERSE COUNT"] == pytest.approx(3.0)
+    assert result.breadth_internal_summary["ADVANCERS"] == pytest.approx(2.0)
+    assert result.breadth_internal_summary["DECLINERS"] == pytest.approx(1.0)
+    assert result.breadth_internal_summary["ADVANCE DECLINE NET"] == pytest.approx(1.0)
+    assert result.breadth_internal_summary["NEW HIGH 52W COUNT"] == pytest.approx(2.0)
+    assert result.breadth_internal_summary["NEW LOW 52W COUNT"] == pytest.approx(1.0)
+    assert result.breadth_internal_summary["NET NEW HIGH LOW"] == pytest.approx(1.0)
+    assert result.breadth_internal_summary["STAGE2 %"] >= 0.0
+    assert "MCCLELLAN OSCILLATOR" in result.breadth_internal_summary
+    assert "ZWEIG BREADTH THRUST" in result.breadth_internal_summary
+    assert "1W" in result.metric_deltas["breadth_internal:AD LINE"]
     assert "pct_positive_1m" in result.participation_summary
     assert "1D" in result.metric_deltas["pct_above_sma20"]
     assert "1W" in result.metric_deltas["VIX"]
@@ -95,6 +124,20 @@ def test_market_dashboard_result_contains_expanded_sections() -> None:
     assert result.risk_on_ratio_summary["REL 1M %"] > 0.0
     assert result.risk_on_ratio_summary["ABOVE MA COUNT"] == pytest.approx(3.0)
     assert result.risk_on_ratio_summary["MA COUNT"] == pytest.approx(3.0)
+    assert result.volatility_term_structure["RATIO"] < 1.0
+    assert result.volatility_term_structure["INVERSION FLAG"] == pytest.approx(0.0)
+    assert result.volatility_term_structure["VIX9D/VIX RATIO"] < 1.0
+    assert result.volatility_term_structure["FRONT INVERSION FLAG"] == pytest.approx(0.0)
+    assert result.volatility_term_structure["FULL BACKWARDATION FLAG"] == pytest.approx(0.0)
+    assert result.credit_risk_proxy["HYG/LQD REL 1M %"] > 0.0
+    assert result.credit_risk_proxy["HYG/IEF REL 1M %"] > 0.0
+    assert result.credit_risk_proxy["HY OAS"] < 4.2
+    assert result.credit_risk_proxy["HY OAS DELTA 5D BPS"] < 0.0
+    assert result.credit_risk_proxy["CREDIT RISK-OFF FLAG"] == pytest.approx(0.0)
+    assert "SPY RALLY ATTEMPT DAY" in result.index_state_summary
+    assert "QQQ DISTRIBUTION DAY COUNT" in result.index_state_summary
+    assert result.drawdown_summary["SPY DD 252D %"] == pytest.approx(0.0)
+    assert result.drawdown_summary["SPY T_DD"] == pytest.approx(0.0)
     assert not result.market_snapshot.empty
     assert list(result.market_snapshot["TICKER"]) == ["AAA", "BBB"]
     assert not result.leadership_snapshot.empty
@@ -166,6 +209,105 @@ def test_market_dashboard_required_symbols_include_risk_on_ratio_pair() -> None:
 
     assert "IWO" in required_symbols
     assert "IWN" in required_symbols
+    assert "^VIX9D" in required_symbols
+    assert "^VIX3M" in required_symbols
+    assert "HYG" in required_symbols
+    assert "LQD" in required_symbols
+    assert "IEF" in required_symbols
+    assert "SPY" in required_symbols
+    assert "QQQ" in required_symbols
+    assert MarketConditionScorer(config).required_fred_series() == ["BAMLH0A0HYM2"]
+
+
+def test_market_dashboard_index_state_detects_ftd_and_distribution_days() -> None:
+    dates = pd.date_range("2026-01-01", periods=30, freq="B")
+    calculator = IndicatorCalculator(IndicatorConfig())
+    close_values = [
+        100.0,
+        98.0,
+        96.0,
+        94.0,
+        90.0,
+        90.5,
+        91.0,
+        92.0,
+        94.0,
+        94.5,
+        95.0,
+        95.5,
+        96.0,
+        96.5,
+        97.0,
+        97.5,
+        98.0,
+        98.5,
+        99.0,
+        98.6,
+        99.2,
+        98.8,
+        99.4,
+        99.0,
+        99.6,
+        99.2,
+        99.8,
+        99.4,
+        100.0,
+        100.2,
+    ]
+    volumes = [
+        100,
+        95,
+        90,
+        85,
+        80,
+        82,
+        84,
+        86,
+        120,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        130,
+        110,
+        132,
+        112,
+        134,
+        114,
+        136,
+        116,
+        138,
+        118,
+        119,
+    ]
+    index_history = calculator.calculate(_make_history(close_values, dates, volumes=volumes))
+    config = MarketConditionConfig.from_dict(
+        {
+            "market_condition_etf_universe": [{"ticker": "SPY", "name": "S&P 500"}],
+                "index_state": {"symbols": ["SPY"], "rally_low_lookback": 30, "distribution_pressure_count": 5},
+        }
+    )
+
+    result = MarketConditionScorer(config).score(
+        {"AAA": index_history},
+        {
+            "SPY": index_history,
+            "^VIX": calculator.calculate(_make_history([15.0 for _ in range(30)], dates, volume_scale=100_000)),
+        },
+        index_history,
+    )
+
+    assert result.index_state_summary["SPY RALLY ATTEMPT DAY"] == pytest.approx(25.0)
+    assert result.index_state_summary["SPY FTD FLAG"] == pytest.approx(1.0)
+    assert result.index_state_summary["SPY FTD AGE DAYS"] == pytest.approx(21.0)
+    assert result.index_state_summary["SPY DISTRIBUTION DAY COUNT"] == pytest.approx(5.0)
+    assert result.index_state_summary["SPY UNDER PRESSURE FLAG"] == pytest.approx(1.0)
 
 
 def test_market_dashboard_vix_scoring_is_centered_around_neutral_level() -> None:

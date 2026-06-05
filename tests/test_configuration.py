@@ -76,24 +76,15 @@ def test_default_settings_include_builtin_watchlist_presets() -> None:
     presets = settings["scan"]["watchlist_presets"]
     preset_names = [preset["preset_name"] for preset in presets]
 
-    assert len(presets) == 18
+    assert len(presets) == 9
     assert preset_names == [
-        "Leader Breakout",
-        "Orderly Pullback",
         "Reclaim Trigger",
         "Fresh Stage 2 Breakout",
-        "Momentum Surge",
-        "Early Cycle Recovery",
-        "Base Breakout",
         "Accumulation Breakout",
         "VCP 3T Breakout",
         "50SMA Defense",
         "Power Gap Pullback",
         "RS Breakout Setup",
-        "Trend Pullback",
-        "Resilient Leader",
-        "Early Recovery",
-        "Screening Thesis",
         "Pullback Trigger",
         "Momentum Ignition",
     ]
@@ -103,21 +94,9 @@ def test_default_watchlist_presets_use_expected_duplicate_rules() -> None:
     settings = load_settings()
     scan_config = ScanConfig.from_dict(settings["scan"])
     required_plus_optional_rules = {
-        "Leader Breakout": (("97 Club", "VCS 52 High"), ("RS Acceleration", "Three Weeks Tight")),
         "Reclaim Trigger": (("Reclaim scan",), ("Pocket Pivot",)),
-        "Momentum Surge": (("4% bullish", "Momentum 97"), ("PP Count", "Sustained Leadership")),
-        "Early Cycle Recovery": (("Trend Reversal Setup",), ("Pocket Pivot", "VCS 52 Low", "Volume Accumulation")),
-        "Base Breakout": (("VCS 52 High", "Pocket Pivot"), ("97 Club", "Three Weeks Tight")),
-        "Early Recovery": (("Trend Reversal Setup", "Structure Pivot"), ("VCS 52 Low", "Volume Accumulation")),
     }
     grouped_rules = {
-        "Orderly Pullback": (
-            (),
-            (
-                ("21EMA Trigger", ("21EMA Pattern H", "21EMA Pattern L"), 1),
-                ("Quality / Strength Confirmation", ("Pullback Quality scan", "RS Acceleration", "Volume Accumulation"), 1),
-            ),
-        ),
         "Accumulation Breakout": (
             ("VCS 52 High",),
             (
@@ -160,24 +139,6 @@ def test_default_watchlist_presets_use_expected_duplicate_rules() -> None:
                 ("Breakout Event", ("Pocket Pivot", "4% bullish", "PP Count"), 1),
             ),
         ),
-        "Trend Pullback": (
-            ("Reclaim scan",),
-            (
-                ("Pullback Evidence", ("Pullback Quality scan",), 1),
-                ("Strength Confirmation", ("RS Acceleration", "Volume Accumulation"), 1),
-            ),
-        ),
-        "Screening Thesis": (
-            ("Trend Reversal Setup",),
-            (
-                (
-                    "Structure Break",
-                    ("LL-HL Structure 1st Pivot", "LL-HL Structure 2nd Pivot", "LL-HL Structure Trend Line Break"),
-                    1,
-                ),
-                ("Demand Confirmation", ("Volume Accumulation", "Pocket Pivot"), 1),
-            ),
-        ),
         "Pullback Trigger": (
             ("Pullback Quality scan",),
             (
@@ -196,7 +157,7 @@ def test_default_watchlist_presets_use_expected_duplicate_rules() -> None:
 
     presets = {preset.preset_name: preset for preset in scan_config.watchlist_presets}
 
-    assert set(presets) == {*required_plus_optional_rules, *grouped_rules, "Resilient Leader"}
+    assert set(presets) == {*required_plus_optional_rules, *grouped_rules}
     for preset_name, (required_scans, optional_scans) in required_plus_optional_rules.items():
         preset = presets[preset_name]
         assert preset.duplicate_threshold == 1
@@ -214,12 +175,6 @@ def test_default_watchlist_presets_use_expected_duplicate_rules() -> None:
             optional_groups
         )
 
-    resilient = presets["Resilient Leader"]
-    assert resilient.duplicate_threshold == 2
-    assert resilient.duplicate_rule.mode == "min_count"
-    assert resilient.duplicate_rule.min_count == 2
-    assert resilient.selected_scan_names == ("Sustained Leadership", "Near 52W High")
-
 
 def test_default_watchlist_presets_do_not_reference_disabled_scans() -> None:
     settings = load_settings()
@@ -230,7 +185,7 @@ def test_default_watchlist_presets_do_not_reference_disabled_scans() -> None:
         if status == "disabled"
     }
 
-    assert {"Vol Up", "VCS"}.issubset(disabled_scans)
+    assert disabled_scans == set()
     for preset in scan_config.watchlist_presets:
         if preset.preset_status == "disabled":
             continue
@@ -254,9 +209,11 @@ def test_default_settings_include_annotation_and_entry_signal_status_maps() -> N
     assert annotation_status_map["Industry Leadership Gate"] == "enabled"
     assert signal_status_map["orderly_pullback_entry"] == "enabled"
     assert signal_status_map["pullback_resumption_entry"] == "enabled"
-    assert signal_status_map["early_cycle_recovery_entry"] == "disabled"
+    assert "early_cycle_recovery_entry" not in signal_status_map
     assert context_guard["enabled"] is True
     assert context_guard["weak_market_score_threshold"] == 30.0
     assert context_guard["signal_overrides"]["momentum_acceleration_entry"]["weak_market_score_threshold"] == 40.0
     assert "early_cycle_recovery_entry" not in context_guard["signal_overrides"]
     assert orderly_pool["preset_sources"] == ["Pullback Trigger"]
+    assert settings["market"]["market_report"]["regime"]["neutral_score_floor"] == 40.0
+    assert settings["market"]["market_report"]["regime"]["positive_score_floor"] == 60.0

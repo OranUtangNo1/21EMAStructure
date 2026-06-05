@@ -12,6 +12,10 @@ DETECTION_COLUMN_MIGRATIONS = {
     "close_at_5d": "REAL",
     "close_at_10d": "REAL",
     "close_at_20d": "REAL",
+    "close_at_21d": "REAL",
+    "return_21d": "REAL",
+    "max_gain_21d": "REAL",
+    "max_drawdown_21d": "REAL",
 }
 SIGNAL_POOL_ENTRY_COLUMN_MIGRATIONS = {
     "preset_sources": "TEXT NOT NULL DEFAULT '[]'",
@@ -70,6 +74,8 @@ SIGNAL_EVALUATION_COLUMN_MIGRATIONS = {
 }
 SIGNAL_ENTRY_EVENT_COLUMN_MIGRATIONS = {
     "source_evaluation_id": "INTEGER",
+    "action_bucket": "TEXT",
+    "market_env": "TEXT",
     "plan_type": "TEXT",
     "entry_price": "REAL",
     "entry_zone_low": "REAL",
@@ -85,10 +91,12 @@ SIGNAL_ENTRY_EVENT_COLUMN_MIGRATIONS = {
     "close_at_5d": "REAL",
     "close_at_10d": "REAL",
     "close_at_20d": "REAL",
+    "close_at_21d": "REAL",
     "return_1d": "REAL",
     "return_5d": "REAL",
     "return_10d": "REAL",
     "return_20d": "REAL",
+    "return_21d": "REAL",
     "hit_sl": "INTEGER",
     "hit_tp1": "INTEGER",
     "hit_sl_date": "TEXT",
@@ -99,6 +107,8 @@ SIGNAL_ENTRY_EVENT_COLUMN_MIGRATIONS = {
     "outcome_r": "REAL",
     "max_gain_20d": "REAL",
     "max_drawdown_20d": "REAL",
+    "max_gain_21d": "REAL",
+    "max_drawdown_21d": "REAL",
 }
 
 
@@ -148,6 +158,12 @@ def _ensure_tracking_columns(conn: sqlite3.Connection) -> None:
     _ensure_table_columns(conn, "signal_pool_entry", SIGNAL_POOL_ENTRY_COLUMN_MIGRATIONS)
     _ensure_table_columns(conn, "signal_evaluation", SIGNAL_EVALUATION_COLUMN_MIGRATIONS)
     _ensure_table_columns(conn, "signal_entry_event", SIGNAL_ENTRY_EVENT_COLUMN_MIGRATIONS)
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_signal_entry_event_grouping
+        ON signal_entry_event(action_bucket, signal_name, market_env, event_date)
+        """
+    )
     _deduplicate_signal_evaluations(conn)
     conn.execute(
         """

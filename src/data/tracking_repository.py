@@ -20,6 +20,7 @@ DETECTION_COLUMNS = [
     "close_at_5d",
     "close_at_10d",
     "close_at_20d",
+    "close_at_21d",
     "rs21_at_hit",
     "vcs_at_hit",
     "atr_at_hit",
@@ -29,8 +30,11 @@ DETECTION_COLUMNS = [
     "return_5d",
     "return_10d",
     "return_20d",
+    "return_21d",
     "max_gain_20d",
     "max_drawdown_20d",
+    "max_gain_21d",
+    "max_drawdown_21d",
     "closed_above_ema21_5d",
     "hit_new_high_20d",
     "entered",
@@ -47,10 +51,14 @@ PRESET_SUMMARY_COLUMNS = [
     "detection_count",
     "avg_return_5d",
     "avg_return_20d",
+    "avg_return_21d",
     "win_rate_5d",
     "win_rate_20d",
+    "win_rate_21d",
     "avg_max_gain",
     "avg_max_drawdown",
+    "avg_max_gain_21d",
+    "avg_max_drawdown_21d",
 ]
 SCAN_COMBO_PERFORMANCE_COLUMNS = [
     "preset_name",
@@ -58,8 +66,34 @@ SCAN_COMBO_PERFORMANCE_COLUMNS = [
     "detection_count",
     "avg_return_5d",
     "avg_return_20d",
+    "avg_return_21d",
     "win_rate_20d",
+    "win_rate_21d",
     "avg_max_drawdown",
+    "avg_max_drawdown_21d",
+]
+SIGNAL_ENTRY_PERFORMANCE_COLUMNS = [
+    "action_bucket",
+    "signal_name",
+    "market_env",
+    "event_count",
+    "ticker_count",
+    "avg_return_5d",
+    "avg_return_10d",
+    "avg_return_21d",
+    "win_rate_21d",
+    "tp1_count",
+    "sl_count",
+    "timeout_count",
+    "ambiguous_count",
+    "tp1_rate",
+    "sl_rate",
+    "avg_outcome_r",
+    "avg_days_to_first_outcome",
+    "avg_max_gain_21d",
+    "avg_max_drawdown_21d",
+    "first_event_date",
+    "last_event_date",
 ]
 PRESET_OVERLAP_COLUMNS = ["hit_date", "ticker", "hit_presets", "preset_count"]
 DETECTION_DETAIL_COLUMNS = [
@@ -74,6 +108,7 @@ DETECTION_DETAIL_COLUMNS = [
     "close_at_5d",
     "close_at_10d",
     "close_at_20d",
+    "close_at_21d",
     "rs21_at_hit",
     "vcs_at_hit",
     "atr_at_hit",
@@ -83,8 +118,11 @@ DETECTION_DETAIL_COLUMNS = [
     "return_5d",
     "return_10d",
     "return_20d",
+    "return_21d",
     "max_gain_20d",
     "max_drawdown_20d",
+    "max_gain_21d",
+    "max_drawdown_21d",
     "closed_above_ema21_5d",
     "hit_new_high_20d",
     "entered",
@@ -125,6 +163,8 @@ PRESET_SCAN_PERFORMANCE_COLUMNS = [
     "win_rate",
     "avg_max_gain_20d",
     "avg_max_drawdown_20d",
+    "avg_max_gain_21d",
+    "avg_max_drawdown_21d",
     "first_hit_date",
     "last_hit_date",
 ]
@@ -200,6 +240,8 @@ SIGNAL_ENTRY_EVENT_COLUMNS = [
     "ticker",
     "event_date",
     "source_evaluation_id",
+    "action_bucket",
+    "market_env",
     "plan_type",
     "entry_price",
     "entry_zone_low",
@@ -215,10 +257,12 @@ SIGNAL_ENTRY_EVENT_COLUMNS = [
     "close_at_5d",
     "close_at_10d",
     "close_at_20d",
+    "close_at_21d",
     "return_1d",
     "return_5d",
     "return_10d",
     "return_20d",
+    "return_21d",
     "hit_sl",
     "hit_tp1",
     "hit_sl_date",
@@ -229,6 +273,8 @@ SIGNAL_ENTRY_EVENT_COLUMNS = [
     "outcome_r",
     "max_gain_20d",
     "max_drawdown_20d",
+    "max_gain_21d",
+    "max_drawdown_21d",
     "created_at",
 ]
 
@@ -333,7 +379,8 @@ def read_preset_summary(
     return _read_query(
         """
         SELECT preset_name, market_env, detection_count, avg_return_5d, avg_return_20d,
-               win_rate_5d, win_rate_20d, avg_max_gain, avg_max_drawdown
+               avg_return_21d, win_rate_5d, win_rate_20d, win_rate_21d,
+               avg_max_gain, avg_max_drawdown, avg_max_gain_21d, avg_max_drawdown_21d
         FROM v_preset_summary
         ORDER BY preset_name, market_env
         """,
@@ -352,12 +399,36 @@ def read_scan_combo_performance(
     return _read_query(
         """
         SELECT preset_name, scan_combo, detection_count, avg_return_5d, avg_return_20d,
-               win_rate_20d, avg_max_drawdown
+               avg_return_21d, win_rate_20d, win_rate_21d, avg_max_drawdown,
+               avg_max_drawdown_21d
         FROM v_scan_combo_performance
         ORDER BY preset_name, scan_combo
         """,
         [],
         SCAN_COMBO_PERFORMANCE_COLUMNS,
+        root_dir=root_dir,
+        db_path=db_path,
+    )
+
+
+def read_signal_entry_performance(
+    *,
+    root_dir: str | Path | None = None,
+    db_path: str | Path | None = None,
+) -> pd.DataFrame:
+    return _read_query(
+        """
+        SELECT action_bucket, signal_name, market_env, event_count, ticker_count,
+               avg_return_5d, avg_return_10d, avg_return_21d, win_rate_21d,
+               tp1_count, sl_count, timeout_count, ambiguous_count, tp1_rate,
+               sl_rate, avg_outcome_r, avg_days_to_first_outcome,
+               avg_max_gain_21d, avg_max_drawdown_21d, first_event_date,
+               last_event_date
+        FROM v_signal_entry_performance
+        ORDER BY action_bucket, signal_name, market_env
+        """,
+        [],
+        SIGNAL_ENTRY_PERFORMANCE_COLUMNS,
         root_dir=root_dir,
         db_path=db_path,
     )
@@ -445,7 +516,8 @@ def read_preset_scan_performance(
         SELECT preset_name, scan_name, market_env, horizon_days, detection_count,
                ticker_count, active_count, closed_count, avg_return_pct,
                min_return_pct, max_return_pct, win_rate, avg_max_gain_20d,
-               avg_max_drawdown_20d, first_hit_date, last_hit_date
+               avg_max_drawdown_20d, avg_max_gain_21d, avg_max_drawdown_21d,
+               first_hit_date, last_hit_date
         FROM v_preset_scan_performance
         ORDER BY preset_name, scan_name, market_env, horizon_days
         """,

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Market Report Writer"
-  short_description: "Write Japanese daily market reports from OraTek market documents"
-  default_prompt: "Use $market-report-writer to write a Japanese daily market report from the latest market document."

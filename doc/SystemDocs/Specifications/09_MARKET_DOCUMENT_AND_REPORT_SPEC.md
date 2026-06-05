@@ -47,12 +47,16 @@ Top-level fields:
 - `data_appendix`
 - `report_generation_contract`
 
+`executive_context` includes the system-derived `market_action_mode`, `market_action_mode_key`, `market_action_mode_reason`, `swing_market_posture`, and `confirmation_order` when the required market inputs are available.
+These fields are report-level guidance for current swing-investing market recognition and candidate review intensity; they do not change EntrySignal, WatchList, scan logic, position sizing, execution, or exit management.
+
 The Markdown market document is not the final report. It is the AI/skill input form.
 
 ## 5. Required Market Document Features
 
 The market document must include these intermediate representations so the skill does not need to infer them:
 
+- `swing_market_posture`: current market-recognition guidance for long-exposure posture, new-entry posture, profit-taking/watch posture, risk-management strictness, and EntrySignal interpretation posture
 - `trajectory`: summarized path of recent change, not only point-in-time deltas
 - `significance`: section-level output-volume control, one of `high`, `medium`, `low`
 - `recent_transitions`: recent state changes detected by the system
@@ -61,6 +65,15 @@ The market document must include these intermediate representations so the skill
 - `facts_for_ai`: section-specific facts the skill may turn into prose
 
 The system includes an `industry_leadership` section when RS Radar `industry_leaders` rows are available. This section supplies industry-level RS leadership context, 52W HIGH industry groups, accelerating industry groups, sustained-leadership industry groups, and weak industry groups for report-level candidate-priority guidance.
+
+The system includes a `term_credit_diagnostics` section when auxiliary market symbols are available. It uses `volatility_term_structure` (`VIX9D/VIX`, `VIX/VIX3M`, front inversion, and full backwardation flags) and `credit_risk_proxy` (`HYG/LQD`, `HYG/IEF`, high-yield OAS, and delta OAS) as report-level context only; these diagnostics do not change Market Score, scans, Watchlist output, or EntrySignal evaluation.
+
+The system includes an `index_state_diagnostics` section when index-state symbols are available. It uses `index_state_summary` for SPY/QQQ rally-attempt day, FTD flag, FTD age, distribution-day count, and under-pressure flag. These are report-level context only and do not change Market Score, scans, Watchlist output, or EntrySignal evaluation.
+
+The saved market summary also includes `breadth_momentum_summary` for A20 momentum, `breadth_internal_summary` for active-universe breadth internals, and `drawdown_summary` for configured index drawdown state (`DD 252D %`, `T_DD`, and rolling high). These are report inputs only until report-generation logic is explicitly upgraded.
+
+The `recommendation_inputs` section may also include `priority_candidate_high`, `priority_candidate_medium`, and `priority_candidate_low_watch` facts.
+These are generated from the existing sector/style/industry inputs and are intended to make the final report's candidate-review order explicit.
 
 ## 6. Analysis Boundary
 
@@ -98,6 +111,14 @@ The final report is Japanese Markdown and uses this structure:
 ##### 市場の一行診断
 
 ##### 今日の行動文脈
+
+##### 現在の市場認識
+
+- ロング保有の許容度:
+- 新規エントリー確認の積極度:
+- 利確・警戒確認の優先度:
+- リスク管理ルールの厳格度:
+- EntrySignal 確認時の厳格度:
 
 ##### 注視すべき変化
 
@@ -139,6 +160,9 @@ The first layer is mandatory every day:
 
 `今日の結論` must focus on action context, not a neutral description of every section. It should explain how today's market document should change screening and candidate-confirmation behavior.
 
+When `executive_context.swing_market_posture` exists, the final report must use it in `現在の市場認識` and keep the content at report-level guidance: long-exposure posture, new-entry review intensity, profit-taking/watch review priority, risk-management strictness, and EntrySignal interpretation posture.
+It must not turn these fields into execution instructions, position sizing, stop-loss placement, or exit-management commands.
+
 `状態変化` must prioritize `recent_transitions` and `trajectory`.
 
 `詳細確認` must follow `significance`:
@@ -173,18 +197,13 @@ These terms are implementation/domain labels and should not be over-translated:
 
 ## 10. Skill Location
 
-The standard report-writing skill is located at:
-
-```text
-.agents/skills/market-report-writer/SKILL.md
-```
-
-The action-oriented ReportSkill-1 variant is located at:
+The standard report-writing skill is ReportSkill-1 and is located at:
 
 ```text
 .agents/skills/reportskill-1/SKILL.md
 ```
 
-ReportSkill-1 keeps the same market-document-only evidence boundary, then adds in-report confirmation order, industry-level priority groups, and EntrySignal interpretation. It does not directly integrate with or modify EntrySignal or WatchList systems.
+ReportSkill-1 keeps the market-document-only evidence boundary, then adds in-report confirmation order, industry-level priority groups, and EntrySignal interpretation.
+It does not directly integrate with or modify EntrySignal or WatchList systems.
 
 The skill's input should be whichever form is easiest for the AI to write from. Operationally, Markdown is the primary prompt input and JSON remains the canonical persisted data.

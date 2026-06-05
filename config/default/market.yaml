@@ -29,6 +29,24 @@ market:
   - 20
   - 50
   - 200
+  market_auxiliary_symbols:
+    vix9d_symbol: ^VIX9D
+    vix3m_symbol: ^VIX3M
+    credit_high_yield_symbol: HYG
+    credit_investment_grade_symbol: LQD
+    credit_treasury_symbol: IEF
+    credit_high_yield_oas_symbol: BAMLH0A0HYM2
+  drawdown_window: 252
+  index_state:
+    symbols:
+    - SPY
+    - QQQ
+    rally_low_lookback: 25
+    ftd_min_gain_pct: 1.7
+    ftd_min_rally_day: 4
+    distribution_decline_pct: -0.2
+    distribution_lookback: 25
+    distribution_pressure_count: 5
   market_report:
     output:
       write_json: true
@@ -42,6 +60,8 @@ market:
       score_deteriorating_1w: -3.0
       score_improving_1m: 5.0
       score_deteriorating_1m: -5.0
+      neutral_score_floor: 40.0
+      positive_score_floor: 60.0
     breadth:
       strong_level: 70.0
       weak_level: 50.0

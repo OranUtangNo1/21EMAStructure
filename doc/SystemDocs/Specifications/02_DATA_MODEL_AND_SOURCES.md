@@ -9,6 +9,7 @@
 | Finviz screener | Weekly universe discovery and snapshot fields for name, sector, industry, market cap, EPS growth, revenue growth, earnings date, country, and exchange | Active default |
 | Yahoo screener | Optional alternate weekly universe discovery path | Supported, not default |
 | yfinance price provider | Daily OHLCV for active symbols, benchmark, VIX, radar ETFs, market ETFs, and factor ETFs | Active default |
+| FRED CSV provider | Daily market-external series for Market Dashboard diagnostics, currently high-yield OAS (`BAMLH0A0HYM2`) | Active auxiliary |
 | yfinance profile provider | Fallback profile source when a symbol is missing from the weekly snapshot | Active fallback |
 | yfinance fundamental provider | Fallback fundamental source when a symbol is missing from the weekly snapshot | Active fallback |
 | local cache | TTL handling, stale fallback, and fetch-status lineage | Active |
@@ -20,6 +21,7 @@
 - use a weekly coarse universe snapshot instead of rediscovering the full universe every run
 - default to Finviz for weekly discovery, but keep the discovery provider replaceable
 - use yfinance bulk downloads for price histories
+- use FRED CSV downloads only for configured market-external diagnostic series that are not yfinance symbols
 - source profile and fundamental data from the weekly snapshot first, then fall back per symbol only when needed
 - preserve fetch status, data quality, and saved run metadata as first-class outputs
 - keep saved run bundles available through the pipeline restore helper for same-day reuse when the config path, manual-symbol input, and expected trade date still match
@@ -29,7 +31,7 @@
 
 - benchmark: `SPY`
 - volatility symbol: `^VIX`
-- Market Dashboard ETFs, RS Radar ETFs, and factor ETFs come from `config/default.yaml`
+- Market Dashboard ETFs, RS Radar ETFs, factor ETFs, yfinance auxiliary diagnostic symbols, and FRED diagnostic series come from `config/default.yaml`
 
 ## 2. Active Universe Flow
 
@@ -128,6 +130,7 @@ This filtered set is the actual input to scan rules and annotation rules.
 - RS Radar ETFs
 - Market Dashboard ETFs
 - factor ETFs
+- yfinance auxiliary diagnostics such as VIX9D, VIX3M, and credit ETFs
 
 Key active behavior:
 
@@ -138,6 +141,8 @@ Key active behavior:
 - stale-cache fallback allowed
 - stale cached price series are refreshed with an incremental download period of `5d`
 - `force_refresh=True` bypasses fresh-cache reuse, loads any existing cached price series as the merge/fallback base, and requests live yfinance data for the affected symbols
+
+`FredSeriesProvider` fetches configured FRED series through `fredgraph.csv`, normalizes each series into OHLC-like history with the FRED value in `close`, `adjusted_close`, `open`, `high`, and `low`, and stores `volume=0.0`. It currently feeds the high-yield OAS series (`BAMLH0A0HYM2`) into Market Dashboard credit diagnostics. FRED fetch status uses dataset `market_external` and the same cache/stale fallback model as other provider outputs.
 - yfinance console diagnostics are suppressed during price downloads; missing or incomplete symbols are surfaced through fetch status and Data Health instead
 
 ### 3.2 Profiles and fundamentals
@@ -267,19 +272,20 @@ Core tables:
 - `scan_hits`: date-level scan-hit history used by saved-run restore and watchlist reconstruction
 - `signal_pool_entry`: active and historical EntrySignal pool entries derived from preset duplicates
 - `signal_evaluation`: daily EntrySignal evaluation rows, including score components, stop/target metrics, and the mechanical Entry Plan fields used to explain inclusion or exclusion
-- `signal_entry_event`: distinct valid `Ready Now` EntrySignal events with forward returns, TP1/SL hits, first outcome, result R, and 20D excursion fields
+- `signal_entry_event`: distinct valid `Ready Now` EntrySignal events with action bucket, normalized market environment, forward returns, TP1/SL hits, first outcome, result R, and 20D / 21D excursion fields
 
 Forward tracking fields are stored directly on `detection`:
 
 - `close_at_hit`
-- `close_at_1d`, `close_at_5d`, `close_at_10d`, `close_at_20d`
-- `return_1d`, `return_5d`, `return_10d`, `return_20d`
+- `close_at_1d`, `close_at_5d`, `close_at_10d`, `close_at_20d`, `close_at_21d`
+- `return_1d`, `return_5d`, `return_10d`, `return_20d`, `return_21d`
+- `max_gain_20d`, `max_drawdown_20d`, `max_gain_21d`, `max_drawdown_21d`
 
 `detection.market_env` stores the normalized analysis buckets `bull`, `neutral`, `weak`, or `bear`. Source labels such as `Bullish`, `Positive`, `Negative`, and `Bearish` are normalized before insertion so Analysis filters do not drop current market records.
 
 EntrySignal tracking persists the user-facing Entry Plan fields needed for later review: `plan_status`, `plan_type`, `entry_type`, `entry_price`, `current_price`, `entry_zone_low`, `entry_zone_high`, `max_entry_price`, `distance_to_entry_zone_pct`, `stop_loss`, `tp1`, `tp2`, `rr_tp1`, `rr_current`, `rr_ideal`, `tp2_plan`, `trigger_condition`, `plan_verdict`, `plan_reject_codes`, `plan_reject_reason`, `sl_quality`, `sl_source`, `sl_basis`, `sl_safety`, `tp1_source`, `plan_invalidation`, `plan_note`, and `plan_detail`.
 
-Ready `signal_entry_event` rows are refreshed from future OHLC bars after `event_date`. The outcome fields include `close_at_1d`, `close_at_5d`, `close_at_10d`, `close_at_20d`, `return_1d`, `return_5d`, `return_10d`, `return_20d`, `hit_sl`, `hit_tp1`, `hit_sl_date`, `hit_tp1_date`, `first_outcome`, `first_outcome_date`, `days_to_first_outcome`, `outcome_r`, `max_gain_20d`, and `max_drawdown_20d`.
+Ready `signal_entry_event` rows are refreshed from future OHLC bars after `event_date`. The outcome fields include `action_bucket`, `market_env`, `close_at_1d`, `close_at_5d`, `close_at_10d`, `close_at_20d`, `close_at_21d`, `return_1d`, `return_5d`, `return_10d`, `return_20d`, `return_21d`, `hit_sl`, `hit_tp1`, `hit_sl_date`, `hit_tp1_date`, `first_outcome`, `first_outcome_date`, `days_to_first_outcome`, `outcome_r`, `max_gain_20d`, `max_drawdown_20d`, `max_gain_21d`, and `max_drawdown_21d`.
 
 Analysis views:
 
@@ -288,6 +294,7 @@ Analysis views:
 - `v_preset_scan_performance`
 - `v_preset_summary`
 - `v_scan_combo_performance`
+- `v_signal_entry_performance`
 - `v_preset_overlap`
 
 ### 5.5 Saved run artifacts
@@ -304,7 +311,7 @@ When `data.persist_research_snapshots` is true, the pipeline saves:
 
 `eligible_snapshot` is retained as the inspectable scan universe and saved-run restore base. The raw watchlist CSV is optional and controlled by `data.persist_watchlist_snapshot`; the default is false. When the watchlist CSV is absent, same-day saved-run restore rebuilds the watchlist from `eligible_snapshot` and stored scan hits. Preset-hit CSVs remain separate under `data_runs/preset_exports/`.
 
-`market_documents/YYYYMMDD.json` is generated deterministically from the saved market summary, RS Radar industry leadership rows, and recent same-folder market summaries. It is an AI-input market document, not the final human-facing report. The document stores `schema_version=market_document.v1`, executive context, section facts, evidence source fields, trajectory summaries, significance flags, recent transitions, watchpoint candidates, analysis boundaries, missing inputs, and a data appendix. When `industry_leaders` are available, the document includes an `industry_leadership` section for industry-level RS leadership, 52W HIGH, acceleration, sustained leadership, and weak-industry context. `market_documents/YYYYMMDD.md` renders the same market document for AI/skill input. The final human-facing report is owned by a report-writing skill and is written to `market_reports/YYYYMMDD.md`.
+`market_documents/YYYYMMDD.json` is generated deterministically from the saved market summary, RS Radar industry leadership rows, and recent same-folder market summaries. It is an AI-input market document, not the final human-facing report. The document stores `schema_version=market_document.v1`, executive context, section facts, evidence source fields, trajectory summaries, significance flags, recent transitions, watchpoint candidates, analysis boundaries, missing inputs, and a data appendix. When `industry_leaders` are available, the document includes an `industry_leadership` section for industry-level RS leadership, 52W HIGH, acceleration, sustained leadership, and weak-industry context. The market summary and document include `volatility_term_structure`, `credit_risk_proxy`, and `index_state_summary` diagnostics when the configured auxiliary/index symbols are available. The saved market summary also includes `breadth_momentum_summary`, `breadth_internal_summary`, and `drawdown_summary`; report prose consumption for those fields is a later report-improvement phase. `market_documents/YYYYMMDD.md` renders the same market document for AI/skill input. The final human-facing report is owned by a report-writing skill and is written to `market_reports/YYYYMMDD.md`.
 
 After the Streamlit artifact load syncs EntrySignal pools, the app evaluates the startup-selected entry signals and writes inspectable exports under `data_runs/entry_signals/`:
 

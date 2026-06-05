@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import time
+from contextlib import contextmanager
+from datetime import datetime
+from pathlib import Path
 from typing import Iterable
+from uuid import uuid4
 
 import numpy as np
 import pandas as pd
@@ -69,3 +74,64 @@ def coalesce_strings(values: Iterable[str | None], fallback: str = "Unknown") ->
         if value:
             return value
     return fallback
+
+
+class StartupTimer:
+    """Append coarse startup milestone timings to a local log and stdout."""
+
+    def __init__(self, name: str, log_path: str | Path, *, run_id: str | None = None) -> None:
+        self.name = str(name)
+        self.log_path = Path(log_path)
+        self.run_id = run_id or datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid4().hex[:8]
+        self._started = time.perf_counter()
+        self._last = self._started
+        self.mark("timer.start")
+
+    def mark(self, milestone: str, **fields: object) -> None:
+        now = time.perf_counter()
+        elapsed = now - self._started
+        delta = now - self._last
+        self._last = now
+        timestamp = datetime.now().isoformat(timespec="seconds")
+        parts = [
+            "[startup-timing]",
+            f"ts={timestamp}",
+            f"run_id={self.run_id}",
+            f"name={self.name}",
+            f"milestone={milestone}",
+            f"elapsed_s={elapsed:.3f}",
+            f"delta_s={delta:.3f}",
+        ]
+        for key, value in fields.items():
+            parts.append(f"{key}={self._format_value(value)}")
+        line = " ".join(parts)
+        try:
+            print(line, flush=True)
+        except Exception:
+            pass
+        try:
+            self.log_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.log_path.open("a", encoding="utf-8") as handle:
+                handle.write(line + "\n")
+        except Exception:
+            pass
+
+    @contextmanager
+    def step(self, milestone: str, **fields: object):
+        step_started = time.perf_counter()
+        self.mark(f"{milestone}.start", **fields)
+        try:
+            yield
+        except Exception as exc:
+            self.mark(
+                f"{milestone}.error",
+                duration_s=f"{time.perf_counter() - step_started:.3f}",
+                error_type=type(exc).__name__,
+            )
+            raise
+        else:
+            self.mark(f"{milestone}.end", duration_s=f"{time.perf_counter() - step_started:.3f}")
+
+    def _format_value(self, value: object) -> str:
+        text = str(value).replace("\n", " ").replace("\r", " ").strip()
+        return text.replace(" ", "_") if text else "-"

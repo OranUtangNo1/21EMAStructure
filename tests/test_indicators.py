@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import warnings
+
 import pandas as pd
+from pandas.errors import PerformanceWarning
 
 from src.indicators.core import IndicatorCalculator, IndicatorConfig
 
@@ -42,6 +45,31 @@ def test_indicator_formulas_match_docs() -> None:
     assert round(float(latest["ema21_low_pct"]), 6) == 20.0
     assert round(float(latest["adr_percent"]), 6) == round((((11.0 / 9.0) + (12.0 / 10.0)) / 2.0 - 1.0) * 100.0, 6)
     assert round(float(latest["atr_pct_from_50sma"]), 6) == round((((12.0 / 11.0) - 1.0) / (2.0 / 12.0)), 6)
+
+
+def test_indicator_calculator_does_not_fragment_dataframe() -> None:
+    dates = pd.date_range("2025-01-01", periods=320, freq="B")
+    close = [100.0 + i * 0.2 for i in range(len(dates))]
+    frame = pd.DataFrame(
+        {
+            "open": [value * 0.99 for value in close],
+            "high": [value * 1.01 for value in close],
+            "low": [value * 0.98 for value in close],
+            "close": close,
+            "adjusted_close": close,
+            "volume": [1_000_000 + i * 1_000 for i in range(len(dates))],
+        },
+        index=dates,
+    )
+    calculator = IndicatorCalculator(IndicatorConfig())
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always", PerformanceWarning)
+        result = calculator.calculate(frame)
+
+    performance_warnings = [warning for warning in captured if issubclass(warning.category, PerformanceWarning)]
+    assert performance_warnings == []
+    assert "structure_pivot_long_active" in result.columns
 
 
 def test_indicator_calculator_adds_52_week_high_from_daily_highs() -> None:
@@ -359,6 +387,96 @@ def test_vcp_3t_fields_capture_contracting_depths_dryup_and_breakout() -> None:
     assert 0.0 < float(latest["vcp_pivot_proximity_pct"]) < 5.0
     assert float(latest["vcp_tight_days"]) == 5.0
     assert float(latest["vcp_volume_dryup_ratio"]) < 0.8
+
+
+def test_vcp_tightening_flags_contracting_dryup_under_pivot_stage2_context() -> None:
+    close = [50.0 + i * 1.8 for i in range(25)]
+    high = [value * 1.04 for value in close]
+    low = [value * 0.96 for value in close]
+    volume = [1_200_000.0] * len(close)
+
+    base_close = [100.0, 103.0, 106.0, 104.0, 108.0, 105.0, 109.0, 106.0, 110.0, 107.0]
+    close.extend(base_close)
+    high.extend([112.0, 111.5, 112.0, 110.5, 111.8, 110.8, 111.6, 110.7, 111.5, 110.9])
+    low.extend([98.0, 99.5, 100.0, 99.0, 101.0, 100.5, 102.0, 101.0, 103.0, 102.0])
+    volume.extend([1_100_000.0] * len(base_close))
+
+    tight_close = [106.5, 107.5, 108.5, 109.0, 110.0]
+    close.extend(tight_close)
+    high.extend([109.0, 110.0, 110.5, 111.0, 111.0])
+    low.extend([105.5, 106.5, 107.5, 108.0, 108.5])
+    volume.extend([500_000.0] * len(tight_close))
+
+    dates = pd.date_range("2025-03-01", periods=len(close), freq="D")
+    frame = pd.DataFrame(
+        {
+            "open": [value * 0.995 for value in close],
+            "high": high,
+            "low": low,
+            "close": close,
+            "adjusted_close": close,
+            "volume": volume,
+        },
+        index=dates,
+    )
+    calculator = IndicatorCalculator(
+        IndicatorConfig(
+            sma_short_period=5,
+            sma_medium_period=10,
+            sma_long_period=20,
+            sma_long_slope_lookback=5,
+            relvol_period=5,
+            enable_3wt=False,
+            vcp_base_lookback=20,
+            vcp_tight_window=5,
+            vcp_pivot_lookback=10,
+            vcp_contraction_ratio=0.6,
+            vcp_adr_ceiling=3.5,
+            vcp_range_ceiling=12.0,
+            vcp_vdu_ratio=0.75,
+            vcp_proximity_band=0.08,
+        )
+    )
+
+    latest = calculator.calculate(frame).iloc[-1]
+
+    assert bool(latest["vcp_is_contracting"]) is True
+    assert bool(latest["vcp_is_tight"]) is True
+    assert bool(latest["vcp_is_dryup"]) is True
+    assert bool(latest["vcp_is_under_pivot"]) is True
+    assert bool(latest["vcp_stage2_context"]) is True
+    assert bool(latest["vcp_tightening"]) is True
+    assert float(latest["vcp_dist_to_pivot"]) > 0.0
+
+
+def test_vcp_pivot_breakout_only_flags_first_day_edge() -> None:
+    close = [10.0, 10.0, 10.0, 10.0, 11.5, 12.0]
+    frame = pd.DataFrame(
+        {
+            "open": [value * 0.99 for value in close],
+            "high": [10.5, 10.5, 10.5, 11.0, 11.6, 12.2],
+            "low": [9.8, 9.8, 9.8, 9.9, 11.0, 11.6],
+            "close": close,
+            "adjusted_close": close,
+            "volume": [100_000.0] * len(close),
+        },
+        index=pd.date_range("2025-04-01", periods=len(close), freq="D"),
+    )
+    calculator = IndicatorCalculator(
+        IndicatorConfig(
+            sma_short_period=2,
+            sma_medium_period=3,
+            sma_long_period=4,
+            relvol_period=2,
+            enable_3wt=False,
+            vcp_pivot_lookback=3,
+        )
+    )
+
+    result = calculator.calculate(frame)
+
+    assert bool(result.iloc[-2]["vcp_pivot_breakout"]) is True
+    assert bool(result.iloc[-1]["vcp_pivot_breakout"]) is False
 
 
 def test_pocket_pivot_flags_green_candle_when_volume_breaks_prior_10_day_high() -> None:

@@ -16,7 +16,7 @@
 - Reads only precomputed indicator fields.
 - All conditions are combined with `AND`.
 - Intended as a shallow pullback trigger scan for stocks holding near the 21EMA high band.
-- This scan replaces the broad legacy `21EMA scan` for the strongest high-band pullback pattern.
+- This is the current high-band 21EMA pullback card exposed in Watchlist controls.
 
 ## Canonical Boolean Definition
 
@@ -50,4 +50,3 @@ None. `_scan_21ema_pattern_h` uses hard-coded thresholds only in v1.
 - `atr_low_to_ema21_high = (low - ema21_high) / atr`
 - `ema21_high = EMA(high, 21)`
 - `prev_high = high.shift(1)`
-

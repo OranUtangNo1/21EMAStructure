@@ -15,6 +15,8 @@ class MarketReportConfig:
     score_deteriorating_1w: float = -3.0
     score_improving_1m: float = 5.0
     score_deteriorating_1m: float = -5.0
+    neutral_score_floor: float = 40.0
+    positive_score_floor: float = 60.0
     breadth_strong_level: float = 70.0
     breadth_weak_level: float = 50.0
     s2w_high_active_level: float = 30.0
@@ -46,6 +48,8 @@ class MarketReportConfig:
             score_deteriorating_1w=_float(regime.get("score_deteriorating_1w"), -3.0),
             score_improving_1m=_float(regime.get("score_improving_1m"), 5.0),
             score_deteriorating_1m=_float(regime.get("score_deteriorating_1m"), -5.0),
+            neutral_score_floor=_float(regime.get("neutral_score_floor"), 40.0),
+            positive_score_floor=_float(regime.get("positive_score_floor"), 60.0),
             breadth_strong_level=_float(breadth.get("strong_level"), 70.0),
             breadth_weak_level=_float(breadth.get("weak_level"), 50.0),
             s2w_high_active_level=_float(breadth.get("s2w_high_active_level"), 30.0),
@@ -189,6 +193,8 @@ class MarketReportBuilder:
             self._risk_on_ratio(summary, history),
             self._breadth_and_participation(summary, history),
             self._volatility_and_safe_haven(summary, history),
+            self._term_credit_diagnostics(summary, history),
+            self._index_state_diagnostics(summary),
             self._sector_rotation(summary, history),
             self._industry_leadership(summary),
             self._factor_and_style(summary),
@@ -261,11 +267,13 @@ class MarketReportBuilder:
     def _recommendation_inputs(self, summary: dict[str, object]) -> MarketReportSection:
         sector_rows = _records(summary.get("sector_relative_strength"))
         style_rows = _records(summary.get("style_pair_summary"))
+        industry_rows = _sort_records(_records(summary.get("industry_leaders")), "RS", reverse=True)
         defensive_cyclical = _mapping(summary.get("defensive_cyclical_summary"))
         overweight = self._overweight_sectors(sector_rows)
         avoid = self._avoid_sectors(sector_rows)
         exit_watch = self._exit_watch_sectors(sector_rows)
         style_tilts = self._style_tilts(style_rows)
+        priority_groups = self._priority_candidate_groups(industry_rows, overweight, avoid, exit_watch, style_tilts)
         defensive_spread_1m = _optional_float(defensive_cyclical.get("REL 1M %"))
         facts = []
         if overweight:
@@ -278,6 +286,13 @@ class MarketReportBuilder:
             facts.append("style_tilts=" + ", ".join(style_tilts))
         if defensive_spread_1m is not None:
             facts.append(f"cyclical_growth_minus_defensive_1m={_format_number(defensive_spread_1m)}")
+        facts.extend(
+            [
+                "priority_candidate_high=" + _join_group(priority_groups["high"]),
+                "priority_candidate_medium=" + _join_group(priority_groups["medium"]),
+                "priority_candidate_low_watch=" + _join_group(priority_groups["low_watch"]),
+            ]
+        )
         significance = MarketReportSignificance(
             level="high" if overweight or avoid or exit_watch else "low",
             reason="Sector/style priority inputs are present." if sector_rows or style_rows else "Sector/style priority inputs are missing.",
@@ -469,6 +484,123 @@ class MarketReportBuilder:
             warnings=warnings,
         )
 
+    def _term_credit_diagnostics(self, summary: dict[str, object], history: list[dict[str, object]]) -> MarketReportSection:
+        term = _mapping(summary.get("volatility_term_structure"))
+        credit = _mapping(summary.get("credit_risk_proxy"))
+        vix_ratio = _optional_float(term.get("RATIO"))
+        inversion_flag = _optional_float(term.get("INVERSION FLAG"))
+        credit_flag = _optional_float(credit.get("CREDIT RISK-OFF FLAG"))
+        hyg_lqd_1m = _optional_float(credit.get("HYG/LQD REL 1M %"))
+        hyg_ief_1m = _optional_float(credit.get("HYG/IEF REL 1M %"))
+        term_label = self._vix_term_label(vix_ratio, inversion_flag)
+        credit_label = self._credit_proxy_label(hyg_lqd_1m, hyg_ief_1m, credit_flag)
+        warnings = []
+        if inversion_flag == 1.0:
+            warnings.append("VIX term structure is inverted.")
+        if credit_flag == 1.0:
+            warnings.append("Credit proxy is weakening across both configured ratios.")
+        significance = MarketReportSignificance(
+            level="high" if warnings else ("medium" if term or credit else "low"),
+            reason="Term/credit diagnostic warning is active." if warnings else "Term/credit diagnostics are available without an active warning.",
+        )
+        return MarketReportSection(
+            key="term_credit_diagnostics",
+            title="Term And Credit Diagnostics",
+            label=f"{term_label} / {credit_label}",
+            direction=_delta_direction(
+                [
+                    _negate_optional(_metric_delta(summary, "vix_term:RATIO", "1W")),
+                    _metric_delta(summary, "credit:HYG/LQD REL 1W %", "1W"),
+                    _metric_delta(summary, "credit:HYG/IEF REL 1W %", "1W"),
+                ]
+            ),
+            significance=significance,
+            summary="Volatility term structure and credit risk proxy diagnostics. These are context inputs, not direct scan or entry rules.",
+            metrics=[
+                self._evidence("VIX/VIX3M", "volatility_term_structure.RATIO", term.get("RATIO"), delta_1d=_metric_delta(summary, "vix_term:RATIO", "1D"), delta_1w=_metric_delta(summary, "vix_term:RATIO", "1W"), delta_1m=_metric_delta(summary, "vix_term:RATIO", "1M")),
+                self._evidence("VIX3M", "volatility_term_structure.VIX3M", term.get("VIX3M"), delta_1d=_metric_delta(summary, "vix_term:VIX3M", "1D"), delta_1w=_metric_delta(summary, "vix_term:VIX3M", "1W"), delta_1m=_metric_delta(summary, "vix_term:VIX3M", "1M")),
+                self._evidence("HYG/LQD", "credit_risk_proxy.HYG/LQD RATIO", credit.get("HYG/LQD RATIO"), delta_1d=_metric_delta(summary, "credit:HYG/LQD RATIO", "1D"), delta_1w=_metric_delta(summary, "credit:HYG/LQD RATIO", "1W"), delta_1m=_metric_delta(summary, "credit:HYG/LQD RATIO", "1M")),
+                self._evidence("HYG/IEF", "credit_risk_proxy.HYG/IEF RATIO", credit.get("HYG/IEF RATIO"), delta_1d=_metric_delta(summary, "credit:HYG/IEF RATIO", "1D"), delta_1w=_metric_delta(summary, "credit:HYG/IEF RATIO", "1W"), delta_1m=_metric_delta(summary, "credit:HYG/IEF RATIO", "1M")),
+            ],
+            facts_for_ai=[
+                f"VIX/VIX3M={_format_number(vix_ratio)}",
+                f"term_label={term_label}",
+                f"HYG/LQD REL 1M={_format_number(hyg_lqd_1m)}",
+                f"HYG/IEF REL 1M={_format_number(hyg_ief_1m)}",
+                f"credit_label={credit_label}",
+            ],
+            warnings=warnings,
+        )
+
+    def _index_state_diagnostics(self, summary: dict[str, object]) -> MarketReportSection:
+        index_state = _mapping(summary.get("index_state_summary"))
+        symbols = self._index_state_symbols(index_state)
+        statuses = {symbol: self._index_state_status(index_state, symbol) for symbol in symbols}
+        under_pressure = any(
+            _optional_float(index_state.get(f"{symbol} UNDER PRESSURE FLAG")) == 1.0
+            for symbol in symbols
+        )
+        ftd_confirmed = any(
+            _optional_float(index_state.get(f"{symbol} FTD FLAG")) == 1.0
+            for symbol in symbols
+        )
+        active_attempt = any(
+            (_optional_float(index_state.get(f"{symbol} RALLY ATTEMPT DAY")) or 0.0) > 0.0
+            for symbol in symbols
+        )
+        if ftd_confirmed and under_pressure:
+            label = "confirmed_rally_under_pressure"
+        elif ftd_confirmed:
+            label = "confirmed_rally"
+        elif active_attempt:
+            label = "rally_attempt"
+        elif symbols:
+            label = "no_active_attempt"
+        else:
+            label = "no_data"
+        warnings = []
+        if under_pressure:
+            warnings.append("Distribution day count is at or above the configured pressure threshold.")
+        if active_attempt and not ftd_confirmed:
+            warnings.append("Rally attempt exists but no follow-through day is confirmed.")
+        significance = MarketReportSignificance(
+            level="high" if warnings else ("medium" if ftd_confirmed else "low"),
+            reason="Index state warning is active." if warnings else "Index state diagnostic is available.",
+        )
+        metrics: list[MarketReportMetric] = []
+        facts: list[str] = []
+        for symbol in symbols:
+            rally_day = _optional_float(index_state.get(f"{symbol} RALLY ATTEMPT DAY"))
+            ftd_flag = _optional_float(index_state.get(f"{symbol} FTD FLAG"))
+            ftd_age = _optional_float(index_state.get(f"{symbol} FTD AGE DAYS"))
+            distribution_count = _optional_float(index_state.get(f"{symbol} DISTRIBUTION DAY COUNT"))
+            pressure_flag = _optional_float(index_state.get(f"{symbol} UNDER PRESSURE FLAG"))
+            metrics.extend(
+                [
+                    self._evidence(f"{symbol} Rally Attempt Day", f"index_state_summary.{symbol} RALLY ATTEMPT DAY", rally_day),
+                    self._evidence(f"{symbol} FTD Flag", f"index_state_summary.{symbol} FTD FLAG", ftd_flag),
+                    self._evidence(f"{symbol} Distribution Days", f"index_state_summary.{symbol} DISTRIBUTION DAY COUNT", distribution_count),
+                    self._evidence(f"{symbol} Under Pressure", f"index_state_summary.{symbol} UNDER PRESSURE FLAG", pressure_flag),
+                ]
+            )
+            facts.append(
+                f"{symbol} status={statuses.get(symbol, 'no_data')}, rally_day={_format_number(rally_day)}, "
+                f"ftd_flag={_format_number(ftd_flag)}, ftd_age={_format_number(ftd_age)}, "
+                f"distribution_days={_format_number(distribution_count)}"
+            )
+        direction = "weakening" if under_pressure else ("improving" if ftd_confirmed else "stable")
+        return MarketReportSection(
+            key="index_state_diagnostics",
+            title="Index State Diagnostics",
+            label=label,
+            direction=direction,
+            significance=significance,
+            summary="SPY/QQQ follow-through day, rally-attempt, and distribution-day diagnostics. These are context inputs and do not change Market Score.",
+            metrics=metrics,
+            facts_for_ai=facts or ["Index state diagnostics are unavailable."],
+            warnings=warnings,
+        )
+
     def _sector_rotation(self, summary: dict[str, object], history: list[dict[str, object]]) -> MarketReportSection:
         sector_rows = _records(summary.get("sector_relative_strength"))
         market_records = _records(summary.get("market_snapshot"))
@@ -623,21 +755,46 @@ class MarketReportBuilder:
         risk = section_map.get("risk_on_ratio")
         breadth = section_map.get("breadth_participation")
         recommendation = section_map.get("recommendation_inputs")
+        industry = section_map.get("industry_leadership")
+        volatility = section_map.get("volatility_safe_haven")
+        diagnostics = section_map.get("term_credit_diagnostics")
+        index_state = section_map.get("index_state_diagnostics")
+        sector = section_map.get("sector_rotation")
         required_missing = [item.key for item in missing_inputs if item.phase == "v0"]
         confidence = "Low" if required_missing else ("Medium" if transitions else "High")
+        action_mode = self._market_action_mode(summary, section_map)
+        confirmation_order = self._confirmation_order(action_mode, section_map)
+        swing_market_posture = self._swing_market_posture(action_mode, summary, section_map)
         action_context = [
             f"Market Score { _format_number(score) } is {label} and direction is {direction}.",
+            f"market_action_mode={action_mode['label']} ({action_mode['key']})",
+            f"action_mode_reason={action_mode['reason']}",
             f"Risk-On Ratio posture is {risk.label if risk else 'unavailable'}.",
             f"Breadth posture is {breadth.label if breadth else 'unavailable'}.",
         ]
+        if industry:
+            action_context.append(f"Industry leadership posture is {industry.label}.")
+        if sector:
+            action_context.append(f"Sector rotation posture is {sector.label}.")
+        if volatility:
+            action_context.append(f"Volatility/Safe Haven posture is {volatility.label}.")
+        if diagnostics:
+            action_context.append(f"Term/Credit diagnostics posture is {diagnostics.label}.")
+        if index_state:
+            action_context.append(f"Index state diagnostics posture is {index_state.label}.")
         if recommendation and recommendation.facts_for_ai:
             action_context.append("Priority inputs: " + " / ".join(recommendation.facts_for_ai[:3]))
         return {
             "market_label": label,
             "market_score": score,
             "market_direction": direction,
+            "market_action_mode": action_mode["label"],
+            "market_action_mode_key": action_mode["key"],
+            "market_action_mode_reason": action_mode["reason"],
+            "swing_market_posture": swing_market_posture,
+            "confirmation_order": confirmation_order,
             "confidence": confidence,
-            "one_line_diagnosis": f"Market Score {_format_number(score)} ({label}, {direction})",
+            "one_line_diagnosis": f"{action_mode['label']}: Market Score {_format_number(score)} ({label}, {direction})",
             "action_context_facts": action_context,
             "notable_changes": [item.event for item in transitions[:2]],
             "required_missing_inputs": required_missing,
@@ -772,6 +929,7 @@ class MarketReportBuilder:
                 "外部イベントやニュースを補完しない",
                 "個別銘柄の売買実行指示を書かない",
                 "ポジションサイズや損切り管理を書かない",
+                "swing_market_posture を売買執行やポジション管理の指示に変換しない",
                 "watchpoint_candidates にない次回注視点を作らない",
             ],
             "token_efficiency_rule": "significance=low の section は最終レポートで1文以内に圧縮してよい。",
@@ -798,7 +956,9 @@ class MarketReportBuilder:
             "style_pair_summary": "Useful for style rotation priority.",
             "defensive_cyclical_summary": "Useful for Defensive vs Cyclical/Growth spread.",
             "industry_leaders": "Useful for industry-level leadership priority.",
-            "credit_proxy": "Useful but not implemented.",
+            "volatility_term_structure": "Useful for VIX term structure diagnostics.",
+            "credit_risk_proxy": "Useful for credit risk proxy diagnostics.",
+            "index_state_summary": "Useful for FTD, rally attempt, and distribution-day diagnostics.",
         }
         for key, reason in enriched.items():
             if key not in summary or summary.get(key) in (None, {}, []):
@@ -969,6 +1129,56 @@ class MarketReportBuilder:
             return "risk_off"
         return "neutral"
 
+    def _vix_term_label(self, ratio: float | None, inversion_flag: float | None) -> str:
+        if ratio is None:
+            return "no_data"
+        if inversion_flag == 1.0 or ratio >= 1.0:
+            return "inverted_term_structure"
+        if ratio >= 0.95:
+            return "flat_or_elevated_term_structure"
+        return "normal_contango"
+
+    def _credit_proxy_label(
+        self,
+        hyg_lqd_1m: float | None,
+        hyg_ief_1m: float | None,
+        risk_off_flag: float | None,
+    ) -> str:
+        values = [value for value in [hyg_lqd_1m, hyg_ief_1m] if value is not None]
+        if not values:
+            return "no_data"
+        if risk_off_flag == 1.0 or all(value < 0.0 for value in values):
+            return "credit_risk_off"
+        if all(value > 0.0 for value in values):
+            return "credit_risk_on"
+        return "mixed_credit"
+
+    def _index_state_symbols(self, index_state: dict[str, object]) -> list[str]:
+        symbols: list[str] = []
+        for key in index_state:
+            text = str(key)
+            if " " not in text:
+                continue
+            symbol = text.split(" ", 1)[0].strip()
+            if symbol and symbol not in symbols:
+                symbols.append(symbol)
+        preferred = [symbol for symbol in ["SPY", "QQQ"] if symbol in symbols]
+        return preferred + [symbol for symbol in symbols if symbol not in preferred]
+
+    def _index_state_status(self, index_state: dict[str, object], symbol: str) -> str:
+        ftd_flag = _optional_float(index_state.get(f"{symbol} FTD FLAG"))
+        pressure_flag = _optional_float(index_state.get(f"{symbol} UNDER PRESSURE FLAG"))
+        rally_day = _optional_float(index_state.get(f"{symbol} RALLY ATTEMPT DAY"))
+        if ftd_flag == 1.0 and pressure_flag == 1.0:
+            return "confirmed_under_pressure"
+        if ftd_flag == 1.0:
+            return "confirmed_rally"
+        if rally_day is not None and rally_day > 0.0:
+            return "rally_attempt"
+        if rally_day is not None:
+            return "no_active_attempt"
+        return "no_data"
+
     def _overweight_sectors(self, rows: list[dict[str, object]]) -> list[str]:
         candidates = []
         for row in rows:
@@ -1016,6 +1226,213 @@ class MarketReportBuilder:
             elif rel_1w < 0 and rel_1m < 0:
                 tilts.append(f"{name} 劣後")
         return tilts[:4]
+
+    def _market_action_mode(self, summary: dict[str, object], section_map: dict[str, MarketReportSection]) -> dict[str, str]:
+        score = _optional_float(summary.get("score"))
+        label = str(summary.get("label", "")).lower()
+        breadth_label = section_map.get("breadth_participation").label if section_map.get("breadth_participation") else "no_data"
+        risk_label = section_map.get("risk_on_ratio").label if section_map.get("risk_on_ratio") else "no_data"
+        sector_label = section_map.get("sector_rotation").label if section_map.get("sector_rotation") else "no_data"
+        industry_label = section_map.get("industry_leadership").label if section_map.get("industry_leadership") else "no_data"
+        vix_label = self._vix_label(_optional_float(summary.get("vix_close")))
+        breadth = _mapping(summary.get("breadth_summary"))
+        sma20 = _optional_float(breadth.get("pct_above_sma20"))
+        sma50 = _optional_float(breadth.get("pct_above_sma50"))
+        s2w_high = _optional_float(_mapping(summary.get("high_vix_summary")).get("S2W HIGH %"))
+        vix_stressed = vix_label in {"high_volatility", "stress_volatility"}
+        breadth_weak = breadth_label == "weak"
+        risk_off = risk_label == "risk_off_warning"
+
+        if (score is not None and score < self.config.neutral_score_floor) or (breadth_weak and risk_off) or vix_stressed:
+            return {
+                "key": "defense",
+                "label": "防御",
+                "reason": "Market score, breadth, Risk-On Ratio, or VIX indicates defensive candidate review.",
+            }
+
+        if (
+            score is not None
+            and score >= self.config.positive_score_floor
+            and breadth_label != "strong"
+            and (sma20 is not None and sma20 < self.config.breadth_strong_level)
+            and (sma50 is not None and sma50 < self.config.breadth_strong_level)
+        ):
+            return {
+                "key": "overheat_watch",
+                "label": "過熱警戒",
+                "reason": "Headline score is positive while breadth confirmation is not broad enough.",
+            }
+
+        positive_or_bullish = "positive" in label or "bullish" in label
+        if (
+            score is not None
+            and score >= self.config.positive_score_floor
+            and positive_or_bullish
+            and breadth_label == "strong"
+            and risk_label == "risk_on"
+            and industry_label == "confirmed_industry_leadership"
+        ):
+            return {
+                "key": "attack",
+                "label": "攻める",
+                "reason": "Trend, breadth, Risk-On Ratio, and industry leadership are aligned.",
+            }
+
+        if sector_label == "constructive" and industry_label == "confirmed_industry_leadership" and breadth_label in {"mixed", "strong"}:
+            return {
+                "key": "sector_rotation",
+                "label": "セクター乗り換え",
+                "reason": "Sector rotation and industry leadership are confirmed, so candidate review should start with leadership groups.",
+            }
+
+        if (
+            (score is not None and score >= self.config.neutral_score_floor)
+            and (breadth_label in {"mixed", "strong"} or industry_label == "confirmed_industry_leadership")
+            and not risk_off
+            and not vix_stressed
+        ):
+            return {
+                "key": "selective_attack",
+                "label": "厳選して攻める",
+                "reason": "Some confirmation exists, but not enough for broad risk taking.",
+            }
+
+        if s2w_high is not None and s2w_high < self.config.s2w_high_weak_level:
+            return {
+                "key": "wait",
+                "label": "様子見",
+                "reason": "Short-term high participation is limited, so wait for clearer confirmation.",
+            }
+        return {
+            "key": "wait",
+            "label": "様子見",
+            "reason": "Signals are mixed or insufficient for aggressive candidate review.",
+        }
+
+    def _swing_market_posture(
+        self,
+        action_mode: dict[str, str],
+        summary: dict[str, object],
+        section_map: dict[str, MarketReportSection],
+    ) -> dict[str, object]:
+        key = action_mode.get("key", "wait")
+        score = _optional_float(summary.get("score"))
+        label = str(summary.get("label", "No Data"))
+        breadth = section_map.get("breadth_participation")
+        risk = section_map.get("risk_on_ratio")
+        volatility = section_map.get("volatility_safe_haven")
+        industry = section_map.get("industry_leadership")
+        sector = section_map.get("sector_rotation")
+        base_facts = [
+            f"Market Score={_format_number(score)} ({label})",
+            f"Breadth={breadth.label if breadth else 'unavailable'}",
+            f"Risk-On Ratio={risk.label if risk else 'unavailable'}",
+            f"Volatility/Safe Haven={volatility.label if volatility else 'unavailable'}",
+        ]
+        if industry:
+            base_facts.append(f"Industry leadership={industry.label}")
+        if sector:
+            base_facts.append(f"Sector rotation={sector.label}")
+
+        posture_map: dict[str, dict[str, tuple[str, str, str]]] = {
+            "attack": {
+                "long_exposure": ("ロング許容", "ロング候補を通常通り確認しやすい市場認識です。", "Trend, Breadth, Risk-On Ratio, and leadership are aligned."),
+                "new_entry": ("通常確認", "新規候補は通常のスクリーニング順で確認できます。", "Market score and leadership confirmation are constructive."),
+                "profit_taking_watch": ("通常", "利確・警戒候補は通常の確認優先度で扱います。", "No broad overheat or defensive warning is dominant."),
+                "risk_management": ("通常", "リスク管理ルールは通常運用とし、緩める必要はありません。", "Market context does not require defensive tightening."),
+                "entry_signal": ("通常評価", "EntrySignal は市場逆風による割引を強めずに確認できます。", "Market context supports normal signal interpretation."),
+            },
+            "selective_attack": {
+                "long_exposure": ("選別保有", "ロング候補は許容しつつ、強い業種・強い形状を優先する市場認識です。", "Some confirmation exists, but broad confirmation is incomplete."),
+                "new_entry": ("厳選", "新規候補は Breadth、Risk-On Ratio、業種リーダーシップが一致するものに絞ります。", "Confirmation is partial rather than broad."),
+                "profit_taking_watch": ("通常から警戒", "弱い業種や劣後スタイルは利確・警戒候補として優先確認します。", "Mixed confirmation raises selection risk."),
+                "risk_management": ("やや厳格", "リスク管理ルールは緩めず、弱い候補を残しにくい前提で確認します。", "Selective environment requires tighter review standards."),
+                "entry_signal": ("優先度差を付ける", "強い業種の EntrySignal を先に確認し、弱い業種の信号は割引して読みます。", "Leadership alignment matters in selective conditions."),
+            },
+            "sector_rotation": {
+                "long_exposure": ("リーダー業種優先", "ロング候補はセクター・業種リーダーに寄せて確認する市場認識です。", "Sector rotation and industry leadership are confirmed."),
+                "new_entry": ("セクター限定", "新規候補は資金流入が続くセクター・業種を優先します。", "Rotation quality is the main edge."),
+                "profit_taking_watch": ("劣後確認", "順位低下セクターや弱い業種は利確・警戒候補として確認します。", "Rotation creates a stronger gap between leaders and laggards."),
+                "risk_management": ("選別厳格", "リーダー外の候補はリスク管理ルールを緩めずに扱います。", "Non-leadership exposure has weaker confirmation."),
+                "entry_signal": ("リーダー優先", "EntrySignal はリーダー業種内の候補を優先して解釈します。", "Industry leadership is the primary confirmation layer."),
+            },
+            "overheat_watch": {
+                "long_exposure": ("選別保有", "ロング保有は許容しつつ、広がり不足に注意する市場認識です。", "Headline score is positive while breadth confirmation is not broad enough."),
+                "new_entry": ("厳選", "新規候補は強い業種・強い出来高・明確な形状に限定して確認します。", "Breadth confirmation is not broad enough for loose screening."),
+                "profit_taking_watch": ("優先確認", "伸び切った候補や弱い Breadth の候補は利確・警戒確認を優先します。", "Overheat risk increases when headline strength lacks breadth."),
+                "risk_management": ("厳格", "リスク管理ルールは緩めず、遅れた候補を追いにくい前提で確認します。", "Late entries have weaker expectancy in overheat-watch conditions."),
+                "entry_signal": ("追加確認要求", "EntrySignal は市場内部の確認不足を割り引いて読みます。", "Positive label conflicts with incomplete breadth confirmation."),
+            },
+            "wait": {
+                "long_exposure": ("選別保有", "ロング候補は残せますが、積極的に広げるより改善確認を優先する市場認識です。", "Signals are mixed or short-term participation is limited."),
+                "new_entry": ("控えめ", "新規候補は原則控えめにし、改善が確認できる候補だけを確認します。", "Market context is not strong enough for broad new-entry review."),
+                "profit_taking_watch": ("警戒優先", "弱い候補や伸び切った候補は利確・警戒確認を優先します。", "Mixed conditions lower tolerance for weak candidates."),
+                "risk_management": ("緩和禁止", "リスク管理ルールは緩めず、条件未達の候補を上げない前提で確認します。", "Wait mode requires discipline rather than looser criteria."),
+                "entry_signal": ("厳しめ評価", "EntrySignal は通常より厳しめに読み、市場改善が伴うかを確認します。", "Signal quality needs market confirmation."),
+            },
+            "defense": {
+                "long_exposure": ("防御寄り", "ロング候補は防御寄りに確認し、弱い候補を優先的に除外する市場認識です。", "Market score, breadth, Risk-On Ratio, or VIX indicates defensive review."),
+                "new_entry": ("原則控えめ", "新規候補は原則控えめにし、明確な市場改善が出るまで確認優先度を下げます。", "Defensive conditions reduce broad long-only expectancy."),
+                "profit_taking_watch": ("最優先確認", "利確・警戒候補の確認を新規候補より優先します。", "Defensive posture raises the importance of risk review."),
+                "risk_management": ("厳格化", "リスク管理ルールは緩めず、弱い候補を残しにくい前提で確認します。", "Defensive context requires strict review standards."),
+                "entry_signal": ("割引評価", "EntrySignal は市場逆風を強く割り引いて読みます。", "Signals need unusually strong confirmation under defensive conditions."),
+            },
+        }
+        selected = posture_map.get(key, posture_map["wait"])
+        return {
+            "objective": "スイング投資における現在の市場認識",
+            "mode_key": key,
+            "mode_label": action_mode.get("label", "様子見"),
+            "mode_reason": action_mode.get("reason", ""),
+            "long_exposure_posture": _posture_item(*selected["long_exposure"]),
+            "new_entry_posture": _posture_item(*selected["new_entry"]),
+            "profit_taking_watch": _posture_item(*selected["profit_taking_watch"]),
+            "risk_management_strictness": _posture_item(*selected["risk_management"]),
+            "entry_signal_interpretation": _posture_item(*selected["entry_signal"]),
+            "evidence_facts": base_facts,
+            "boundary": "This is report-level market-context guidance only; it does not change EntrySignal, WatchList, scan logic, position sizing, execution, or exit management.",
+        }
+
+    def _confirmation_order(self, action_mode: dict[str, str], section_map: dict[str, MarketReportSection]) -> list[str]:
+        order = []
+        if section_map.get("industry_leadership") and section_map["industry_leadership"].label != "no_data":
+            order.append("1. 業種リーダーシップ: 52W HIGH、accelerating、sustained leadership の業種を先に確認する。")
+        if section_map.get("recommendation_inputs"):
+            order.append("2. 優先候補グループ: High / Medium / Low-Watch の順に確認する。")
+        if action_mode["key"] in {"selective_attack", "overheat_watch", "wait", "defense"}:
+            order.append("3. Stage 2 Quality と Mature / Late Stage Risk Filter を通過する候補だけに絞る。")
+        else:
+            order.append("3. Stage 2 銘柄の中でブレイクアウトまたは初回押し目の候補を確認する。")
+        order.append("4. Breadth、Risk-On Ratio、VIX の順に市場側の逆風がないか確認する。")
+        if action_mode["key"] in {"defense", "wait"}:
+            order.append("5. 新規候補より watchpoint_candidates の改善確認を優先する。")
+        return order[:5]
+
+    def _priority_candidate_groups(
+        self,
+        industry_rows: list[dict[str, object]],
+        priority_sectors: list[str],
+        avoid_sectors: list[str],
+        exit_watch_sectors: list[str],
+        style_tilts: list[str],
+    ) -> dict[str, list[str]]:
+        new_high = [row for row in industry_rows if _is_52w_high(row.get("52W HIGH"))]
+        sustained = [row for row in industry_rows if _is_sustained_industry(row)]
+        accelerating = [row for row in industry_rows if _is_accelerating_industry(row)]
+        weak = _weak_industries(industry_rows)
+        high = [_industry_descriptor(row) for row in _unique_records([*new_high, *sustained, *accelerating])[:5]]
+        medium_rows = [row for row in industry_rows[:8] if _industry_descriptor(row) not in high and _industry_state(row) != "weak"]
+        medium = [_industry_descriptor(row) for row in medium_rows[:5]]
+        medium.extend(f"priority_sector={name}" for name in priority_sectors)
+        medium.extend(f"style_tilt={name}" for name in style_tilts[:2])
+        low_watch = [_industry_descriptor(row) for row in weak[:5]]
+        low_watch.extend(f"lower_priority_sector={name}" for name in avoid_sectors)
+        low_watch.extend(f"profit_taking_exit_watch={name}" for name in exit_watch_sectors)
+        return {
+            "high": list(dict.fromkeys(high))[:5],
+            "medium": list(dict.fromkeys(medium))[:5],
+            "low_watch": list(dict.fromkeys(low_watch))[:6],
+        }
 
     def _metric_evidence(self, summary: dict[str, object], metric: str, source_field: str, *, raw: bool = False, score: bool = False, note: str | None = None) -> MarketReportMetric:
         value = _get_path(summary, source_field)
@@ -1070,10 +1487,38 @@ class MarketReportMarkdownRenderer:
             f"- 対象日: {report.trade_date or '不明'}",
             f"- 生成時刻: {report.generated_at}",
             f"- 総合: {report.executive_context.get('one_line_diagnosis', '')}",
+            f"- 行動モード: {report.executive_context.get('market_action_mode', '不明')}",
             "",
             "## executive_context",
             "",
         ]
+        if report.executive_context.get("market_action_mode_reason"):
+            lines.append(f"- market_action_mode_reason: {report.executive_context.get('market_action_mode_reason')}")
+        swing_posture = _mapping(report.executive_context.get("swing_market_posture"))
+        if swing_posture:
+            lines.append("- swing_market_posture:")
+            lines.append(f"  - objective: {swing_posture.get('objective', '')}")
+            lines.append(f"  - mode: {swing_posture.get('mode_label', '')} ({swing_posture.get('mode_key', '')})")
+            for key, label in (
+                ("long_exposure_posture", "long_exposure"),
+                ("new_entry_posture", "new_entry"),
+                ("profit_taking_watch", "profit_taking_watch"),
+                ("risk_management_strictness", "risk_management"),
+                ("entry_signal_interpretation", "entry_signal"),
+            ):
+                item = _mapping(swing_posture.get(key))
+                if item:
+                    lines.append(f"  - {label}: {item.get('label', '')}; guidance={item.get('guidance', '')}; reason={item.get('reason', '')}")
+            evidence = _as_list(swing_posture.get("evidence_facts"))
+            if evidence:
+                lines.append("  - evidence_facts:")
+                lines.extend(f"    - {fact}" for fact in evidence)
+            if swing_posture.get("boundary"):
+                lines.append(f"  - boundary: {swing_posture.get('boundary')}")
+        confirmation_order = _as_list(report.executive_context.get("confirmation_order"))
+        if confirmation_order:
+            lines.append("- confirmation_order:")
+            lines.extend(f"  - {item}" for item in confirmation_order)
         for fact in _as_list(report.executive_context.get("action_context_facts")):
             lines.append(f"- {fact}")
         if report.executive_context.get("notable_changes"):
@@ -1182,6 +1627,14 @@ class MarketReportMarkdownRenderer:
         lines.append(f"- token_efficiency_rule: {contract.get('token_efficiency_rule')}")
         lines.append("")
         return lines
+
+
+def _posture_item(label: str, guidance: str, reason: str) -> dict[str, str]:
+    return {
+        "label": label,
+        "guidance": guidance,
+        "reason": reason,
+    }
 
 
 def _mapping(value: object) -> dict[str, object]:
@@ -1348,6 +1801,10 @@ def _industry_list(rows: list[dict[str, object]]) -> str:
     if not rows:
         return "none"
     return ", ".join(_industry_descriptor(row) for row in rows)
+
+
+def _join_group(items: list[str]) -> str:
+    return ", ".join(items) if items else "none"
 
 
 def _industry_descriptor(row: dict[str, object]) -> str:

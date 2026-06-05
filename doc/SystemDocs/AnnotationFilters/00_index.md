@@ -17,7 +17,7 @@
 ## Current Status Matrix
 
 - [status_matrix.md](status_matrix.md)
-- `Status` shows runtime enabled or disabled state.
+- `Status` shows active runtime state.
 - `Startup` shows whether the filter is selected by default in Watchlist controls.
 
 ## Active Annotation Filters
@@ -34,3 +34,6 @@
 | [annotation_08_stage2_confirmed.md](annotation_08_stage2_confirmed.md) | `Stage 2 Confirmed` | `src/scan/rules.py::_annotation_stage2_confirmed` |
 | [annotation_09_trend_template.md](annotation_09_trend_template.md) | `Trend Template` | `src/scan/rules.py::_annotation_trend_template` |
 | [annotation_10_stage4_avoid.md](annotation_10_stage4_avoid.md) | `Stage 4 Avoid` | `src/scan/rules.py::_annotation_stage4_avoid` |
+| [annotation_11_stage2_quality_score.md](annotation_11_stage2_quality_score.md) | `Stage 2 Quality Score` | `src/scan/rules.py::_annotation_stage2_quality_score` |
+| [annotation_12_mature_late_stage_risk_filter.md](annotation_12_mature_late_stage_risk_filter.md) | `Mature / Late Stage Risk Filter` | `src/scan/rules.py::_annotation_mature_late_stage_risk_filter` |
+| [annotation_13_industry_leadership_gate.md](annotation_13_industry_leadership_gate.md) | `Industry Leadership Gate` | `src/scan/rules.py::_annotation_industry_leadership_gate` |

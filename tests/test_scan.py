@@ -164,20 +164,11 @@ def test_recent_power_gap_annotation_respects_config_thresholds() -> None:
 
 
 def test_enabled_scan_rules_can_be_swapped_from_config() -> None:
-    row = pd.Series({"rel_volume": 2.0, "daily_change_pct": 1.0})
-    config = ScanConfig(enabled_scan_rules=("Vol Up",))
+    row = pd.Series({"rel_volume": 2.0, "daily_change_pct": 1.0, "ud_volume_ratio": 2.0})
+    config = ScanConfig(enabled_scan_rules=("Volume Accumulation",))
     result = evaluate_scan_rules(row, config)
-    assert set(result) == {"Vol Up"}
-    assert result["Vol Up"] is True
-
-
-def test_near_52w_high_scan_uses_distance_and_hybrid_filters() -> None:
-    row = pd.Series({"high_52w": 100.0, "close": 95.0, "hybrid_score": 70.0, "trend_base": False})
-    config = ScanConfig(enabled_scan_rules=("Near 52W High",))
-
-    result = evaluate_scan_rules(row, config)
-
-    assert result["Near 52W High"] is True
+    assert set(result) == {"Volume Accumulation"}
+    assert result["Volume Accumulation"] is True
 
 
 def test_vcs_52_high_scan_uses_relaxed_thresholds() -> None:
@@ -196,25 +187,6 @@ def test_vcs_52_high_scan_no_longer_requires_trend_base() -> None:
     result = evaluate_scan_rules(row, config)
 
     assert result["VCS 52 High"] is True
-
-
-def test_vcs_52_low_scan_requires_stronger_rs_and_deep_distance_from_high() -> None:
-    row = pd.Series({"vcs": 60.0, "raw_rs21": 81.0, "dist_from_52w_low": 25.0, "dist_from_52w_high": -65.0})
-    config = ScanConfig(enabled_scan_rules=("VCS 52 Low",))
-
-    result = evaluate_scan_rules(row, config)
-
-    assert result["VCS 52 Low"] is True
-
-
-def test_vcs_52_low_scan_rejects_names_not_far_enough_below_52w_high() -> None:
-    row = pd.Series({"vcs": 90.0, "raw_rs21": 100.0, "dist_from_52w_low": 20.0, "dist_from_52w_high": -60.0})
-    config = ScanConfig(enabled_scan_rules=("VCS 52 Low",))
-
-    result = evaluate_scan_rules(row, config)
-
-    assert result["VCS 52 Low"] is False
-
 
 
 def test_pullback_quality_scan_requires_quiet_volume_contraction() -> None:
@@ -588,31 +560,8 @@ def test_volume_accumulation_scan_requires_positive_day() -> None:
     assert result["Volume Accumulation"] is False
 
 
-def test_three_weeks_tight_scan_uses_indicator_flag_vcs_and_trend() -> None:
-    row = pd.Series({"three_weeks_tight": True, "vcs": 55.0, "trend_base": True})
-    config = ScanConfig(enabled_scan_rules=("Three Weeks Tight",))
-
-    result = evaluate_scan_rules(row, config)
-
-    assert result["Three Weeks Tight"] is True
-
-
-def test_vcp_3t_scan_requires_contracting_depth_dryup_and_pivot_breakout() -> None:
-    row = pd.Series(
-        {
-            "vcp_t1_depth_pct": 20.0,
-            "vcp_t2_depth_pct": 12.0,
-            "vcp_t3_depth_pct": 5.0,
-            "vcp_prior_uptrend_pct": 60.0,
-            "vcp_tight_days": 4.0,
-            "vcp_volume_dryup_ratio": 0.55,
-            "vcp_pivot_breakout": True,
-            "vcp_pivot_proximity_pct": 2.0,
-            "volume_ratio_20d": 1.6,
-            "dcr_percent": 82.0,
-            "rs21": 75.0,
-        }
-    )
+def test_vcp_3t_scan_uses_tightening_state_flag() -> None:
+    row = pd.Series({"vcp_tightening": True})
     config = ScanConfig(enabled_scan_rules=("VCP 3T",))
 
     result = evaluate_scan_rules(row, config)
@@ -620,159 +569,13 @@ def test_vcp_3t_scan_requires_contracting_depth_dryup_and_pivot_breakout() -> No
     assert result["VCP 3T"] is True
 
 
-def test_vcp_3t_scan_rejects_non_contracting_depths() -> None:
-    row = pd.Series(
-        {
-            "vcp_t1_depth_pct": 20.0,
-            "vcp_t2_depth_pct": 18.0,
-            "vcp_t3_depth_pct": 9.0,
-            "vcp_prior_uptrend_pct": 60.0,
-            "vcp_tight_days": 4.0,
-            "vcp_volume_dryup_ratio": 0.55,
-            "vcp_pivot_breakout": True,
-            "vcp_pivot_proximity_pct": 2.0,
-            "volume_ratio_20d": 1.6,
-            "dcr_percent": 82.0,
-            "rs21": 75.0,
-        }
-    )
+def test_vcp_3t_scan_rejects_without_tightening_state() -> None:
+    row = pd.Series({"vcp_tightening": False})
     config = ScanConfig(enabled_scan_rules=("VCP 3T",))
 
     result = evaluate_scan_rules(row, config)
 
     assert result["VCP 3T"] is False
-
-
-def test_rs_acceleration_scan_uses_rs_fields_not_rsi_fields() -> None:
-    row = pd.Series({"rs21": 75.0, "rs63": 70.0, "rsi21": 10.0, "rsi63": 90.0, "trend_base": True})
-    config = ScanConfig(enabled_scan_rules=("RS Acceleration",))
-
-    result = evaluate_scan_rules(row, config)
-
-    assert result["RS Acceleration"] is True
-
-
-def test_sustained_leadership_scan_requires_all_rs_windows() -> None:
-    row = pd.Series(
-        {
-            "raw_rs21": 80.0,
-            "rs63": 70.0,
-            "rs126": 60.0,
-            "trend_base": True,
-        }
-    )
-    config = ScanConfig(enabled_scan_rules=("Sustained Leadership",))
-
-    result = evaluate_scan_rules(row, config)
-
-    assert result["Sustained Leadership"] is True
-
-
-def test_trend_reversal_setup_scan_uses_reversal_constraints_and_pp_count_fallback() -> None:
-    row = pd.Series(
-        {
-            "close": 105.0,
-            "sma50": 100.0,
-            "sma200": 110.0,
-            "sma50_slope_10d_pct": 1.0,
-            "dist_from_52w_low": 35.0,
-            "dist_from_52w_high": -20.0,
-            "raw_rs21": 55.0,
-            "pp_count_window": 1,
-        }
-    )
-    config = ScanConfig(enabled_scan_rules=("Trend Reversal Setup",))
-
-    result = evaluate_scan_rules(row, config)
-
-    assert result["Trend Reversal Setup"] is True
-
-
-def test_trend_reversal_setup_scan_rejects_rows_without_pocket_pivot_support() -> None:
-    row = pd.Series(
-        {
-            "close": 105.0,
-            "sma50": 100.0,
-            "sma200": 110.0,
-            "sma50_slope_10d_pct": 1.0,
-            "dist_from_52w_low": 35.0,
-            "dist_from_52w_high": -20.0,
-            "raw_rs21": 55.0,
-            "pp_count_30d": 0,
-        }
-    )
-    config = ScanConfig(enabled_scan_rules=("Trend Reversal Setup",))
-
-    result = evaluate_scan_rules(row, config)
-
-    assert result["Trend Reversal Setup"] is False
-
-
-def test_structure_pivot_scan_requires_first_day_breakout_and_volume_confirmation() -> None:
-    row = pd.Series(
-        {
-            "structure_pivot_long_active": True,
-            "structure_pivot_long_breakout_first_day": True,
-            "structure_pivot_long_breakout_gap_up": False,
-            "rel_volume": 1.4,
-        }
-    )
-    config = ScanConfig(enabled_scan_rules=("Structure Pivot",))
-
-    result = evaluate_scan_rules(row, config)
-
-    assert result["Structure Pivot"] is True
-
-
-def test_structure_pivot_scan_rejects_non_first_day_breakout() -> None:
-    row = pd.Series(
-        {
-            "structure_pivot_long_active": True,
-            "structure_pivot_long_breakout_first_day": False,
-            "structure_pivot_long_breakout_gap_up": False,
-            "rel_volume": 2.0,
-        }
-    )
-    config = ScanConfig(enabled_scan_rules=("Structure Pivot",))
-
-    result = evaluate_scan_rules(row, config)
-
-    assert result["Structure Pivot"] is False
-
-
-def test_structure_pivot_scan_rejects_breakout_without_required_volume() -> None:
-    row = pd.Series(
-        {
-            "structure_pivot_long_active": True,
-            "structure_pivot_long_breakout_first_day": True,
-            "structure_pivot_long_breakout_gap_up": False,
-            "rel_volume": 1.39,
-        }
-    )
-    config = ScanConfig(enabled_scan_rules=("Structure Pivot",))
-
-    result = evaluate_scan_rules(row, config)
-
-    assert result["Structure Pivot"] is False
-
-
-def test_structure_pivot_scan_can_exclude_gap_up_breakouts() -> None:
-    row = pd.Series(
-        {
-            "structure_pivot_long_active": True,
-            "structure_pivot_long_breakout_first_day": True,
-            "structure_pivot_long_breakout_gap_up": True,
-            "rel_volume": 2.0,
-        }
-    )
-    config = ScanConfig(
-        enabled_scan_rules=("Structure Pivot",),
-        structure_pivot_include_gap_up_breakouts=False,
-    )
-
-    result = evaluate_scan_rules(row, config)
-
-    assert result["Structure Pivot"] is False
 
 
 def test_llhl_1st_pivot_scan_requires_rs_and_first_break() -> None:
@@ -846,10 +649,10 @@ def test_watchlist_cards_follow_configured_card_sections() -> None:
     hits = pd.DataFrame(
         [
             {"ticker": "AAA", "name": "21EMA Pattern H", "kind": "scan"},
-            {"ticker": "BBB", "name": "Vol Up", "kind": "scan"},
+            {"ticker": "BBB", "name": "Reclaim scan", "kind": "scan"},
         ]
     )
-    config = ScanConfig(card_sections=(ScanCardConfig(scan_name="Vol Up", display_name="Volume Expansion"),))
+    config = ScanConfig(card_sections=(ScanCardConfig(scan_name="Reclaim scan", display_name="Volume Expansion"),))
 
     cards = WatchlistViewModelBuilder(config).build_scan_cards(raw_watchlist, hits)
 
@@ -902,7 +705,7 @@ def test_watchlist_builder_surfaces_annotation_columns() -> None:
             "scan_hit_count": [3],
             "annotation_hit_count": [2],
             "duplicate_ticker": [True],
-            "hit_scans": ["Vol Up, VCS, 97 Club"],
+            "hit_scans": ["21EMA Pattern H, Pocket Pivot, VCS 52 High"],
             "annotation_hits": ["RS 21 >= 63, High Est. EPS Growth"],
             "annotation_rs21_gte_63": [True],
             "annotation_high_eps_growth": [True],
@@ -918,7 +721,7 @@ def test_watchlist_builder_surfaces_annotation_columns() -> None:
     assert bool(display.iloc[0]["backend_duplicate_ticker"]) is True
     assert display.iloc[0]["backend_duplicate_rule"] == "scan_hit_count >= 3 across all enabled scans"
     assert display.iloc[0]["watchlist_candidate_reason"] == "matched_enabled_scan"
-    assert display.iloc[0]["matched_scan_rules"] == "Vol Up, VCS, 97 Club"
+    assert display.iloc[0]["matched_scan_rules"] == "21EMA Pattern H, Pocket Pivot, VCS 52 High"
     assert int(display.iloc[0]["scan_hit_count"]) == 3
     assert int(display.iloc[0]["annotation_hit_count"]) == 2
     assert "RS 21 >= 63" in display.iloc[0]["annotation_hits"]
@@ -935,7 +738,7 @@ def test_watchlist_builder_includes_new_scan_output_fields_when_available() -> N
             "scan_hit_count": [3],
             "annotation_hit_count": [0],
             "duplicate_ticker": [True],
-            "hit_scans": ["VCS, VCS 52 High, Volume Accumulation"],
+            "hit_scans": ["Pocket Pivot, VCS 52 High, Volume Accumulation"],
             "annotation_hits": [""],
             "vcs": [70.0],
             "dist_from_52w_high": [-12.5],
@@ -1059,8 +862,8 @@ def test_duplicate_ticker_builder_uses_scan_hits_only() -> None:
     hits = pd.DataFrame(
         [
             {"ticker": "AAA", "name": "21EMA Pattern H", "kind": "scan"},
-            {"ticker": "AAA", "name": "Vol Up", "kind": "scan"},
-            {"ticker": "AAA", "name": "VCS", "kind": "scan"},
+            {"ticker": "AAA", "name": "Reclaim scan", "kind": "scan"},
+            {"ticker": "AAA", "name": "Pocket Pivot", "kind": "scan"},
             {"ticker": "BBB", "name": "21EMA Pattern H", "kind": "scan"},
         ]
     )
@@ -1086,13 +889,13 @@ def test_watchlist_cards_can_be_filtered_by_selected_scan_names() -> None:
     hits = pd.DataFrame(
         [
             {"ticker": "AAA", "name": "21EMA Pattern H", "kind": "scan"},
-            {"ticker": "BBB", "name": "Vol Up", "kind": "scan"},
+            {"ticker": "BBB", "name": "Reclaim scan", "kind": "scan"},
         ]
     )
     config = ScanConfig(
         card_sections=(
             ScanCardConfig(scan_name="21EMA Pattern H", display_name="21EMA"),
-            ScanCardConfig(scan_name="Vol Up", display_name="Vol Up"),
+            ScanCardConfig(scan_name="Reclaim scan", display_name="Reclaim scan"),
         )
     )
 
@@ -1115,10 +918,10 @@ def test_duplicate_ticker_builder_respects_selected_scans_and_threshold() -> Non
     hits = pd.DataFrame(
         [
             {"ticker": "AAA", "name": "21EMA Pattern H", "kind": "scan"},
-            {"ticker": "AAA", "name": "Vol Up", "kind": "scan"},
-            {"ticker": "AAA", "name": "VCS", "kind": "scan"},
+            {"ticker": "AAA", "name": "Reclaim scan", "kind": "scan"},
+            {"ticker": "AAA", "name": "Pocket Pivot", "kind": "scan"},
             {"ticker": "BBB", "name": "21EMA Pattern H", "kind": "scan"},
-            {"ticker": "BBB", "name": "97 Club", "kind": "scan"},
+            {"ticker": "BBB", "name": "VCS 52 High", "kind": "scan"},
         ]
     )
 
@@ -1126,7 +929,7 @@ def test_duplicate_ticker_builder_respects_selected_scans_and_threshold() -> Non
         watchlist,
         hits,
         min_count=2,
-        selected_scan_names=["21EMA Pattern H", "VCS"],
+        selected_scan_names=["21EMA Pattern H", "Pocket Pivot"],
     )
 
     assert list(duplicate["Ticker"]) == ["AAA"]
@@ -1146,31 +949,31 @@ def test_duplicate_ticker_builder_can_use_required_plus_optional_rule() -> None:
     hits = pd.DataFrame(
         [
             {"ticker": "AAA", "name": "21EMA Pattern H", "kind": "scan"},
-            {"ticker": "AAA", "name": "VCS", "kind": "scan"},
-            {"ticker": "AAA", "name": "Vol Up", "kind": "scan"},
+            {"ticker": "AAA", "name": "Pocket Pivot", "kind": "scan"},
+            {"ticker": "AAA", "name": "Reclaim scan", "kind": "scan"},
             {"ticker": "BBB", "name": "21EMA Pattern H", "kind": "scan"},
-            {"ticker": "BBB", "name": "VCS", "kind": "scan"},
-            {"ticker": "CCC", "name": "VCS", "kind": "scan"},
-            {"ticker": "CCC", "name": "Vol Up", "kind": "scan"},
+            {"ticker": "BBB", "name": "Pocket Pivot", "kind": "scan"},
+            {"ticker": "CCC", "name": "Pocket Pivot", "kind": "scan"},
+            {"ticker": "CCC", "name": "Reclaim scan", "kind": "scan"},
         ]
     )
     config = ScanConfig(
         card_sections=(
             ScanCardConfig(scan_name="21EMA Pattern H", display_name="21EMA"),
-            ScanCardConfig(scan_name="VCS", display_name="VCS"),
-            ScanCardConfig(scan_name="Vol Up", display_name="Vol Up"),
-            ScanCardConfig(scan_name="97 Club", display_name="97 Club"),
+            ScanCardConfig(scan_name="Pocket Pivot", display_name="Pocket Pivot"),
+            ScanCardConfig(scan_name="Reclaim scan", display_name="Reclaim scan"),
+            ScanCardConfig(scan_name="VCS 52 High", display_name="VCS 52 High"),
         )
     )
     duplicate = WatchlistViewModelBuilder(config).build_duplicate_tickers(
         watchlist,
         hits,
         min_count=2,
-        selected_scan_names=["21EMA Pattern H", "VCS", "Vol Up", "97 Club"],
+        selected_scan_names=["21EMA Pattern H", "Pocket Pivot", "Reclaim scan", "VCS 52 High"],
         duplicate_rule=DuplicateRuleConfig(
             mode="required_plus_optional_min",
             required_scans=("21EMA Pattern H",),
-            optional_scans=("VCS", "Vol Up", "97 Club"),
+            optional_scans=("Pocket Pivot", "Reclaim scan", "VCS 52 High"),
             optional_min_hits=2,
         ),
     )
@@ -1192,11 +995,11 @@ def test_duplicate_ticker_builder_can_use_grouped_threshold_rule() -> None:
         [
             {"ticker": "AAA", "name": "Pullback Quality scan", "kind": "scan"},
             {"ticker": "AAA", "name": "21EMA Pattern H", "kind": "scan"},
-            {"ticker": "AAA", "name": "RS Acceleration", "kind": "scan"},
+            {"ticker": "AAA", "name": "Volume Accumulation", "kind": "scan"},
             {"ticker": "BBB", "name": "Pullback Quality scan", "kind": "scan"},
             {"ticker": "BBB", "name": "21EMA Pattern L", "kind": "scan"},
             {"ticker": "CCC", "name": "21EMA Pattern H", "kind": "scan"},
-            {"ticker": "CCC", "name": "RS Acceleration", "kind": "scan"},
+            {"ticker": "CCC", "name": "Volume Accumulation", "kind": "scan"},
         ]
     )
     config = ScanConfig(
@@ -1204,7 +1007,7 @@ def test_duplicate_ticker_builder_can_use_grouped_threshold_rule() -> None:
             ScanCardConfig(scan_name="Pullback Quality scan", display_name="PB Quality"),
             ScanCardConfig(scan_name="21EMA Pattern H", display_name="21EMA PH"),
             ScanCardConfig(scan_name="21EMA Pattern L", display_name="21EMA PL"),
-            ScanCardConfig(scan_name="RS Acceleration", display_name="RS Accel"),
+            ScanCardConfig(scan_name="Volume Accumulation", display_name="RS Accel"),
             ScanCardConfig(scan_name="Volume Accumulation", display_name="Volume Accumulation"),
         )
     )
@@ -1220,7 +1023,7 @@ def test_duplicate_ticker_builder_can_use_grouped_threshold_rule() -> None:
                 },
                 {
                     "group_name": "Strength Confirmation",
-                    "scans": ["RS Acceleration", "Volume Accumulation"],
+                    "scans": ["Volume Accumulation", "Volume Accumulation"],
                     "min_hits": 1,
                 },
             ],
@@ -1235,7 +1038,7 @@ def test_duplicate_ticker_builder_can_use_grouped_threshold_rule() -> None:
             "Pullback Quality scan",
             "21EMA Pattern H",
             "21EMA Pattern L",
-            "RS Acceleration",
+            "Volume Accumulation",
             "Volume Accumulation",
         ],
         duplicate_rule=rule,
@@ -1257,13 +1060,13 @@ def test_duplicate_ticker_builder_can_apply_top3_hybridrs_subfilter() -> None:
     hits = pd.DataFrame(
         [
             {"ticker": "AAA", "name": "21EMA Pattern H", "kind": "scan"},
-            {"ticker": "AAA", "name": "VCS", "kind": "scan"},
+            {"ticker": "AAA", "name": "Pocket Pivot", "kind": "scan"},
             {"ticker": "BBB", "name": "21EMA Pattern H", "kind": "scan"},
-            {"ticker": "BBB", "name": "VCS", "kind": "scan"},
+            {"ticker": "BBB", "name": "Pocket Pivot", "kind": "scan"},
             {"ticker": "CCC", "name": "21EMA Pattern H", "kind": "scan"},
-            {"ticker": "CCC", "name": "VCS", "kind": "scan"},
+            {"ticker": "CCC", "name": "Pocket Pivot", "kind": "scan"},
             {"ticker": "DDD", "name": "21EMA Pattern H", "kind": "scan"},
-            {"ticker": "DDD", "name": "VCS", "kind": "scan"},
+            {"ticker": "DDD", "name": "Pocket Pivot", "kind": "scan"},
         ]
     )
 
@@ -1271,7 +1074,7 @@ def test_duplicate_ticker_builder_can_apply_top3_hybridrs_subfilter() -> None:
         watchlist,
         hits,
         min_count=2,
-        selected_scan_names=["21EMA Pattern H", "VCS"],
+        selected_scan_names=["21EMA Pattern H", "Pocket Pivot"],
         selected_duplicate_subfilters=["Top3 HybridRS"],
     )
 
@@ -1308,11 +1111,9 @@ def test_default_scan_config_includes_new_scan_names_and_cards() -> None:
         "RS New High",
         "RS 3Y New High",
         "Volume Accumulation",
-        "VCS 52 High",
-        "VCS 52 Low",
-        "Sustained Leadership",
-        "Trend Reversal Setup",
-        "Structure Pivot",
+        "LL-HL Structure 1st Pivot",
+        "Pocket Pivot",
+        "PP Count",
     }.issubset(set(config.enabled_scan_rules))
     assert "21EMA scan V2" not in set(config.enabled_scan_rules)
     assert "PP Count" in set(config.enabled_scan_rules)
@@ -1325,11 +1126,9 @@ def test_default_scan_config_includes_new_scan_names_and_cards() -> None:
         "RS New High",
         "RS 3Y New High",
         "Volume Accumulation",
-        "VCS 52 High",
-        "VCS 52 Low",
-        "Sustained Leadership",
-        "Trend Reversal Setup",
-        "Structure Pivot",
+        "LL-HL Structure 1st Pivot",
+        "Pocket Pivot",
+        "PP Count",
     }.issubset(
         {section.scan_name for section in config.card_sections}
     )
@@ -1346,56 +1145,56 @@ def test_default_scan_config_includes_new_scan_names_and_cards() -> None:
 def test_scan_config_startup_selection_defaults_to_all_card_sections() -> None:
     config = ScanConfig(
         card_sections=(
-            ScanCardConfig(scan_name="Vol Up", display_name="Vol Up"),
-            ScanCardConfig(scan_name="VCS", display_name="VCS"),
+            ScanCardConfig(scan_name="Reclaim scan", display_name="Reclaim scan"),
+            ScanCardConfig(scan_name="Pocket Pivot", display_name="Pocket Pivot"),
         )
     )
 
-    assert config.startup_selected_scan_names() == ("Vol Up", "VCS")
+    assert config.startup_selected_scan_names() == ("Reclaim scan", "Pocket Pivot")
 
 
 def test_scan_config_can_define_startup_selected_scan_names_from_config() -> None:
     config = ScanConfig.from_dict(
         {
             "card_sections": [
-                {"scan_name": "Vol Up", "display_name": "Vol Up"},
-                {"scan_name": "VCS", "display_name": "VCS"},
+                {"scan_name": "Reclaim scan", "display_name": "Reclaim scan"},
+                {"scan_name": "Pocket Pivot", "display_name": "Pocket Pivot"},
             ],
-            "default_selected_scan_names": ["VCS"],
+            "default_selected_scan_names": ["Pocket Pivot"],
         }
     )
 
-    assert config.startup_selected_scan_names() == ("VCS",)
+    assert config.startup_selected_scan_names() == ("Pocket Pivot",)
 
 
 def test_scan_config_filters_disabled_scans_from_runtime_and_cards() -> None:
     config = ScanConfig.from_dict(
         {
-            "enabled_scan_rules": ["Vol Up", "VCS"],
+            "enabled_scan_rules": ["Reclaim scan", "Pocket Pivot"],
             "scan_status_map": {
-                "Vol Up": "disabled",
-                "VCS": "enabled",
+                "Reclaim scan": "disabled",
+                "Pocket Pivot": "enabled",
             },
             "card_sections": [
-                {"scan_name": "Vol Up", "display_name": "Vol Up"},
-                {"scan_name": "VCS", "display_name": "VCS"},
+                {"scan_name": "Reclaim scan", "display_name": "Reclaim scan"},
+                {"scan_name": "Pocket Pivot", "display_name": "Pocket Pivot"},
             ],
         }
     )
 
-    assert config.enabled_scan_rules == ("VCS",)
-    assert tuple(section.scan_name for section in config.card_sections) == ("VCS",)
+    assert config.enabled_scan_rules == ("Pocket Pivot",)
+    assert tuple(section.scan_name for section in config.card_sections) == ("Pocket Pivot",)
 
 
 def test_scan_config_coerces_misplaced_scan_names_out_of_enabled_annotation_filters() -> None:
     config = ScanConfig.from_dict(
         {
-            "enabled_scan_rules": ["Vol Up"],
-            "enabled_annotation_filters": ["RS 21 >= 63", "Trend Reversal Setup"],
+            "enabled_scan_rules": ["Reclaim scan"],
+            "enabled_annotation_filters": ["RS 21 >= 63", "LL-HL Structure 1st Pivot"],
         }
     )
 
-    assert config.enabled_scan_rules == ("Vol Up", "Trend Reversal Setup")
+    assert config.enabled_scan_rules == ("Reclaim scan", "LL-HL Structure 1st Pivot")
     assert config.enabled_annotation_filters == ("RS 21 >= 63",)
 
 
@@ -1412,12 +1211,12 @@ def test_scan_config_filters_disabled_annotation_filters_from_runtime_and_preset
                 {"filter_name": "RS 21 >= 63", "display_name": "RS 21 >= 63"},
             ],
             "card_sections": [
-                {"scan_name": "Vol Up", "display_name": "Vol Up"},
+                {"scan_name": "Reclaim scan", "display_name": "Reclaim scan"},
             ],
             "watchlist_presets": [
                 {
                     "preset_name": "Filter Trim",
-                    "selected_scan_names": ["Vol Up"],
+                    "selected_scan_names": ["Reclaim scan"],
                     "selected_annotation_filters": ["Trend Base", "RS 21 >= 63"],
                 }
             ],
@@ -1433,9 +1232,9 @@ def test_scan_config_drops_unavailable_startup_selected_scan_names() -> None:
     config = ScanConfig.from_dict(
         {
             "card_sections": [
-                {"scan_name": "Vol Up", "display_name": "Vol Up"},
+                {"scan_name": "Reclaim scan", "display_name": "Reclaim scan"},
             ],
-            "default_selected_scan_names": ["VCS"],
+            "default_selected_scan_names": ["Pocket Pivot"],
         }
     )
 
@@ -1454,7 +1253,7 @@ def test_apply_selected_scan_metrics_zeroes_duplicate_state_when_no_scans_select
     hits = pd.DataFrame(
         [
             {"ticker": "AAA", "name": "21EMA Pattern H", "kind": "scan"},
-            {"ticker": "AAA", "name": "VCS", "kind": "scan"},
+            {"ticker": "AAA", "name": "Pocket Pivot", "kind": "scan"},
         ]
     )
 
@@ -1494,14 +1293,14 @@ def test_scan_config_can_parse_builtin_watchlist_presets() -> None:
     config = ScanConfig.from_dict(
         {
             "card_sections": [
-                {"scan_name": "97 Club", "display_name": "97 Club"},
                 {"scan_name": "VCS 52 High", "display_name": "VCS 52 High"},
-                {"scan_name": "RS Acceleration", "display_name": "RS Accel"},
+                {"scan_name": "Volume Accumulation", "display_name": "Volume Accumulation"},
+                {"scan_name": "Pocket Pivot", "display_name": "Pocket Pivot"},
             ],
             "watchlist_presets": [
                 {
-                    "preset_name": "Leader Breakout",
-                    "selected_scan_names": ["97 Club", "VCS 52 High", "RS Acceleration"],
+                    "preset_name": "RS Breakout Setup",
+                    "selected_scan_names": ["VCS 52 High", "Volume Accumulation", "Pocket Pivot"],
                     "duplicate_threshold": 2,
                     "duplicate_rule": {"mode": "min_count", "min_count": 2},
                     "preset_status": "hidden_enabled",
@@ -1511,8 +1310,8 @@ def test_scan_config_can_parse_builtin_watchlist_presets() -> None:
     )
 
     assert len(config.watchlist_presets) == 1
-    assert config.watchlist_presets[0].preset_name == "Leader Breakout"
-    assert config.watchlist_presets[0].selected_scan_names == ("97 Club", "VCS 52 High", "RS Acceleration")
+    assert config.watchlist_presets[0].preset_name == "RS Breakout Setup"
+    assert config.watchlist_presets[0].selected_scan_names == ("VCS 52 High", "Volume Accumulation", "Pocket Pivot")
     assert config.watchlist_presets[0].to_control_values()["duplicate_threshold"] == 2
     assert config.watchlist_presets[0].duplicate_rule.mode == "min_count"
     assert config.watchlist_presets[0].preset_status == "hidden_enabled"
@@ -1524,12 +1323,12 @@ def test_scan_config_can_parse_preset_csv_export_settings() -> None:
     config = ScanConfig.from_dict(
         {
             "card_sections": [
-                {"scan_name": "97 Club", "display_name": "97 Club"},
+                {"scan_name": "VCS 52 High", "display_name": "VCS 52 High"},
             ],
             "watchlist_presets": [
                 {
-                    "preset_name": "Leader Breakout",
-                    "selected_scan_names": ["97 Club"],
+                    "preset_name": "RS Breakout Setup",
+                    "selected_scan_names": ["VCS 52 High"],
                     "duplicate_threshold": 2,
                     "export_enabled": False,
                 }
@@ -1555,19 +1354,19 @@ def test_scan_config_disables_builtin_preset_when_it_uses_disabled_scan() -> Non
     config = ScanConfig.from_dict(
         {
             "scan_status_map": {
-                "97 Club": "disabled",
                 "VCS 52 High": "enabled",
-                "RS Acceleration": "enabled",
+                "Volume Accumulation": "enabled",
+                "Pocket Pivot": "disabled",
             },
             "card_sections": [
-                {"scan_name": "97 Club", "display_name": "97 Club"},
                 {"scan_name": "VCS 52 High", "display_name": "VCS 52 High"},
-                {"scan_name": "RS Acceleration", "display_name": "RS Accel"},
+                {"scan_name": "Volume Accumulation", "display_name": "Volume Accumulation"},
+                {"scan_name": "Pocket Pivot", "display_name": "Pocket Pivot"},
             ],
             "watchlist_presets": [
                 {
-                    "preset_name": "Leader Breakout",
-                    "selected_scan_names": ["97 Club", "VCS 52 High", "RS Acceleration"],
+                    "preset_name": "RS Breakout Setup",
+                    "selected_scan_names": ["VCS 52 High", "Volume Accumulation", "Pocket Pivot"],
                     "duplicate_threshold": 2,
                     "preset_status": "enabled",
                 }
@@ -1586,7 +1385,7 @@ def test_scan_config_rejects_preset_duplicate_rule_scans_outside_selected_scans(
             {
                 "card_sections": [
                     {"scan_name": "21EMA Pattern H", "display_name": "21EMA"},
-                    {"scan_name": "VCS", "display_name": "VCS"},
+                    {"scan_name": "Pocket Pivot", "display_name": "Pocket Pivot"},
                 ],
                 "watchlist_presets": [
                     {
@@ -1595,7 +1394,7 @@ def test_scan_config_rejects_preset_duplicate_rule_scans_outside_selected_scans(
                         "duplicate_rule": {
                             "mode": "required_plus_optional_min",
                             "required_scans": ["21EMA Pattern H"],
-                            "optional_scans": ["VCS"],
+                            "optional_scans": ["Pocket Pivot"],
                             "optional_min_hits": 1,
                         },
                     }
@@ -1613,12 +1412,12 @@ def test_scan_config_rejects_unknown_watchlist_preset_status() -> None:
         ScanConfig.from_dict(
             {
                 "card_sections": [
-                    {"scan_name": "97 Club", "display_name": "97 Club"},
+                    {"scan_name": "VCS 52 High", "display_name": "VCS 52 High"},
                 ],
                 "watchlist_presets": [
                     {
-                        "preset_name": "Leader Breakout",
-                        "selected_scan_names": ["97 Club"],
+                        "preset_name": "RS Breakout Setup",
+                        "selected_scan_names": ["VCS 52 High"],
                         "preset_status": "archive_only",
                     }
                 ],
@@ -1662,15 +1461,15 @@ def test_watchlist_preset_export_includes_duplicate_and_card_hit_tickers() -> No
     hits = pd.DataFrame(
         [
             {"ticker": "AAA", "name": "21EMA Pattern H", "kind": "scan"},
-            {"ticker": "AAA", "name": "VCS", "kind": "scan"},
+            {"ticker": "AAA", "name": "Pocket Pivot", "kind": "scan"},
             {"ticker": "BBB", "name": "21EMA Pattern H", "kind": "scan"},
-            {"ticker": "CCC", "name": "VCS", "kind": "scan"},
+            {"ticker": "CCC", "name": "Pocket Pivot", "kind": "scan"},
         ]
     )
     config = ScanConfig(
         card_sections=(
             ScanCardConfig(scan_name="21EMA Pattern H", display_name="21EMA"),
-            ScanCardConfig(scan_name="VCS", display_name="VCS"),
+            ScanCardConfig(scan_name="Pocket Pivot", display_name="Pocket Pivot"),
         )
     )
 
@@ -1678,7 +1477,7 @@ def test_watchlist_preset_export_includes_duplicate_and_card_hit_tickers() -> No
         "Momentum Core",
         watchlist,
         hits,
-        selected_scan_names=["21EMA Pattern H", "VCS"],
+        selected_scan_names=["21EMA Pattern H", "Pocket Pivot"],
         min_count=2,
         selected_annotation_filters=["RS 21 >= 63"],
     )
@@ -1688,14 +1487,14 @@ def test_watchlist_preset_export_includes_duplicate_and_card_hit_tickers() -> No
         "Preset Name",
         "Duplicate Tickers",
         "21EMA Hit Tickers",
-        "VCS Hit Tickers",
+        "Pocket Pivot Hit Tickers",
     ]
     assert export_frame.iloc[0].to_dict() == {
         "Output Target": "Today's Watchlist",
         "Preset Name": "Momentum Core",
         "Duplicate Tickers": "AAA",
         "21EMA Hit Tickers": "AAA, BBB",
-        "VCS Hit Tickers": "AAA",
+        "Pocket Pivot Hit Tickers": "AAA",
     }
 
 
@@ -1712,27 +1511,27 @@ def test_watchlist_preset_summary_export_groups_hit_presets_by_ticker() -> None:
     hits = pd.DataFrame(
         [
             {"ticker": "AAA", "name": "21EMA Pattern H", "kind": "scan"},
-            {"ticker": "AAA", "name": "VCS", "kind": "scan"},
+            {"ticker": "AAA", "name": "Pocket Pivot", "kind": "scan"},
             {"ticker": "BBB", "name": "21EMA Pattern H", "kind": "scan"},
-            {"ticker": "CCC", "name": "VCS", "kind": "scan"},
+            {"ticker": "CCC", "name": "Pocket Pivot", "kind": "scan"},
         ]
     )
     config = ScanConfig(
         card_sections=(
             ScanCardConfig(scan_name="21EMA Pattern H", display_name="21EMA"),
-            ScanCardConfig(scan_name="VCS", display_name="VCS"),
+            ScanCardConfig(scan_name="Pocket Pivot", display_name="Pocket Pivot"),
         )
     )
     custom_presets = ScanConfig.from_dict(
         {
             "card_sections": [
                 {"scan_name": "21EMA Pattern H", "display_name": "21EMA"},
-                {"scan_name": "VCS", "display_name": "VCS"},
+                {"scan_name": "Pocket Pivot", "display_name": "Pocket Pivot"},
             ],
             "watchlist_presets": [
                 {
                     "preset_name": "Momentum Core",
-                    "selected_scan_names": ["21EMA Pattern H", "VCS"],
+                    "selected_scan_names": ["21EMA Pattern H", "Pocket Pivot"],
                     "selected_annotation_filters": ["RS 21 >= 63"],
                     "duplicate_threshold": 2,
                 },
@@ -1763,7 +1562,7 @@ def test_watchlist_preset_summary_export_groups_hit_presets_by_ticker() -> None:
         "ticker": "AAA",
         "hit_presets": "Momentum Core, EMA Follow Through",
         "hit_preset_count": 2,
-        "selected_scan_names": "21EMA Pattern H, VCS",
+            "selected_scan_names": "21EMA Pattern H, Pocket Pivot",
         "selected_annotation_filters": "RS 21 >= 63",
         "duplicate_thresholds": "2, 1",
         "duplicate_rule_modes": "min_count",

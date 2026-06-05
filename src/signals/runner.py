@@ -14,7 +14,6 @@ from src.data.tracking_db import connect_tracking_db
 from src.pipeline import PlatformArtifacts
 from src.scan.rules import ScanConfig, WatchlistPresetConfig, enrich_with_scan_context
 from src.signals.evaluators.accumulation_breakout import evaluate_accumulation_breakout
-from src.signals.evaluators.early_cycle_recovery import evaluate_early_cycle_recovery
 from src.signals.evaluators.momentum_acceleration import evaluate_momentum_acceleration
 from src.signals.evaluators.orderly_pullback import evaluate_orderly_pullback
 from src.signals.evaluators.power_gap_pullback import evaluate_power_gap_pullback
@@ -76,16 +75,28 @@ MISSING_PIECE_LABELS = {
     "accumulation_quality": "accumulation evidence weak",
     "base_tightness": "base tightness weak",
     "resistance_context": "resistance context weak",
-    "structure_reversal_quality": "structure reversal weak",
-    "low_to_recovery_position": "recovery position weak",
-    "accumulation_evidence": "accumulation evidence weak",
-    "trend_repair": "trend repair incomplete",
-    "rs_recovery": "RS recovery weak",
     "gap_quality": "gap quality weak",
     "pullback_orderliness": "pullback orderliness weak",
     "support_proximity": "support proximity weak",
     "accumulation_return": "accumulation return weak",
 }
+
+
+def _normalize_market_env(label: object) -> str | None:
+    if label is None:
+        return None
+    value = str(label).strip().lower()
+    if not value or value == "no data":
+        return None
+    if value in {"bull", "bullish", "positive"}:
+        return "bull"
+    if value in {"neutral"}:
+        return "neutral"
+    if value in {"weak", "negative"}:
+        return "weak"
+    if value in {"bear", "bearish"}:
+        return "bear"
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -429,6 +440,8 @@ class EntrySignalRunner:
                         rr_ideal=result_row.get("R/R Ideal"),
                         plan_verdict=result_row.get("Plan Verdict"),
                         reject_codes=result_row.get("Plan Reject Codes"),
+                        action_bucket=result_row.get("Action Bucket"),
+                        market_env=_normalize_market_env(current_row.get("market_label", current_row.get("market_env"))),
                     )
                 rows.append(result_row)
             conn.commit()
@@ -546,10 +559,14 @@ class EntrySignalRunner:
 
     def _build_current_row_lookup(self, artifacts: PlatformArtifacts) -> dict[str, pd.Series]:
         lookup: dict[str, pd.Series] = {}
+        market_result = getattr(artifacts, "market_result", None)
+        market_label = getattr(market_result, "label", None)
         for frame in [artifacts.entry_signal_watchlist, artifacts.watchlist, artifacts.eligible_snapshot]:
             if frame is None or frame.empty:
                 continue
             working = frame.copy()
+            if market_label is not None and "market_label" not in working.columns:
+                working["market_label"] = market_label
             if (
                 "weekly_return" in working.columns
                 and "quarterly_return" in working.columns
@@ -638,8 +655,6 @@ class EntrySignalRunner:
             return evaluate_momentum_acceleration(current_row, pool_entry, definition, eval_date=trade_date)
         if definition.signal_key == "accumulation_breakout_entry":
             return evaluate_accumulation_breakout(current_row, pool_entry, definition, eval_date=trade_date)
-        if definition.signal_key == "early_cycle_recovery_entry":
-            return evaluate_early_cycle_recovery(current_row, pool_entry, definition, eval_date=trade_date)
         if definition.signal_key == "power_gap_pullback_entry":
             return evaluate_power_gap_pullback(current_row, pool_entry, definition, eval_date=trade_date)
         raise ValueError(f"no evaluator registered for signal: {definition.signal_key}")

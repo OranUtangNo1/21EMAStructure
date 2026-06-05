@@ -36,7 +36,7 @@ def test_entry_strength_floor_gate_caps_weak_axis() -> None:
                     "signal_version": "1.0",
                     "description": "test",
                     "pool": {
-                        "preset_sources": ["Orderly Pullback"],
+                        "preset_sources": ["Pullback Trigger"],
                         "detection_window_days": 10,
                         "invalidation": [],
                         "snapshot_fields": ["close", "high"],

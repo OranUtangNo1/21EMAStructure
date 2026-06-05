@@ -34,3 +34,9 @@ preset_status: enabled
 
 This preset targets recent Stage 2 transitions with breakout evidence, then requires at least one leadership confirmation and one demand confirmation. It is the early Stage 2 watchlist preset.
 
+## EntrySignal Connection Status
+
+- Current status: measurement-only for EntrySignal routing.
+- It is not listed in any active EntrySignal `pool.preset_sources`.
+- The Analysis page includes it in `EntrySignal Connection Candidates` and compares selected-horizon return, benchmark excess, win rate, and detection count before any future connection decision.
+- The intended first connection target, if later justified by measured expectancy, is `Accumulation Breakout Entry`.

@@ -23,7 +23,7 @@ def test_signal_pool_upsert_updates_active_entry(tmp_path) -> None:
             signal_name="orderly_pullback_entry",
             ticker="aaa",
             detected_date="2026-04-17",
-            preset_sources=["Orderly Pullback"],
+            preset_sources=["Pullback Trigger"],
             snapshot_at_detection={"close": 100.0, "low": 98.0, "high": 103.0},
         )
         second = upsert_signal_pool_entry(
@@ -31,7 +31,7 @@ def test_signal_pool_upsert_updates_active_entry(tmp_path) -> None:
             signal_name="orderly_pullback_entry",
             ticker="AAA",
             detected_date="2026-04-20",
-            preset_sources=["Orderly Pullback", "Trend Pullback"],
+            preset_sources=["Pullback Trigger", "Power Gap Pullback"],
             snapshot_at_detection={"close": 105.0, "low": 99.0, "high": 107.0},
         )
         row = conn.execute(
@@ -50,7 +50,7 @@ def test_signal_pool_upsert_updates_active_entry(tmp_path) -> None:
         assert row["ticker"] == "AAA"
         assert row["latest_detected_date"] == "2026-04-20"
         assert int(row["detection_count"]) == 2
-        assert json.loads(row["preset_sources"]) == ["Orderly Pullback", "Trend Pullback"]
+        assert json.loads(row["preset_sources"]) == ["Pullback Trigger", "Power Gap Pullback"]
         assert json.loads(row["snapshot_at_detection"]) == {"close": 105.0, "high": 107.0, "low": 99.0}
         assert float(row["low_since_detection"]) == 98.0
         assert float(row["high_since_detection"]) == 107.0
@@ -66,7 +66,7 @@ def test_signal_pool_tracking_fields_merge_low_and_high(tmp_path) -> None:
             signal_name="orderly_pullback_entry",
             ticker="AAA",
             detected_date="2026-04-20",
-            preset_sources=["Orderly Pullback"],
+            preset_sources=["Pullback Trigger"],
             snapshot_at_detection={"close": 100.0, "low": 98.0, "high": 103.0},
         )
         update_signal_pool_tracking_fields(conn, pool_entry_id=pool.pool_entry_id, today_low=97.5, today_high=104.0)
@@ -89,7 +89,7 @@ def test_signal_pool_upsert_creates_new_row_after_invalidation(tmp_path) -> None
             signal_name="orderly_pullback_entry",
             ticker="AAA",
             detected_date="2026-04-17",
-            preset_sources=["Orderly Pullback"],
+            preset_sources=["Pullback Trigger"],
         )
         updated_count = transition_signal_pool_entries(
             conn,
@@ -104,7 +104,7 @@ def test_signal_pool_upsert_creates_new_row_after_invalidation(tmp_path) -> None
             signal_name="orderly_pullback_entry",
             ticker="AAA",
             detected_date="2026-04-20",
-            preset_sources=["Trend Pullback"],
+            preset_sources=["Power Gap Pullback"],
         )
         rows = conn.execute(
             """
@@ -184,7 +184,7 @@ def test_signal_pool_entries_can_be_marked_orphaned(tmp_path) -> None:
             detected_date="2026-04-17",
             preset_sources=["Deleted Preset"],
         )
-        orphaned_count = mark_orphaned_signal_pool_entries(conn, available_preset_names=["Orderly Pullback"])
+        orphaned_count = mark_orphaned_signal_pool_entries(conn, available_preset_names=["Pullback Trigger"])
         row = conn.execute(
             "SELECT pool_status FROM signal_pool_entry WHERE signal_name = ? AND ticker = ?",
             ("orderly_pullback_entry", "AAA"),
@@ -204,7 +204,7 @@ def test_signal_evaluation_upsert_updates_same_day_signal(tmp_path) -> None:
             signal_name="orderly_pullback_entry",
             ticker="AAA",
             detected_date="2026-04-17",
-            preset_sources=["Orderly Pullback"],
+            preset_sources=["Pullback Trigger"],
         )
         first_id = insert_signal_evaluation(
             conn,

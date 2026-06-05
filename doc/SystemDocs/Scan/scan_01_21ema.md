@@ -9,14 +9,14 @@
 | Implementation owner | `src/scan/rules.py::_scan_21ema` |
 | Output | `bool` |
 | Direct scan config | none |
-| Default status | disabled in `config/default/scan.yaml` |
+| Default status | enabled in `config/default/scan.yaml`; not exposed as a Watchlist card |
 
 ## Evaluation Context
 
 - Evaluated on one latest row after `enrich_with_scan_context()`.
 - Reads only precomputed indicator fields.
 - All conditions are combined with `AND`.
-- This is a retained legacy scan. It remains implemented and documented, but the default config disables it in favor of `21EMA Pattern H` and `21EMA Pattern L`.
+- This scan can create backend watchlist candidates. The current Watchlist controls expose the more specific `21EMA Pattern H` and `21EMA Pattern L` cards for user selection.
 
 ## Canonical Boolean Definition
 
@@ -50,4 +50,3 @@ None. `_scan_21ema` uses hard-coded thresholds only.
 - `dcr_percent = ((close - low) / (high - low)) * 100.0`, zero-width range is filled with `50.0`
 - `atr_21ema_zone = (close - ema21_close) / atr`
 - `atr_50sma_zone = (close - sma50) / atr`
-

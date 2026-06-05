@@ -10,7 +10,7 @@ Column meaning:
 - `Startup`: selected at app startup after `default_selected_scan_names` is filtered to active cards.
 
 Current totals:
-- enabled scan rules: 22
+- active scan rules documented here: 22
 - visible scan cards: 21
 - startup selected scans: 18
 
@@ -22,23 +22,13 @@ Current totals:
 | `Pullback Quality scan` | `enabled` | `yes` | `yes` |
 | `Reclaim scan` | `enabled` | `yes` | `yes` |
 | `4% bullish` | `enabled` | `yes` | `yes` |
-| `Vol Up` | `disabled` | `no` | `no` |
 | `Volume Accumulation` | `enabled` | `yes` | `yes` |
 | `Momentum 97` | `enabled` | `yes` | `yes` |
-| `97 Club` | `disabled` | `no` | `no` |
-| `VCS` | `disabled` | `no` | `no` |
 | `VCS 52 High` | `enabled` | `yes` | `yes` |
-| `VCS 52 Low` | `disabled` | `no` | `no` |
 | `Pocket Pivot` | `enabled` | `yes` | `yes` |
 | `PP Count` | `enabled` | `yes` | `yes` |
 | `Weekly 20% plus gainers` | `enabled` | `yes` | `yes` |
-| `Near 52W High` | `disabled` | `no` | `no` |
-| `Three Weeks Tight` | `disabled` | `no` | `no` |
 | `VCP 3T` | `enabled` | `yes` | `yes` |
-| `RS Acceleration` | `disabled` | `no` | `no` |
-| `Sustained Leadership` | `disabled` | `no` | `no` |
-| `Trend Reversal Setup` | `disabled` | `no` | `no` |
-| `Structure Pivot` | `disabled` | `no` | `no` |
 | `LL-HL Structure 1st Pivot` | `enabled` | `yes` | `no` |
 | `LL-HL Structure 2nd Pivot` | `enabled` | `yes` | `no` |
 | `LL-HL Structure Trend Line Break` | `enabled` | `yes` | `no` |

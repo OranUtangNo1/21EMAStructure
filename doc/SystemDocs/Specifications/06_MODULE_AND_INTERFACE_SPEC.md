@@ -271,7 +271,7 @@ Current public functions:
 
 Preset-effectiveness writes normalize market labels into the Analysis buckets `bull`, `neutral`, `weak`, and `bear` before inserting `detection.market_env`.
 
-EntrySignal evaluation writes persist the Entry Plan fields in `signal_evaluation` so rejected or downgraded entries can be audited later by plan verdict, plan type, reject code, SL quality, entry-zone, and TP1/RR details. When an evaluation is `Ready Now` and valid, `signal_entry_event` records a distinct entry event keyed by `signal_name x ticker x event_date`. The tracking refresh path updates those events with fixed horizon returns, TP1/SL hit flags, first outcome, first outcome date, days to outcome, result R, and 20D maximum gain/drawdown.
+EntrySignal evaluation writes persist the Entry Plan fields in `signal_evaluation` so rejected or downgraded entries can be audited later by plan verdict, plan type, reject code, SL quality, entry-zone, and TP1/RR details. When an evaluation is `Ready Now` and valid, `signal_entry_event` records a distinct entry event keyed by `signal_name x ticker x event_date`, including the action bucket and normalized market environment available at insertion time. The tracking refresh path updates those events with fixed horizon returns, TP1/SL hit flags, first outcome, first outcome date, days to outcome, result R, and 20D / 21D maximum gain/drawdown.
 
 Current read functions in `src/data/tracking_repository.py`:
 
@@ -283,6 +283,7 @@ Current read functions in `src/data/tracking_repository.py`:
 - `read_preset_scan_performance(...)`
 - `read_preset_summary(...)`
 - `read_scan_combo_performance(...)`
+- `read_signal_entry_performance(...)`
 - `read_preset_overlap(...)`
 - `read_signal_pool_entries(...)`
 - `read_signal_evaluations(...)`
@@ -370,11 +371,17 @@ The active pipeline bundle includes:
 - label history fields
 - `component_scores`
 - `breadth_summary`
+- `breadth_momentum_summary`
+- `breadth_internal_summary`
 - `participation_summary`
 - `metric_deltas`
 - `performance_overview`
 - `high_vix_summary`
 - `risk_on_ratio_summary`
+- `volatility_term_structure`
+- `credit_risk_proxy`
+- `index_state_summary`
+- `drawdown_summary`
 - `market_snapshot`
 - `leadership_snapshot`
 - `external_snapshot`

@@ -481,6 +481,8 @@ def insert_signal_entry_event(
     rr_ideal: float | None,
     plan_verdict: str | None,
     reject_codes: str | None,
+    action_bucket: str | None = None,
+    market_env: str | None = None,
 ) -> int:
     event_date_key = _date_key(event_date)
     normalized_signal_name = str(signal_name).strip()
@@ -492,6 +494,8 @@ def insert_signal_entry_event(
             ticker,
             event_date,
             source_evaluation_id,
+            action_bucket,
+            market_env,
             plan_type,
             entry_price,
             entry_zone_low,
@@ -504,10 +508,12 @@ def insert_signal_entry_event(
             plan_verdict,
             reject_codes
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(signal_name, ticker, event_date)
         DO UPDATE SET
             source_evaluation_id = excluded.source_evaluation_id,
+            action_bucket = COALESCE(excluded.action_bucket, signal_entry_event.action_bucket),
+            market_env = COALESCE(excluded.market_env, signal_entry_event.market_env),
             plan_type = excluded.plan_type,
             entry_price = excluded.entry_price,
             entry_zone_low = excluded.entry_zone_low,
@@ -525,6 +531,8 @@ def insert_signal_entry_event(
             normalized_ticker,
             event_date_key,
             int(source_evaluation_id) if source_evaluation_id else None,
+            _clean_text(action_bucket),
+            _clean_text(market_env),
             _clean_text(plan_type),
             _to_float(entry_price),
             _to_float(entry_zone_low),

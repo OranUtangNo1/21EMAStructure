@@ -4,7 +4,7 @@
 
 This document explains the current workflow supported by the active OraTek application. It is written from the implementation as it exists today.
 
-The active product is a short- to medium-term long-only screening, candidate extraction, and entry evaluation platform. The default workflow prioritizes Stage 2 participation and does not treat recovery, 52-week-low, bottom-fishing, or short-side setups as actionable default workflows. It supports:
+The active product is a short- to medium-term long-only screening, candidate extraction, and entry evaluation platform. The default workflow prioritizes Stage 2 participation through the current enabled scans, watchlist presets, and Entry Signal definitions. It supports:
 
 1. market environment review
 2. sector and industry RS review

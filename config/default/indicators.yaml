@@ -41,3 +41,10 @@ indicators:
   vcp_t3_shift: 1
   vcp_pivot_lookback: 20
   vcp_tight_daily_range_pct: 3.0
+  vcp_base_lookback: 50
+  vcp_tight_window: 10
+  vcp_contraction_ratio: 0.6
+  vcp_adr_ceiling: 3.5
+  vcp_range_ceiling: 12.0
+  vcp_vdu_ratio: 0.75
+  vcp_proximity_band: 0.08

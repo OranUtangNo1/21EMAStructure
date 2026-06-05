@@ -54,6 +54,13 @@ class IndicatorConfig:
     vcp_t3_shift: int = 1
     vcp_pivot_lookback: int = 20
     vcp_tight_daily_range_pct: float = 3.0
+    vcp_base_lookback: int = 50
+    vcp_tight_window: int = 10
+    vcp_contraction_ratio: float = 0.6
+    vcp_adr_ceiling: float = 3.5
+    vcp_range_ceiling: float = 12.0
+    vcp_vdu_ratio: float = 0.75
+    vcp_proximity_band: float = 0.08
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> "IndicatorConfig":
@@ -206,8 +213,7 @@ class IndicatorCalculator:
         ).sum()
         df["breakout_body_ratio"] = (df["close"] - df["open"]) / range_width
         vcp_fields = self._calculate_vcp_3t_fields(df)
-        for column_name, values in vcp_fields.items():
-            df[column_name] = values
+        df = pd.concat([df, pd.DataFrame(vcp_fields, index=df.index)], axis=1)
 
         atr = df["atr"].replace(0, np.nan)
         df["atr_21ema_zone"] = (df["close"] - df["ema21_close"]) / atr
@@ -260,13 +266,23 @@ class IndicatorCalculator:
         df["pp_count_window"] = df["pocket_pivot"].rolling(self.config.pp_count_window_days).sum().fillna(0).astype(int)
         df["trend_base"] = (df["close"] > df["sma50"]) & (df["wma10_weekly"] > df["wma30_weekly"])
         structure_fields = self._calculate_structure_pivot_snapshot(df)
-        for column_name, value in structure_fields.items():
+        return pd.concat([df, self._structure_snapshot_frame(df.index, structure_fields)], axis=1)
+
+    def _structure_snapshot_frame(
+        self,
+        index: pd.Index,
+        fields: dict[str, float | bool],
+    ) -> pd.DataFrame:
+        columns: dict[str, pd.Series] = {}
+        for column_name, value in fields.items():
             if isinstance(value, bool):
-                df[column_name] = False
+                series = pd.Series(False, index=index, dtype=bool)
             else:
-                df[column_name] = np.nan
-            df.iloc[-1, df.columns.get_loc(column_name)] = value
-        return df
+                series = pd.Series(np.nan, index=index, dtype=float)
+            if len(series) > 0:
+                series.iat[-1] = value
+            columns[column_name] = series
+        return pd.DataFrame(columns, index=index)
 
     def _calculate_rsi(self, close: pd.Series, period: int) -> pd.Series:
         delta = close.diff()
@@ -316,7 +332,8 @@ class IndicatorCalculator:
         pivot_price = high.shift(1).rolling(self.config.vcp_pivot_lookback).max()
         pivot_proximity = (close - pivot_price) / pivot_price.replace(0, np.nan) * 100.0
         previous_close = close.shift(1)
-        pivot_breakout = (close > pivot_price) & (previous_close <= pivot_price)
+        previous_pivot_price = pivot_price.shift(1)
+        pivot_breakout = (close > pivot_price) & (previous_close <= previous_pivot_price)
 
         daily_range_pct = (high - low) / close.replace(0, np.nan) * 100.0
         tight_day = daily_range_pct.shift(1) <= self.config.vcp_tight_daily_range_pct
@@ -324,6 +341,39 @@ class IndicatorCalculator:
         dryup_ratio = (
             volume.shift(1).rolling(self.config.vcp_t3_window).mean()
             / volume.shift(1).rolling(self.config.vcp_pivot_lookback).mean().replace(0, np.nan)
+        )
+        vcp_daily_range_pct = (high / low.replace(0, np.nan) - 1.0) * 100.0
+        vcp_adr_recent_pct = vcp_daily_range_pct.rolling(self.config.vcp_tight_window).mean()
+        vcp_adr_base_pct = (
+            vcp_daily_range_pct.rolling(self.config.vcp_base_lookback).mean().shift(self.config.vcp_tight_window)
+        )
+        vcp_is_contracting = (
+            (vcp_adr_recent_pct < self.config.vcp_contraction_ratio * vcp_adr_base_pct)
+            & (vcp_adr_recent_pct < self.config.vcp_adr_ceiling)
+        )
+        vcp_recent_span_pct = (
+            high.rolling(self.config.vcp_tight_window).max()
+            / low.rolling(self.config.vcp_tight_window).min().replace(0, np.nan)
+            - 1.0
+        ) * 100.0
+        vcp_is_tight = vcp_recent_span_pct < self.config.vcp_range_ceiling
+        vcp_volume_recent = volume.rolling(self.config.vcp_tight_window).mean()
+        vcp_volume_base = volume.rolling(self.config.vcp_base_lookback).mean()
+        vcp_is_dryup = vcp_volume_recent < self.config.vcp_vdu_ratio * vcp_volume_base
+        vcp_dist_to_pivot = (pivot_price - close) / pivot_price.replace(0, np.nan)
+        vcp_is_under_pivot = (close <= pivot_price) & (vcp_dist_to_pivot <= self.config.vcp_proximity_band)
+        vcp_stage2_context = (
+            (close > df["sma50"])
+            & (df["sma50"] > df["sma150"])
+            & (df["sma150"] > df["sma200"])
+            & (df["sma200"] > df["sma200"].shift(self.config.sma_long_slope_lookback))
+        )
+        vcp_tightening = (
+            vcp_is_contracting
+            & vcp_is_tight
+            & vcp_is_dryup
+            & vcp_is_under_pivot
+            & vcp_stage2_context
         )
 
         return {
@@ -336,6 +386,18 @@ class IndicatorCalculator:
             "vcp_pivot_breakout": pivot_breakout.fillna(False),
             "vcp_tight_days": tight_days,
             "vcp_volume_dryup_ratio": dryup_ratio,
+            "vcp_adr_recent_pct": vcp_adr_recent_pct,
+            "vcp_adr_base_pct": vcp_adr_base_pct,
+            "vcp_is_contracting": vcp_is_contracting.fillna(False),
+            "vcp_recent_span_pct": vcp_recent_span_pct,
+            "vcp_is_tight": vcp_is_tight.fillna(False),
+            "vcp_volume_recent": vcp_volume_recent,
+            "vcp_volume_base": vcp_volume_base,
+            "vcp_is_dryup": vcp_is_dryup.fillna(False),
+            "vcp_dist_to_pivot": vcp_dist_to_pivot,
+            "vcp_is_under_pivot": vcp_is_under_pivot.fillna(False),
+            "vcp_stage2_context": vcp_stage2_context.fillna(False),
+            "vcp_tightening": vcp_tightening.fillna(False),
         }
 
     def _calculate_structure_pivot_snapshot(self, df: pd.DataFrame) -> dict[str, float | bool]:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime, time as dt_time
 from pathlib import Path
@@ -22,6 +23,7 @@ from src.data.finviz_provider import (
     build_profile_batch_from_snapshot,
 )
 from src.data.providers import (
+    FredSeriesProvider,
     YahooScreenerConfig,
     YahooScreenerProvider,
     YFinanceFundamentalDataProvider,
@@ -41,6 +43,7 @@ from src.scoring.hybrid import HybridScoreCalculator, HybridScoreConfig
 from src.scoring.industry import IndustryScoreConfig, IndustryScorer
 from src.scoring.rs import RSConfig, RSScorer
 from src.scoring.vcs import VCSCalculator, VCSConfig
+from src.utils import StartupTimer
 
 VCP_3T_ARTIFACT_COLUMNS = (
     "vcp_t1_depth_pct",
@@ -52,6 +55,18 @@ VCP_3T_ARTIFACT_COLUMNS = (
     "vcp_volume_dryup_ratio",
     "vcp_pivot_breakout",
     "vcp_tight_days",
+    "vcp_adr_recent_pct",
+    "vcp_adr_base_pct",
+    "vcp_is_contracting",
+    "vcp_recent_span_pct",
+    "vcp_is_tight",
+    "vcp_volume_recent",
+    "vcp_volume_base",
+    "vcp_is_dryup",
+    "vcp_dist_to_pivot",
+    "vcp_is_under_pivot",
+    "vcp_stage2_context",
+    "vcp_tightening",
 )
 
 
@@ -85,7 +100,9 @@ class PlatformArtifacts:
 class ResearchPlatform:
     """Orchestrate active screening workflow: data, indicators, scans, and dashboard outputs."""
 
-    def __init__(self, config_path: str | Path | None = None) -> None:
+    def __init__(self, config_path: str | Path | None = None, startup_timer: StartupTimer | None = None) -> None:
+        self.startup_timer = startup_timer
+        self._mark_timing("pipeline.init.start", config_path=config_path or "default")
         self.root = Path(__file__).resolve().parents[1]
         resolved_config = Path(config_path).expanduser() if config_path is not None else self.root / "config" / "default.yaml"
         self.config_path = resolved_config.resolve(strict=False)
@@ -136,6 +153,11 @@ class ResearchPlatform:
             retry_backoff_multiplier=float(data_settings.get("price_retry_backoff_multiplier", 2.0)),
             incremental_period=data_settings.get("price_incremental_period", "5d"),
         )
+        self.fred_provider = FredSeriesProvider(
+            self.cache,
+            series_ttl_hours=int(data_settings.get("fred_series_cache_ttl_hours", 24)),
+            allow_stale_cache_on_failure=allow_stale,
+        )
         self.profile_provider = YFinanceProfileDataProvider(
             self.cache,
             profile_ttl_hours=int(data_settings.get("profile_cache_ttl_hours", 168)),
@@ -158,6 +180,16 @@ class ResearchPlatform:
             self.screener_provider = YahooScreenerProvider(YahooScreenerConfig.from_dict(discovery_payload))
         else:
             raise ValueError(f"Unsupported universe discovery provider: {self.discovery_provider_name}")
+        self._mark_timing("pipeline.init.end", discovery_provider=self.discovery_provider_name)
+
+    def _mark_timing(self, milestone: str, **fields: object) -> None:
+        if self.startup_timer is not None:
+            self.startup_timer.mark(milestone, **fields)
+
+    def _timed(self, milestone: str, **fields: object):
+        if self.startup_timer is None:
+            return nullcontext()
+        return self.startup_timer.step(milestone, **fields)
 
     def run(
         self,
@@ -165,64 +197,99 @@ class ResearchPlatform:
         force_universe_refresh: bool = False,
         force_price_refresh: bool = False,
     ) -> PlatformArtifacts:
+        self._mark_timing(
+            "pipeline.run.start",
+            manual_symbols=len(symbols or []),
+            force_universe_refresh=force_universe_refresh,
+            force_price_refresh=force_price_refresh,
+        )
         manual_symbols = self._normalize_symbols(symbols or [])
-        active_symbols, universe_mode, universe_snapshot_path, universe_snapshot = self._resolve_active_symbols(symbols, force_universe_refresh)
+        with self._timed("pipeline.resolve_active_symbols"):
+            active_symbols, universe_mode, universe_snapshot_path, universe_snapshot = self._resolve_active_symbols(symbols, force_universe_refresh)
+        self._mark_timing("pipeline.resolve_active_symbols.ready", universe_mode=universe_mode, active_symbols=len(active_symbols))
         if not active_symbols:
             raise ValueError("At least one symbol is required.")
 
-        price_batch, benchmark_history, vix_history, profile_batch, fundamental_batch = self._load_data(
-            active_symbols,
-            universe_snapshot,
-            universe_mode,
-            force_price_refresh=force_price_refresh,
-        )
-        live_symbol_histories = self._build_indicator_histories(price_batch.histories, active_symbols)
+        with self._timed("pipeline.load_data", active_symbols=len(active_symbols), universe_mode=universe_mode):
+            price_batch, benchmark_history, vix_history, profile_batch, fundamental_batch = self._load_data(
+                active_symbols,
+                universe_snapshot,
+                universe_mode,
+                force_price_refresh=force_price_refresh,
+            )
+        with self._timed("pipeline.build_indicator_histories", active_symbols=len(active_symbols)):
+            live_symbol_histories = self._build_indicator_histories(price_batch.histories, active_symbols)
         if not live_symbol_histories:
             raise RuntimeError("No price histories were available for the requested symbols.")
 
-        snapshot = self._build_snapshot(live_symbol_histories, profile_batch.profiles, fundamental_batch.fundamentals)
-        snapshot = self._attach_status_columns(snapshot, price_batch.statuses, profile_batch.statuses, fundamental_batch.statuses)
-        snapshot = self.rs_scorer.score(snapshot, live_symbol_histories, benchmark_history)
-        snapshot = self.fundamental_scorer.score(snapshot)
-        snapshot = self.industry_scorer.score(snapshot)
-        snapshot = self.hybrid_calculator.score(snapshot)
-        snapshot = self.vcs_calculator.add_scores(snapshot, live_symbol_histories)
-        snapshot = self._postprocess_snapshot(snapshot)
-        snapshot = append_data_quality(snapshot)
+        with self._timed("pipeline.snapshot.build", histories=len(live_symbol_histories)):
+            snapshot = self._build_snapshot(live_symbol_histories, profile_batch.profiles, fundamental_batch.fundamentals)
+        with self._timed("pipeline.snapshot.status_columns", rows=len(snapshot)):
+            snapshot = self._attach_status_columns(snapshot, price_batch.statuses, profile_batch.statuses, fundamental_batch.statuses)
+        with self._timed("pipeline.scoring.rs", rows=len(snapshot)):
+            snapshot = self.rs_scorer.score(snapshot, live_symbol_histories, benchmark_history)
+        with self._timed("pipeline.scoring.fundamental", rows=len(snapshot)):
+            snapshot = self.fundamental_scorer.score(snapshot)
+        with self._timed("pipeline.scoring.industry", rows=len(snapshot)):
+            snapshot = self.industry_scorer.score(snapshot)
+        with self._timed("pipeline.scoring.hybrid", rows=len(snapshot)):
+            snapshot = self.hybrid_calculator.score(snapshot)
+        with self._timed("pipeline.scoring.vcs", rows=len(snapshot)):
+            snapshot = self.vcs_calculator.add_scores(snapshot, live_symbol_histories)
+        with self._timed("pipeline.snapshot.postprocess", rows=len(snapshot)):
+            snapshot = self._postprocess_snapshot(snapshot)
+            snapshot = append_data_quality(snapshot)
 
-        eligible_snapshot = self.universe_builder.filter(snapshot)
+        with self._timed("pipeline.universe_filter", rows=len(snapshot)):
+            eligible_snapshot = self.universe_builder.filter(snapshot)
         if eligible_snapshot.empty and not snapshot.empty:
             eligible_snapshot = snapshot.sort_values(["data_quality_score", "hybrid_score"], ascending=[False, False]).copy()
+        self._mark_timing("pipeline.universe_filter.ready", snapshot=len(snapshot), eligible=len(eligible_snapshot))
 
-        scan_result = self.scan_runner.run(eligible_snapshot)
-        watchlist = self.watchlist_builder.build(scan_result.watchlist)
-        duplicate_tickers = self.watchlist_builder.build_duplicate_tickers(scan_result.watchlist, scan_result.hits, self.scan_config.duplicate_min_count)
-        watchlist_cards = self.watchlist_builder.build_scan_cards(scan_result.watchlist, scan_result.hits)
-        earnings_today = self.watchlist_builder.build_earnings_today(eligible_snapshot)
+        with self._timed("pipeline.scan_runner", eligible=len(eligible_snapshot)):
+            scan_result = self.scan_runner.run(eligible_snapshot)
+        with self._timed("pipeline.watchlist.build", scan_watchlist=len(scan_result.watchlist), scan_hits=len(scan_result.hits)):
+            watchlist = self.watchlist_builder.build(scan_result.watchlist)
+            duplicate_tickers = self.watchlist_builder.build_duplicate_tickers(scan_result.watchlist, scan_result.hits, self.scan_config.duplicate_min_count)
+            watchlist_cards = self.watchlist_builder.build_scan_cards(scan_result.watchlist, scan_result.hits)
+            earnings_today = self.watchlist_builder.build_earnings_today(eligible_snapshot)
 
-        radar_histories = self._build_indicator_histories(price_batch.histories, self.radar_builder.required_symbols())
-        radar_result = self.radar_builder.build(radar_histories, benchmark_history)
-        market_histories = self._build_indicator_histories(price_batch.histories, self.market_scorer.required_symbols())
+        with self._timed("pipeline.radar.build"):
+            radar_histories = self._build_indicator_histories(price_batch.histories, self.radar_builder.required_symbols())
+            radar_result = self.radar_builder.build(radar_histories, benchmark_history)
+        with self._timed("pipeline.market.prepare_histories"):
+            market_symbols = list(dict.fromkeys(self.market_scorer.required_symbols() + self.market_scorer.required_fred_series()))
+            market_histories = self._build_indicator_histories(price_batch.histories, market_symbols)
 
         fetch_status = self._build_fetch_status_frame(price_batch.statuses, profile_batch.statuses, fundamental_batch.statuses)
         data_health_summary = summarize_data_health(fetch_status)
         data_source_label = summarize_data_source_label(fetch_status)
         used_sample_data = bool((fetch_status["source"] == "sample").any()) if not fetch_status.empty else False
-        market_result = self.market_scorer.score(live_symbol_histories, market_histories, benchmark_history)
-        run_directory = self._persist_run(
-            snapshot,
-            eligible_snapshot,
-            watchlist,
-            fetch_status,
-            data_source_label,
-            data_health_summary,
-            market_result,
-            radar_result,
-            scan_result.hits,
-            active_symbols,
-            manual_symbols,
-            universe_mode,
-            universe_snapshot_path,
+        with self._timed("pipeline.market.score", live_histories=len(live_symbol_histories), market_histories=len(market_histories)):
+            market_result = self.market_scorer.score(live_symbol_histories, market_histories, benchmark_history)
+        with self._timed("pipeline.persist_run", snapshot=len(snapshot), eligible=len(eligible_snapshot), watchlist=len(watchlist)):
+            run_directory = self._persist_run(
+                snapshot,
+                eligible_snapshot,
+                watchlist,
+                fetch_status,
+                data_source_label,
+                data_health_summary,
+                market_result,
+                radar_result,
+                scan_result.hits,
+                active_symbols,
+                manual_symbols,
+                universe_mode,
+                universe_snapshot_path,
+            )
+        self._mark_timing(
+            "pipeline.run.ready",
+            origin="pipeline_recomputed",
+            snapshot=len(snapshot),
+            eligible=len(eligible_snapshot),
+            watchlist=len(watchlist),
+            scan_hits=len(scan_result.hits),
         )
         return PlatformArtifacts(
             snapshot=snapshot,
@@ -249,10 +316,17 @@ class ResearchPlatform:
         )
 
     def load_latest_run_artifacts(self, symbols: list[str] | None = None, force_universe_refresh: bool = False) -> PlatformArtifacts | None:
+        self._mark_timing(
+            "pipeline.saved_run.start",
+            manual_symbols=len(symbols or []),
+            force_universe_refresh=force_universe_refresh,
+        )
         if force_universe_refresh or not self.persist_research_snapshots:
+            self._mark_timing("pipeline.saved_run.skip", reason="force_or_disabled")
             return None
 
-        loaded = self.snapshot_store.load_latest_run()
+        with self._timed("pipeline.saved_run.load_latest_run"):
+            loaded = self.snapshot_store.load_latest_run()
         if (
             loaded.path is None
             or loaded.metadata is None
@@ -261,41 +335,50 @@ class ResearchPlatform:
             or loaded.market_metadata is None
             or loaded.radar_metadata is None
         ):
+            self._mark_timing("pipeline.saved_run.miss", reason="missing_artifact")
             return None
 
         requested_manual_symbols = self._normalize_symbols(symbols or [])
         if not self._saved_run_matches_request(loaded.metadata, requested_manual_symbols):
+            self._mark_timing("pipeline.saved_run.miss", reason="request_mismatch")
             return None
 
         trade_date = self._trade_date_from_metadata(loaded.metadata)
         expected_trade_date = self._expected_trade_date()
         if trade_date is None or expected_trade_date is None or trade_date.normalize() != expected_trade_date.normalize():
+            self._mark_timing("pipeline.saved_run.miss", reason="trade_date_mismatch")
             return None
-        watchlist, scan_hits, entry_signal_watchlist = self._saved_run_watchlist_frames(
-            loaded.watchlist,
-            loaded.eligible_snapshot,
-            loaded.scan_hits,
-        )
+        with self._timed("pipeline.saved_run.watchlist_frames"):
+            watchlist, scan_hits, entry_signal_watchlist = self._saved_run_watchlist_frames(
+                loaded.watchlist,
+                loaded.eligible_snapshot,
+                loaded.scan_hits,
+            )
         if watchlist is None or scan_hits is None or entry_signal_watchlist is None:
+            self._mark_timing("pipeline.saved_run.miss", reason="watchlist_restore_failed")
             return None
 
         if not self._saved_run_has_required_scan_columns(watchlist, loaded.eligible_snapshot):
+            self._mark_timing("pipeline.saved_run.miss", reason="missing_required_scan_columns")
             return None
 
-        market_result = self._restore_market_result(loaded.market_metadata, loaded.market_frames)
-        radar_result = self._restore_radar_result(loaded.radar_metadata, loaded.radar_frames)
+        with self._timed("pipeline.saved_run.restore_market_radar"):
+            market_result = self._restore_market_result(loaded.market_metadata, loaded.market_frames)
+            radar_result = self._restore_radar_result(loaded.radar_metadata, loaded.radar_frames)
         if market_result is None or radar_result is None:
+            self._mark_timing("pipeline.saved_run.miss", reason="market_or_radar_restore_failed")
             return None
 
-        minimal_snapshot = self._minimal_snapshot_for_saved_run(watchlist.index.tolist(), trade_date)
-        eligible_snapshot = loaded.eligible_snapshot.copy() if loaded.eligible_snapshot is not None else minimal_snapshot.copy()
+        with self._timed("pipeline.saved_run.build_frames", watchlist=len(watchlist), scan_hits=len(scan_hits)):
+            minimal_snapshot = self._minimal_snapshot_for_saved_run(watchlist.index.tolist(), trade_date)
+            eligible_snapshot = loaded.eligible_snapshot.copy() if loaded.eligible_snapshot is not None else minimal_snapshot.copy()
 
-        duplicate_tickers = self.watchlist_builder.build_duplicate_tickers(
-            watchlist,
-            scan_hits,
-            self.scan_config.duplicate_min_count,
-        )
-        watchlist_cards = self.watchlist_builder.build_scan_cards(watchlist, scan_hits)
+            duplicate_tickers = self.watchlist_builder.build_duplicate_tickers(
+                watchlist,
+                scan_hits,
+                self.scan_config.duplicate_min_count,
+            )
+            watchlist_cards = self.watchlist_builder.build_scan_cards(watchlist, scan_hits)
         earnings_today = pd.DataFrame(columns=["Ticker", "Name", "Sector", "Industry", "Hybrid-RS"])
         fetch_status = pd.DataFrame()
         data_health_summary = self._data_health_summary_from_metadata(loaded.metadata)
@@ -307,6 +390,12 @@ class ResearchPlatform:
         if not resolved_symbols:
             resolved_symbols = self._normalize_symbols(list(watchlist.index))
 
+        self._mark_timing(
+            "pipeline.saved_run.ready",
+            watchlist=len(watchlist),
+            scan_hits=len(scan_hits),
+            resolved_symbols=len(resolved_symbols),
+        )
         return PlatformArtifacts(
             snapshot=minimal_snapshot,
             eligible_snapshot=eligible_snapshot,
@@ -419,11 +508,17 @@ class ResearchPlatform:
             label_3m_ago=self._optional_str(metadata.get("label_3m_ago")),
             component_scores=self._float_mapping(metadata.get("component_scores")),
             breadth_summary=self._float_mapping(metadata.get("breadth_summary")),
+            breadth_momentum_summary=self._float_mapping(metadata.get("breadth_momentum_summary")),
+            breadth_internal_summary=self._float_mapping(metadata.get("breadth_internal_summary")),
             participation_summary=self._float_mapping(metadata.get("participation_summary")),
             metric_deltas=self._nested_float_mapping(metadata.get("metric_deltas")),
             performance_overview=self._float_mapping(metadata.get("performance_overview")),
             high_vix_summary=self._float_mapping(metadata.get("high_vix_summary")),
             risk_on_ratio_summary=self._float_mapping(metadata.get("risk_on_ratio_summary")),
+            volatility_term_structure=self._float_mapping(metadata.get("volatility_term_structure")),
+            credit_risk_proxy=self._float_mapping(metadata.get("credit_risk_proxy")),
+            index_state_summary=self._float_mapping(metadata.get("index_state_summary")),
+            drawdown_summary=self._float_mapping(metadata.get("drawdown_summary")),
             market_snapshot=market_snapshot,
             leadership_snapshot=leadership_snapshot,
             external_snapshot=external_snapshot,
@@ -574,12 +669,22 @@ class ResearchPlatform:
 
         auxiliary_symbols = list(dict.fromkeys(self.radar_builder.required_symbols() + self.market_scorer.required_symbols()))
         requested_price_symbols = list(dict.fromkeys(symbols + [benchmark_symbol, vix_symbol] + auxiliary_symbols))
-        price_batch = self.price_provider.get_price_history(
-            requested_price_symbols,
+        self._mark_timing(
+            "pipeline.load_data.request_ready",
+            requested_price_symbols=len(requested_price_symbols),
+            auxiliary_symbols=len(auxiliary_symbols),
             period=period,
-            force_refresh=force_price_refresh,
         )
-        self._apply_sample_price_fallback(price_batch, requested_price_symbols, benchmark_symbol, vix_symbol)
+        with self._timed("pipeline.load_data.price_history", requested_price_symbols=len(requested_price_symbols)):
+            price_batch = self.price_provider.get_price_history(
+                requested_price_symbols,
+                period=period,
+                force_refresh=force_price_refresh,
+            )
+        with self._timed("pipeline.load_data.sample_price_fallback"):
+            self._apply_sample_price_fallback(price_batch, requested_price_symbols, benchmark_symbol, vix_symbol)
+        with self._timed("pipeline.load_data.fred_series"):
+            self._attach_fred_market_series(price_batch, force_refresh=force_price_refresh)
 
         benchmark_history = price_batch.histories.get(benchmark_symbol, pd.DataFrame())
         vix_history = price_batch.histories.get(vix_symbol, pd.DataFrame())
@@ -594,17 +699,36 @@ class ResearchPlatform:
 
         missing_profile_symbols = [symbol for symbol in active_price_symbols if symbol not in profile_batch.statuses]
         if missing_profile_symbols:
-            fallback_profile_batch = self.profile_provider.get_profiles(missing_profile_symbols)
-            self._merge_profile_batches(profile_batch, fallback_profile_batch)
+            with self._timed("pipeline.load_data.profile_fallback", missing=len(missing_profile_symbols)):
+                fallback_profile_batch = self.profile_provider.get_profiles(missing_profile_symbols)
+                self._merge_profile_batches(profile_batch, fallback_profile_batch)
 
         missing_fundamental_symbols = [symbol for symbol in active_price_symbols if symbol not in fundamental_batch.statuses]
         if missing_fundamental_symbols:
-            fallback_fundamental_batch = self.fundamental_provider.get_fundamentals(missing_fundamental_symbols)
-            self._merge_fundamental_batches(fundamental_batch, fallback_fundamental_batch)
+            with self._timed("pipeline.load_data.fundamental_fallback", missing=len(missing_fundamental_symbols)):
+                fallback_fundamental_batch = self.fundamental_provider.get_fundamentals(missing_fundamental_symbols)
+                self._merge_fundamental_batches(fundamental_batch, fallback_fundamental_batch)
 
-        self._apply_sample_profile_fallback(profile_batch, active_price_symbols)
-        self._apply_sample_fundamental_fallback(fundamental_batch, active_price_symbols)
+        with self._timed("pipeline.load_data.sample_profile_fundamental_fallback"):
+            self._apply_sample_profile_fallback(profile_batch, active_price_symbols)
+            self._apply_sample_fundamental_fallback(fundamental_batch, active_price_symbols)
+        self._mark_timing(
+            "pipeline.load_data.ready",
+            active_price_symbols=len(active_price_symbols),
+            histories=len(price_batch.histories),
+            price_statuses=len(price_batch.statuses),
+            profile_statuses=len(profile_batch.statuses),
+            fundamental_statuses=len(fundamental_batch.statuses),
+        )
         return price_batch, benchmark_history, vix_history, profile_batch, fundamental_batch
+
+    def _attach_fred_market_series(self, price_batch: PriceHistoryBatch, *, force_refresh: bool = False) -> None:
+        series_ids = self.market_scorer.required_fred_series()
+        if not series_ids:
+            return
+        fred_batch = self.fred_provider.get_series(series_ids, force_refresh=force_refresh)
+        price_batch.histories.update(fred_batch.histories)
+        price_batch.statuses.update(fred_batch.statuses)
 
     def _snapshot_source_label(self, universe_mode: str) -> str:
         if universe_mode == "weekly_snapshot_live":

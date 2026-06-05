@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS detection (
     close_at_5d REAL,
     close_at_10d REAL,
     close_at_20d REAL,
+    close_at_21d REAL,
     rs21_at_hit REAL,
     vcs_at_hit REAL,
     atr_at_hit REAL,
@@ -21,8 +22,11 @@ CREATE TABLE IF NOT EXISTS detection (
     return_5d REAL,
     return_10d REAL,
     return_20d REAL,
+    return_21d REAL,
     max_gain_20d REAL,
     max_drawdown_20d REAL,
+    max_gain_21d REAL,
+    max_drawdown_21d REAL,
     closed_above_ema21_5d INTEGER CHECK (closed_above_ema21_5d IN (0, 1) OR closed_above_ema21_5d IS NULL),
     hit_new_high_20d INTEGER CHECK (hit_new_high_20d IN (0, 1) OR hit_new_high_20d IS NULL),
     entered INTEGER CHECK (entered IN (0, 1) OR entered IS NULL),
@@ -131,6 +135,8 @@ CREATE TABLE IF NOT EXISTS signal_entry_event (
     ticker TEXT NOT NULL,
     event_date TEXT NOT NULL,
     source_evaluation_id INTEGER REFERENCES signal_evaluation(id) ON DELETE SET NULL,
+    action_bucket TEXT,
+    market_env TEXT,
     plan_type TEXT,
     entry_price REAL,
     entry_zone_low REAL,
@@ -146,10 +152,12 @@ CREATE TABLE IF NOT EXISTS signal_entry_event (
     close_at_5d REAL,
     close_at_10d REAL,
     close_at_20d REAL,
+    close_at_21d REAL,
     return_1d REAL,
     return_5d REAL,
     return_10d REAL,
     return_20d REAL,
+    return_21d REAL,
     hit_sl INTEGER CHECK (hit_sl IN (0, 1) OR hit_sl IS NULL),
     hit_tp1 INTEGER CHECK (hit_tp1 IN (0, 1) OR hit_tp1 IS NULL),
     hit_sl_date TEXT,
@@ -160,6 +168,8 @@ CREATE TABLE IF NOT EXISTS signal_entry_event (
     outcome_r REAL,
     max_gain_20d REAL,
     max_drawdown_20d REAL,
+    max_gain_21d REAL,
+    max_drawdown_21d REAL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(signal_name, ticker, event_date)
 );
@@ -226,6 +236,7 @@ SELECT
     d.close_at_5d,
     d.close_at_10d,
     d.close_at_20d,
+    d.close_at_21d,
     d.rs21_at_hit,
     d.vcs_at_hit,
     d.atr_at_hit,
@@ -235,8 +246,11 @@ SELECT
     d.return_5d,
     d.return_10d,
     d.return_20d,
+    d.return_21d,
     d.max_gain_20d,
     d.max_drawdown_20d,
+    d.max_gain_21d,
+    d.max_drawdown_21d,
     d.closed_above_ema21_5d,
     d.hit_new_high_20d,
     d.entered,
@@ -282,6 +296,10 @@ WITH horizon_returns AS (
     SELECT hit_date, preset_name, ticker, status, market_env, 20 AS horizon_days, return_20d AS return_pct
     FROM detection
     WHERE return_20d IS NOT NULL
+    UNION ALL
+    SELECT hit_date, preset_name, ticker, status, market_env, 21 AS horizon_days, return_21d AS return_pct
+    FROM detection
+    WHERE return_21d IS NOT NULL
 )
 SELECT
     preset_name,
@@ -313,7 +331,9 @@ WITH scan_horizon_returns AS (
         1 AS horizon_days,
         d.return_1d AS return_pct,
         d.max_gain_20d,
-        d.max_drawdown_20d
+        d.max_drawdown_20d,
+        d.max_gain_21d,
+        d.max_drawdown_21d
     FROM detection d
     JOIN detection_scans ds ON ds.detection_id = d.id
     WHERE d.return_1d IS NOT NULL
@@ -328,7 +348,9 @@ WITH scan_horizon_returns AS (
         5 AS horizon_days,
         d.return_5d AS return_pct,
         d.max_gain_20d,
-        d.max_drawdown_20d
+        d.max_drawdown_20d,
+        d.max_gain_21d,
+        d.max_drawdown_21d
     FROM detection d
     JOIN detection_scans ds ON ds.detection_id = d.id
     WHERE d.return_5d IS NOT NULL
@@ -343,7 +365,9 @@ WITH scan_horizon_returns AS (
         10 AS horizon_days,
         d.return_10d AS return_pct,
         d.max_gain_20d,
-        d.max_drawdown_20d
+        d.max_drawdown_20d,
+        d.max_gain_21d,
+        d.max_drawdown_21d
     FROM detection d
     JOIN detection_scans ds ON ds.detection_id = d.id
     WHERE d.return_10d IS NOT NULL
@@ -358,10 +382,29 @@ WITH scan_horizon_returns AS (
         20 AS horizon_days,
         d.return_20d AS return_pct,
         d.max_gain_20d,
-        d.max_drawdown_20d
+        d.max_drawdown_20d,
+        d.max_gain_21d,
+        d.max_drawdown_21d
     FROM detection d
     JOIN detection_scans ds ON ds.detection_id = d.id
     WHERE d.return_20d IS NOT NULL
+    UNION ALL
+    SELECT
+        d.hit_date,
+        d.preset_name,
+        d.ticker,
+        d.status,
+        d.market_env,
+        ds.scan_name,
+        21 AS horizon_days,
+        d.return_21d AS return_pct,
+        d.max_gain_20d,
+        d.max_drawdown_20d,
+        d.max_gain_21d,
+        d.max_drawdown_21d
+    FROM detection d
+    JOIN detection_scans ds ON ds.detection_id = d.id
+    WHERE d.return_21d IS NOT NULL
 )
 SELECT
     preset_name,
@@ -378,6 +421,8 @@ SELECT
     ROUND(AVG(CASE WHEN return_pct > 0 THEN 1.0 ELSE 0.0 END), 3) AS win_rate,
     ROUND(AVG(CASE WHEN horizon_days = 20 THEN max_gain_20d END), 2) AS avg_max_gain_20d,
     ROUND(AVG(CASE WHEN horizon_days = 20 THEN max_drawdown_20d END), 2) AS avg_max_drawdown_20d,
+    ROUND(AVG(CASE WHEN horizon_days = 21 THEN max_gain_21d END), 2) AS avg_max_gain_21d,
+    ROUND(AVG(CASE WHEN horizon_days = 21 THEN max_drawdown_21d END), 2) AS avg_max_drawdown_21d,
     MIN(hit_date) AS first_hit_date,
     MAX(hit_date) AS last_hit_date
 FROM scan_horizon_returns
@@ -391,10 +436,14 @@ SELECT
     COUNT(*) AS detection_count,
     ROUND(AVG(return_5d), 2) AS avg_return_5d,
     ROUND(AVG(return_20d), 2) AS avg_return_20d,
+    ROUND(AVG(return_21d), 2) AS avg_return_21d,
     ROUND(AVG(CASE WHEN return_5d > 0 THEN 1.0 ELSE 0.0 END), 3) AS win_rate_5d,
     ROUND(AVG(CASE WHEN return_20d > 0 THEN 1.0 ELSE 0.0 END), 3) AS win_rate_20d,
+    ROUND(AVG(CASE WHEN return_21d > 0 THEN 1.0 ELSE 0.0 END), 3) AS win_rate_21d,
     ROUND(AVG(max_gain_20d), 2) AS avg_max_gain,
-    ROUND(AVG(max_drawdown_20d), 2) AS avg_max_drawdown
+    ROUND(AVG(max_drawdown_20d), 2) AS avg_max_drawdown,
+    ROUND(AVG(max_gain_21d), 2) AS avg_max_gain_21d,
+    ROUND(AVG(max_drawdown_21d), 2) AS avg_max_drawdown_21d
 FROM detection
 WHERE status = 'closed'
 GROUP BY preset_name, market_env;
@@ -407,15 +456,20 @@ SELECT
     COUNT(*) AS detection_count,
     ROUND(AVG(sub.return_5d), 2) AS avg_return_5d,
     ROUND(AVG(sub.return_20d), 2) AS avg_return_20d,
+    ROUND(AVG(sub.return_21d), 2) AS avg_return_21d,
     ROUND(AVG(CASE WHEN sub.return_20d > 0 THEN 1.0 ELSE 0.0 END), 3) AS win_rate_20d,
-    ROUND(AVG(sub.max_drawdown_20d), 2) AS avg_max_drawdown
+    ROUND(AVG(CASE WHEN sub.return_21d > 0 THEN 1.0 ELSE 0.0 END), 3) AS win_rate_21d,
+    ROUND(AVG(sub.max_drawdown_20d), 2) AS avg_max_drawdown,
+    ROUND(AVG(sub.max_drawdown_21d), 2) AS avg_max_drawdown_21d
 FROM (
     SELECT
         d.id,
         d.preset_name,
         d.return_5d,
         d.return_20d,
+        d.return_21d,
         d.max_drawdown_20d,
+        d.max_drawdown_21d,
         (
             SELECT GROUP_CONCAT(ordered.scan_name, ', ')
             FROM (
@@ -429,6 +483,36 @@ FROM (
     WHERE d.status = 'closed'
 ) sub
 GROUP BY sub.preset_name, sub.scan_combo;
+
+DROP VIEW IF EXISTS v_signal_entry_performance;
+CREATE VIEW v_signal_entry_performance AS
+SELECT
+    COALESCE(NULLIF(action_bucket, ''), 'Entry Ready') AS action_bucket,
+    signal_name,
+    COALESCE(NULLIF(market_env, ''), 'unknown') AS market_env,
+    COUNT(*) AS event_count,
+    COUNT(DISTINCT ticker) AS ticker_count,
+    ROUND(AVG(return_5d), 2) AS avg_return_5d,
+    ROUND(AVG(return_10d), 2) AS avg_return_10d,
+    ROUND(AVG(return_21d), 2) AS avg_return_21d,
+    ROUND(AVG(CASE WHEN return_21d IS NULL THEN NULL WHEN return_21d > 0 THEN 1.0 ELSE 0.0 END), 3) AS win_rate_21d,
+    SUM(CASE WHEN hit_tp1 = 1 THEN 1 ELSE 0 END) AS tp1_count,
+    SUM(CASE WHEN hit_sl = 1 THEN 1 ELSE 0 END) AS sl_count,
+    SUM(CASE WHEN first_outcome = 'time_20d' THEN 1 ELSE 0 END) AS timeout_count,
+    SUM(CASE WHEN first_outcome = 'ambiguous_same_day' THEN 1 ELSE 0 END) AS ambiguous_count,
+    ROUND(AVG(CASE WHEN hit_tp1 IS NULL THEN NULL ELSE hit_tp1 END), 3) AS tp1_rate,
+    ROUND(AVG(CASE WHEN hit_sl IS NULL THEN NULL ELSE hit_sl END), 3) AS sl_rate,
+    ROUND(AVG(outcome_r), 3) AS avg_outcome_r,
+    ROUND(AVG(days_to_first_outcome), 2) AS avg_days_to_first_outcome,
+    ROUND(AVG(max_gain_21d), 2) AS avg_max_gain_21d,
+    ROUND(AVG(max_drawdown_21d), 2) AS avg_max_drawdown_21d,
+    MIN(event_date) AS first_event_date,
+    MAX(event_date) AS last_event_date
+FROM signal_entry_event
+GROUP BY
+    COALESCE(NULLIF(action_bucket, ''), 'Entry Ready'),
+    signal_name,
+    COALESCE(NULLIF(market_env, ''), 'unknown');
 
 DROP VIEW IF EXISTS v_preset_overlap;
 CREATE VIEW v_preset_overlap AS

@@ -67,13 +67,16 @@ Current implemented behavior:
 
 - annotation-filter availability is controlled by `annotation_filter_status_map`
 - annotation filters are defined by `scan.annotation_filters`
-- the default config ships ten available filters:
+- the default config ships thirteen available filters:
   - `RS 21 >= 63`
   - `High Est. EPS Growth`
   - `PP Count (20d)`
   - `Trend Base`
   - `Stage 2 Confirmed`
+  - `Stage 2 Quality Score`
   - `Trend Template`
+  - `Mature / Late Stage Risk Filter`
+  - `Industry Leadership Gate`
   - `Stage 4 Avoid`
   - `Fund Score > 70`
   - `Resistance Tests >= 2`
@@ -153,10 +156,8 @@ Current preset behavior:
 - `values` stores the watchlist control fields plus an editable `duplicate_rule` payload
 - the active UI supports save, load, update, and delete
 - built-in presets use `preset_status` to control UI visibility and automatic export participation
-- only built-in presets with `preset_status: enabled` appear in the preset picker
-- built-in presets with `preset_status: enabled` or `preset_status: hidden_enabled` are included in automatic preset CSV export and preset-hit listing
+- built-in presets with `preset_status: enabled` appear in the preset picker and are included in automatic preset CSV export and preset-hit listing
 - saved custom presets are included in preset-hit listing and preset CSV export
-- built-in presets with `preset_status: disabled` are skipped by the preset picker, preset-hit listing, and automatic preset CSV export
 - built-in presets can be loaded and exported but not deleted or updated from the UI
 - at most 10 presets are stored per config namespace
 - preset load drops any saved preset that references scan names no longer available in the current config
@@ -198,8 +199,8 @@ Current implemented behavior:
 - `grouped_threshold` requires every scan in `required_scans` and every configured `optional_groups` threshold
 - each `optional_groups` item has `group_name`, `scans`, and `min_hits`
 - the UI builds `grouped_threshold` when condition groups are configured
-- legacy `required_plus_optional_min` remains accepted and maps to one condition group in the UI
-- the UI uses `min_count` for simple optional-only legacy selections
+- `required_plus_optional_min` remains accepted and maps to one condition group in the UI
+- the UI uses `min_count` for simple optional-only selections
 - `overlap_count` is overwritten with the selected-scan overlap count
 - if no scan cards are selected, the projection forces:
   - `selected_scan_hit_count = 0`
@@ -238,9 +239,9 @@ The Watchlist page exposes a `Preset Hits` panel that lists tickers that satisfy
 
 `preset_hits.csv` uses one row per `preset_name x ticker` hit and includes `preset_source`, matched scans, selected scans, annotation filters, duplicate threshold, duplicate-rule mode, and score columns when available.
 
-`preset_details.csv` uses one row per preset and preserves the legacy wide format with `Duplicate Tickers` and `<display_name> Hit Tickers` columns.
+`preset_details.csv` uses one row per preset and preserves the wide details format with `Duplicate Tickers` and `<display_name> Hit Tickers` columns.
 
-The preset export contract treats `preset_summary.csv` as the user-facing aggregate and `preset_hits.csv` as normalized hit detail for analysis. `preset_hits.csv` is not deprecated because it preserves the preset-level lineage needed for later AI analysis and tracking joins. `preset_details.csv` is legacy-compatible wide output and should not be treated as the primary analysis artifact.
+The preset export contract treats `preset_summary.csv` as the user-facing aggregate and `preset_hits.csv` as normalized hit detail for analysis. `preset_hits.csv` preserves the preset-level lineage needed for later AI analysis and tracking joins. `preset_details.csv` is compatibility wide output and should not be treated as the primary analysis artifact.
 
 Automatic preset CSV export runs after a full pipeline recompute and writes under `scan.preset_csv_export.output_dir` using the trade-date folder. Saved-run restore does not create new preset CSV files. The Watchlist page also has a manual `Write preset CSV files` action that writes the same files.
 
@@ -257,12 +258,13 @@ Current implemented behavior:
 - detection rows store detection-time fields such as `market_env`, `close_at_hit`, `rs21_at_hit`, `vcs_at_hit`, `atr_at_hit`, `hybrid_score_at_hit`, and `duplicate_hit_count`
 - hit scan names are stored in `detection_scans`
 - selected annotation filters are stored in `detection_filters`
-- forward horizons are fixed at `1d`, `5d`, `10d`, and `20d`
-- forward closes are stored as `close_at_1d`, `close_at_5d`, `close_at_10d`, and `close_at_20d`
-- forward returns are stored as `return_1d`, `return_5d`, `return_10d`, and `return_20d`
+- forward horizons are fixed at `1d`, `5d`, `10d`, `20d`, and `21d`
+- forward closes are stored as `close_at_1d`, `close_at_5d`, `close_at_10d`, `close_at_20d`, and `close_at_21d`
+- forward returns are stored as `return_1d`, `return_5d`, `return_10d`, `return_20d`, and `return_21d`
+- 20D and 21D excursion fields are stored as `max_gain_20d`, `max_drawdown_20d`, `max_gain_21d`, and `max_drawdown_21d`
 - horizon dates are calculated from `hit_date + BDay(horizon_days)`
 - return fields are updated on later runs when price history for the target date or a later available trading day exists
-- a detection is closed after the 20D horizon is filled
+- a detection is closed after the 20D horizon is filled; 21D fields can still be backfilled on later refreshes
 - date-level scan-hit history is stored in the same database table `scan_hits`
 
 Legacy CSVs under `data_runs/preset_effectiveness/` are migration inputs only. They are not the current authoritative tracking store.
@@ -289,12 +291,12 @@ Instead:
 - `doc/SystemDocs/Scan/scan_00_index.md` is the entry point
 - scan availability is controlled by `scan_status_map`
 - only scans marked `enabled` are evaluated and exposed through watchlist card selection
-- legacy `enabled_scan_rules` is still accepted as a backward-compatible active-scan list
+- `enabled_scan_rules` is the active scan list loaded from config
 - annotation-filter availability is controlled by `annotation_filter_status_map`
 - available annotation-filter definitions are controlled by `annotation_filters`
 - only annotation filters marked `enabled` are evaluated and exposed through watchlist filter selection
 - startup-enabled annotation filters come from `enabled_annotation_filters`
-- the legacy config alias `enabled_list_rules` is still accepted for backward compatibility
+- the config alias `enabled_list_rules` is still accepted for backward compatibility
 - if `enabled_annotation_filters` mistakenly includes scan names, the loader moves those names into the enabled scan rule set and keeps only real annotation filters in the enabled annotation set
 - built-in presets automatically drop selected annotation filters that are not currently enabled
 - built-in presets that reference any non-enabled scan are forced to `preset_status: disabled`
