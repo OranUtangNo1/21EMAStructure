@@ -140,8 +140,9 @@ def test_market_dashboard_result_contains_expanded_sections() -> None:
     assert result.drawdown_summary["SPY T_DD"] == pytest.approx(0.0)
     assert not result.market_snapshot.empty
     assert list(result.market_snapshot["TICKER"]) == ["AAA", "BBB"]
-    assert not result.leadership_snapshot.empty
-    assert list(result.leadership_snapshot["TICKER"]) == ["LDR"]
+    assert result.leadership_snapshot.empty
+    assert "LDR" not in MarketConditionScorer(config).required_symbols()
+    assert result.sector_relative_strength.empty
     assert not result.external_snapshot.empty
     assert list(result.external_snapshot["TICKER"]) == ["EXT"]
     assert list(result.market_snapshot.columns) == ["TICKER", "NAME", "PRICE", "DAY %", "VOL vs 50D %", "21EMA POS"]

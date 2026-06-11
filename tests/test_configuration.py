@@ -202,11 +202,18 @@ def test_default_settings_include_annotation_and_entry_signal_status_maps() -> N
     context_guard = settings["entry_signals"]["context_guard"]
     orderly_pool = settings["entry_signals"]["definitions"]["orderly_pullback_entry"]["pool"]
 
-    assert annotation_status_map["Trend Base"] == "enabled"
-    assert annotation_status_map["Recent Power Gap"] == "enabled"
     assert annotation_status_map["Stage 2 Quality Score"] == "enabled"
     assert annotation_status_map["Mature / Late Stage Risk Filter"] == "enabled"
     assert annotation_status_map["Industry Leadership Gate"] == "enabled"
+    assert annotation_status_map["Recent Power Gap"] == "enabled"
+    assert annotation_status_map["Trend Template"] == "enabled"
+    assert set(annotation_status_map) == {
+        "Stage 2 Quality Score",
+        "Mature / Late Stage Risk Filter",
+        "Industry Leadership Gate",
+        "Recent Power Gap",
+        "Trend Template",
+    }
     assert signal_status_map["orderly_pullback_entry"] == "enabled"
     assert signal_status_map["pullback_resumption_entry"] == "enabled"
     assert "early_cycle_recovery_entry" not in signal_status_map

@@ -41,6 +41,7 @@ class IndicatorConfig:
     structure_pivot_min_length: int = 2
     structure_pivot_max_length: int = 10
     structure_pivot_priority_mode: str = "tightest"
+    structure_pivot_include_short: bool = False
     resistance_test_lookback: int = 20
     resistance_zone_width_atr: float = 0.5
     resistance_test_count_window: int = 20
@@ -409,7 +410,11 @@ class IndicatorCalculator:
 
     def _calculate_structure_pivot_snapshot(self, df: pd.DataFrame) -> dict[str, float | bool]:
         long_state = self._detect_structure_pivot_state(df, is_long=True)
-        short_state = self._detect_structure_pivot_state(df, is_long=False)
+        short_state = (
+            self._detect_structure_pivot_state(df, is_long=False)
+            if self.config.structure_pivot_include_short
+            else self._empty_structure_pivot_state()
+        )
         llhl_extension = self._build_llhl_extension_fields(df, long_state)
         ct_fields = self._build_ct_trendline_fields(df, long_state)
         return {
@@ -431,6 +436,18 @@ class IndicatorCalculator:
             "structure_pivot_short_lh_price": short_state["current_price"],
             **llhl_extension,
             **ct_fields,
+        }
+
+    def _empty_structure_pivot_state(self) -> dict[str, float | bool]:
+        return {
+            "active": False,
+            "breakout": False,
+            "breakout_first_day": False,
+            "breakout_gap_up": False,
+            "pivot_price": np.nan,
+            "length": np.nan,
+            "prior_price": np.nan,
+            "current_price": np.nan,
         }
 
     def _build_llhl_extension_fields(
@@ -526,8 +543,8 @@ class IndicatorCalculator:
     def _collect_confirmed_pivot_highs(self, df: pd.DataFrame) -> list[tuple[int, float]]:
         min_length = max(int(self.config.structure_pivot_min_length), 1)
         max_length = max(int(self.config.structure_pivot_max_length), min_length)
-        lows = df["low"].reset_index(drop=True)
-        highs = df["high"].reset_index(drop=True)
+        lows = df["low"].to_numpy(dtype=float, copy=False)
+        highs = df["high"].to_numpy(dtype=float, copy=False)
         pivots_by_index: dict[int, float] = {}
 
         for current_bar in range(len(df)):
@@ -535,7 +552,7 @@ class IndicatorCalculator:
                 center = current_bar - length
                 if center - length < 0 or center + length > current_bar:
                     continue
-                pivot_high = self._pivot_price_at(lows, highs, center=center, length=length, is_long=False)
+                pivot_high = self._pivot_price_at_values(lows, highs, center=center, length=length, is_long=False)
                 if pd.notna(pivot_high):
                     existing = pivots_by_index.get(center)
                     value = float(pivot_high)
@@ -547,9 +564,10 @@ class IndicatorCalculator:
     def _detect_structure_pivot_state(self, df: pd.DataFrame, *, is_long: bool) -> dict[str, float | bool]:
         min_length = max(int(self.config.structure_pivot_min_length), 1)
         max_length = max(int(self.config.structure_pivot_max_length), min_length)
-        lows = df["low"].reset_index(drop=True)
-        highs = df["high"].reset_index(drop=True)
-        closes = df["close"].reset_index(drop=True)
+        lows = df["low"].to_numpy(dtype=float, copy=False)
+        highs = df["high"].to_numpy(dtype=float, copy=False)
+        closes = df["close"].to_numpy(dtype=float, copy=False)
+        opens = df["open"].to_numpy(dtype=float, copy=False)
         states = [
             {
                 "length": length,
@@ -570,7 +588,7 @@ class IndicatorCalculator:
                 if center - length < 0 or center + length > current_bar:
                     pass
                 else:
-                    pivot_price = self._pivot_price_at(lows, highs, center=center, length=length, is_long=is_long)
+                    pivot_price = self._pivot_price_at_values(lows, highs, center=center, length=length, is_long=is_long)
                     if pd.notna(pivot_price):
                         current_price = state["curr_price"]
                         setup_cond = bool(pd.notna(current_price) and ((pivot_price > current_price) if is_long else (pivot_price < current_price)))
@@ -585,36 +603,27 @@ class IndicatorCalculator:
                             end = center - 1
                             if end >= start:
                                 if is_long:
-                                    state["break_val"] = float(highs.iloc[start : end + 1].max())
+                                    state["break_val"] = self._nanmax(highs[start : end + 1])
                                 else:
-                                    state["break_val"] = float(lows.iloc[start : end + 1].min())
+                                    state["break_val"] = self._nanmin(lows[start : end + 1])
 
                 curr_idx = state["curr_idx"]
                 curr_price = state["curr_price"]
                 if not state["is_setup"] or curr_idx is None or pd.isna(curr_price):
                     continue
-                if is_long and float(lows.iloc[current_bar]) < float(curr_price):
+                if is_long and float(lows[current_bar]) < float(curr_price):
                     state["is_setup"] = False
-                if not is_long and float(highs.iloc[current_bar]) > float(curr_price):
+                if not is_long and float(highs[current_bar]) > float(curr_price):
                     state["is_setup"] = False
 
         winner = self._select_structure_pivot_winner(states, is_long=is_long)
         if winner is None:
-            return {
-                "active": False,
-                "breakout": False,
-                "breakout_first_day": False,
-                "breakout_gap_up": False,
-                "pivot_price": np.nan,
-                "length": np.nan,
-                "prior_price": np.nan,
-                "current_price": np.nan,
-            }
+            return self._empty_structure_pivot_state()
 
         pivot_price = float(winner["break_val"])
-        latest_close = float(closes.iloc[-1])
-        previous_close = float(closes.iloc[-2]) if len(closes) >= 2 and pd.notna(closes.iloc[-2]) else float("nan")
-        latest_open = float(df["open"].iloc[-1])
+        latest_close = float(closes[-1])
+        previous_close = float(closes[-2]) if len(closes) >= 2 and pd.notna(closes[-2]) else float("nan")
+        latest_open = float(opens[-1])
         breakout = latest_close > pivot_price if is_long else latest_close < pivot_price
         breakout_first_day = bool(
             breakout
@@ -659,6 +668,41 @@ class IndicatorCalculator:
             if bool((current > left).all() and (current >= right).all()):
                 return current
         return float("nan")
+
+    def _pivot_price_at_values(
+        self,
+        lows: np.ndarray,
+        highs: np.ndarray,
+        *,
+        center: int,
+        length: int,
+        is_long: bool,
+    ) -> float:
+        if is_long:
+            current = float(lows[center])
+            left = lows[center - length : center]
+            right = lows[center + 1 : center + length + 1]
+            if bool(np.all(current < left) and np.all(current <= right)):
+                return current
+        else:
+            current = float(highs[center])
+            left = highs[center - length : center]
+            right = highs[center + 1 : center + length + 1]
+            if bool(np.all(current > left) and np.all(current >= right)):
+                return current
+        return float("nan")
+
+    def _nanmax(self, values: np.ndarray) -> float:
+        valid = values[~np.isnan(values)]
+        if len(valid) == 0:
+            return float("nan")
+        return float(valid.max())
+
+    def _nanmin(self, values: np.ndarray) -> float:
+        valid = values[~np.isnan(values)]
+        if len(valid) == 0:
+            return float("nan")
+        return float(valid.min())
 
     def _select_structure_pivot_winner(
         self,

@@ -4,6 +4,7 @@ import pandas as pd
 
 from src.dashboard.watchlist import WatchlistViewModelBuilder
 from src.scan.rules import (
+    AnnotationFilterConfig,
     DuplicateRuleConfig,
     ScanCardConfig,
     ScanConfig,
@@ -15,16 +16,26 @@ from src.scan.rules import (
 from src.scan.runner import ScanRunner
 
 
+def _annotation_config(*filter_names: str, **kwargs: object) -> ScanConfig:
+    return ScanConfig(
+        annotation_filters=tuple(
+            AnnotationFilterConfig.from_dict({"filter_name": name, "display_name": name})
+            for name in filter_names
+        ),
+        **kwargs,
+    )
+
+
 def test_high_est_eps_growth_annotation_uses_rank_threshold() -> None:
     row = pd.Series({"eps_growth": 45.0, "eps_growth_rank": 95.0})
-    config = ScanConfig(high_eps_growth_rank_threshold=90.0)
+    config = _annotation_config("High Est. EPS Growth", high_eps_growth_rank_threshold=90.0)
     result = evaluate_annotation_filters(row, config)
     assert result["High Est. EPS Growth"] is True
 
 
 def test_relative_strength_annotation_uses_app_rs_threshold() -> None:
     row = pd.Series({"rs21": 63.0, "raw_rs21": 63.0, "rsi21": 10.0, "rsi63": 90.0})
-    config = ScanConfig()
+    config = _annotation_config("RS 21 >= 63")
 
     result = evaluate_annotation_filters(row, config)
 
@@ -33,7 +44,7 @@ def test_relative_strength_annotation_uses_app_rs_threshold() -> None:
 
 def test_trend_base_annotation_uses_existing_indicator_flag() -> None:
     row = pd.Series({"trend_base": True})
-    config = ScanConfig()
+    config = _annotation_config("Trend Base")
 
     result = evaluate_annotation_filters(row, config)
 
@@ -51,7 +62,7 @@ def test_trend_template_scan_requires_price_template_and_rs_confirmation() -> No
 
 def test_stage_annotations_use_template_context_and_rs_confirmation() -> None:
     row = pd.Series({"stage_label": "stage2_candidate", "trend_template_price_score": 5, "raw_rs21": 60.0})
-    config = ScanConfig()
+    config = _annotation_config("Stage 2 Confirmed", "Stage 4 Avoid")
 
     result = evaluate_annotation_filters(row, config)
 
@@ -112,7 +123,7 @@ def test_industry_leadership_gate_uses_industry_score_threshold() -> None:
 
 def test_stage4_annotation_uses_indicator_stage_label() -> None:
     row = pd.Series({"stage_label": "stage4_avoid", "trend_template_price_score": 0, "raw_rs21": 10.0})
-    config = ScanConfig()
+    config = _annotation_config("Stage 4 Avoid")
 
     result = evaluate_annotation_filters(row, config)
 
@@ -121,7 +132,7 @@ def test_stage4_annotation_uses_indicator_stage_label() -> None:
 
 def test_fund_score_annotation_uses_fixed_threshold() -> None:
     row = pd.Series({"fundamental_score": 70.0})
-    config = ScanConfig()
+    config = _annotation_config("Fund Score > 70")
 
     result = evaluate_annotation_filters(row, config)
 
@@ -130,7 +141,7 @@ def test_fund_score_annotation_uses_fixed_threshold() -> None:
 
 def test_resistance_tests_annotation_uses_minimum_two_tests() -> None:
     row = pd.Series({"resistance_test_count": 2.0})
-    config = ScanConfig()
+    config = _annotation_config("Resistance Tests >= 2")
 
     result = evaluate_annotation_filters(row, config)
 
@@ -493,7 +504,7 @@ def test_21ema_pattern_l_rejects_rows_that_do_not_reclaim_low_band() -> None:
 
 def test_pp_count_annotation_triggers_at_two_pocket_pivots() -> None:
     row = pd.Series({"pp_count_window": 2})
-    config = ScanConfig()
+    config = _annotation_config("PP Count (20d)")
 
     result = evaluate_annotation_filters(row, config)
 
@@ -511,7 +522,8 @@ def test_pp_count_scan_uses_scan_threshold() -> None:
 
 def test_pp_count_thresholds_can_be_parameterized_independently() -> None:
     row = pd.Series({"pp_count_window": 2, "trend_base": True})
-    config = ScanConfig(
+    config = _annotation_config(
+        "PP Count (20d)",
         enabled_scan_rules=("PP Count",),
         pp_count_scan_min=3,
         pp_count_annotation_min=2,
@@ -715,7 +727,9 @@ def test_watchlist_builder_surfaces_annotation_columns() -> None:
         index=["AAA"],
     )
 
-    display = WatchlistViewModelBuilder().build(raw_watchlist)
+    display = WatchlistViewModelBuilder(
+        _annotation_config("RS 21 >= 63", "High Est. EPS Growth")
+    ).build(raw_watchlist)
 
     assert bool(display.iloc[0]["duplicate_ticker"]) is True
     assert bool(display.iloc[0]["backend_duplicate_ticker"]) is True
@@ -831,7 +845,14 @@ def test_runner_attaches_annotation_flags_to_scan_hits() -> None:
         },
         index=["AAA"],
     )
-    runner = ScanRunner(ScanConfig(enabled_scan_rules=("4% bullish",), duplicate_min_count=3))
+    runner = ScanRunner(
+        _annotation_config(
+            "RS 21 >= 63",
+            "High Est. EPS Growth",
+            enabled_scan_rules=("4% bullish",),
+            duplicate_min_count=3,
+        )
+    )
 
     result = runner.run(snapshot)
 
@@ -1091,7 +1112,8 @@ def test_annotation_filters_apply_with_and_semantics() -> None:
         index=["AAA", "BBB", "CCC"],
     )
 
-    filtered = WatchlistViewModelBuilder().filter_by_annotation_filters(
+    config = _annotation_config("RS 21 >= 63", "High Est. EPS Growth")
+    filtered = WatchlistViewModelBuilder(config).filter_by_annotation_filters(
         watchlist,
         ["RS 21 >= 63", "High Est. EPS Growth"],
     )
@@ -1134,11 +1156,12 @@ def test_default_scan_config_includes_new_scan_names_and_cards() -> None:
     )
     assert {section.scan_name for section in config.card_sections}.isdisjoint({"21EMA scan V2"})
     assert "PP Count" in {section.scan_name for section in config.card_sections}
-    assert {section.filter_name for section in config.annotation_filters} >= {
-        "PP Count (20d)",
-        "Trend Base",
-        "Fund Score > 70",
+    assert {section.filter_name for section in config.annotation_filters} == {
+        "Stage 2 Quality Score",
+        "Mature / Late Stage Risk Filter",
+        "Industry Leadership Gate",
         "Recent Power Gap",
+        "Trend Template",
     }
 
 
@@ -1191,6 +1214,9 @@ def test_scan_config_coerces_misplaced_scan_names_out_of_enabled_annotation_filt
         {
             "enabled_scan_rules": ["Reclaim scan"],
             "enabled_annotation_filters": ["RS 21 >= 63", "LL-HL Structure 1st Pivot"],
+            "annotation_filters": [
+                {"filter_name": "RS 21 >= 63", "display_name": "RS 21 >= 63"},
+            ],
         }
     )
 
@@ -1269,12 +1295,18 @@ def test_apply_selected_scan_metrics_zeroes_duplicate_state_when_no_scans_select
     assert bool(projected.iloc[0]["duplicate_ticker"]) is False
 
 
-def test_default_pp_count_annotation_is_available() -> None:
+def test_default_annotation_filters_are_simplified() -> None:
     config = ScanConfig()
 
     labels = {section.filter_name: section.display_name for section in config.annotation_filters}
 
-    assert labels["PP Count (20d)"] == "PP Count (20d)"
+    assert labels == {
+        "Stage 2 Quality Score": "Stage 2 Quality",
+        "Mature / Late Stage Risk Filter": "Mature Risk Filter",
+        "Industry Leadership Gate": "Industry Leadership",
+        "Recent Power Gap": "Recent Power Gap",
+        "Trend Template": "Trend Template",
+    }
 
 
 def test_legacy_pp_count_annotation_name_remains_accepted() -> None:
@@ -1470,7 +1502,8 @@ def test_watchlist_preset_export_includes_duplicate_and_card_hit_tickers() -> No
         card_sections=(
             ScanCardConfig(scan_name="21EMA Pattern H", display_name="21EMA"),
             ScanCardConfig(scan_name="Pocket Pivot", display_name="Pocket Pivot"),
-        )
+        ),
+        annotation_filters=(AnnotationFilterConfig(filter_name="RS 21 >= 63", display_name="RS 21 >= 63"),),
     )
 
     export_frame = WatchlistViewModelBuilder(config).build_preset_export(
@@ -1520,13 +1553,17 @@ def test_watchlist_preset_summary_export_groups_hit_presets_by_ticker() -> None:
         card_sections=(
             ScanCardConfig(scan_name="21EMA Pattern H", display_name="21EMA"),
             ScanCardConfig(scan_name="Pocket Pivot", display_name="Pocket Pivot"),
-        )
+        ),
+        annotation_filters=(AnnotationFilterConfig(filter_name="RS 21 >= 63", display_name="RS 21 >= 63"),),
     )
     custom_presets = ScanConfig.from_dict(
         {
             "card_sections": [
                 {"scan_name": "21EMA Pattern H", "display_name": "21EMA"},
                 {"scan_name": "Pocket Pivot", "display_name": "Pocket Pivot"},
+            ],
+            "annotation_filters": [
+                {"filter_name": "RS 21 >= 63", "display_name": "RS 21 >= 63"},
             ],
             "watchlist_presets": [
                 {

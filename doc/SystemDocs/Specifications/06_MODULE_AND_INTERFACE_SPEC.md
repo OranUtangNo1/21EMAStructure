@@ -383,10 +383,10 @@ The active pipeline bundle includes:
 - `index_state_summary`
 - `drawdown_summary`
 - `market_snapshot`
-- `leadership_snapshot`
+- `leadership_snapshot` retained as a compatibility field; current Market Dashboard scoring leaves it empty
 - `external_snapshot`
 - `factors_vs_sp500`
-- `sector_relative_strength`
+- `sector_relative_strength` retained as a compatibility field; RS Radar is the current source for sector and industry leadership
 - `style_pair_summary`
 - `defensive_cyclical_summary`
 - `s5th_series`

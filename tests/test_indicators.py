@@ -815,6 +815,42 @@ def test_indicator_calculator_computes_ct_break_only_when_long_structure_is_inac
     assert bool(latest["ct_trendline_break"]) is True
 
 
+def test_indicator_calculator_skips_short_structure_by_default() -> None:
+    dates = pd.date_range("2025-03-01", periods=8, freq="D")
+    frame = pd.DataFrame(
+        {
+            "open": [11.5, 10.8, 9.8, 10.8, 8.8, 9.6, 8.2, 8.9],
+            "high": [12.0, 11.0, 10.0, 11.0, 9.0, 10.0, 8.0, 10.0],
+            "low": [10.5, 9.0, 8.0, 9.0, 7.0, 8.0, 6.5, 7.5],
+            "close": [11.0, 9.5, 8.7, 10.0, 7.8, 9.2, 9.2, 9.4],
+            "adjusted_close": [11.0, 9.5, 8.7, 10.0, 7.8, 9.2, 9.2, 9.4],
+            "volume": [1_000_000] * 8,
+        },
+        index=dates,
+    )
+    base_config = {
+        "ema_period": 2,
+        "sma_short_period": 2,
+        "sma_long_period": 3,
+        "atr_period": 2,
+        "adr_period": 2,
+        "relvol_period": 2,
+        "enable_3wt": False,
+        "structure_pivot_min_length": 1,
+        "structure_pivot_max_length": 1,
+    }
+
+    default_latest = IndicatorCalculator(IndicatorConfig(**base_config)).calculate(frame).iloc[-1]
+    short_enabled_latest = IndicatorCalculator(
+        IndicatorConfig(**base_config, structure_pivot_include_short=True)
+    ).calculate(frame).iloc[-1]
+
+    assert bool(default_latest["structure_pivot_short_active"]) is False
+    assert pd.isna(default_latest["structure_pivot_short_pivot_price"])
+    assert bool(short_enabled_latest["structure_pivot_short_active"]) is True
+    assert round(float(short_enabled_latest["structure_pivot_short_pivot_price"]), 6) == 7.0
+
+
 def test_structure_pivot_priority_mode_accepts_legacy_aliases() -> None:
     calculator = IndicatorCalculator(IndicatorConfig(enable_3wt=False))
 

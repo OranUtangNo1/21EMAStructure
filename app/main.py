@@ -2582,10 +2582,6 @@ MARKET_SECTION_HELP: dict[str, tuple[str, ...]] = {
         "主要指数、サイズ別、均等加重、セクター ETF の現在状態(価格、日次変化、出来高、21EMA 位置)を一覧で確認します。",
         "複数の Core ETF が 21EMA High を上回り出来高も健全であれば、ロング候補を確認しやすい環境です。均等加重(RSP / QQQE)や小型株(IWM / IJR)が 21EMA を割っている場合、指数上昇が狭い主導株に偏っている可能性として読みます。",
     ),
-    "Sector Rotation / Sector RS": (
-        "各セクター ETF が S&P 500 に対してどれだけ優位か(REL 1W / 1M / 3M)と、相対順位の変化(RANK DELTA 1W / 1M)を確認します。",
-        "REL 1M が強く RANK DELTA 1W / 1M が改善しているセクターは資金流入が続いている可能性が高く、関連する Watchlist 候補の優先度を上げます。逆に相対劣後や順位低下が続くセクターは、個別形状が良くても選別を強めます。",
-    ),
     "Factors vs SP500": (
         "グロース、バリュー、モメンタム、大型・中型・小型などの factor ETF が S&P 500 に対して優位か劣後しているかを確認します。",
         "いまどの属性に資金が向かっているかを把握し、Watchlist 候補の属性と市場で優位なファクターが一致しているほど、候補の質を高く見ます。",
@@ -2597,10 +2593,6 @@ MARKET_SECTION_HELP: dict[str, tuple[str, ...]] = {
     "Defensive / Cyclical Summary": (
         "ディフェンシブセクター(XLP / XLU / XLV)に対して、景気敏感・グロース系セクター(XLC / XLE / XLF / XLI / XLK / XLY)が優位かを確認します。",
         "Cyclical / Growth 側が優位ならリスクオン、Defensive 側が優位ならリスクオフ寄りです。短中期ロングでは、リスクオン優位のときにブレイクアウトや押し目再開候補の信頼度を高く見ます。",
-    ),
-    "Leadership": (
-        "半導体、ソフトウェア、テーマ業種など、主導業種に近いリーダー ETF が市場を確認しているかを見ます。",
-        "Leadership が強い(21EMA を維持し高値圏にある)場合、関連業種の Watchlist 候補は追い風を受けやすくなります。Leadership が弱い場合、指数が上昇していても攻めすぎない判断材料にします。",
     ),
     "External": (
         "米国外、グローバル、中国関連(EEM / FXI / KWEB)など、外部市場のリスク選好を確認します。",
@@ -2866,13 +2858,8 @@ def render_market_dashboard(artifacts: PlatformArtifacts) -> None:
         render_market_stage_heading("Factors vs SP500", "Factors-only universe. Relative performance vs S&P 500 (1W, 1M, 1Y).")
         render_market_factors_panel(result.factors_vs_sp500)
 
-    leadership_col, external_col = st.columns([1.0, 1.0])
-    with leadership_col:
-        render_market_stage_heading("Leadership", "Display-only leadership universe.")
-        render_market_snapshot_panel(result.leadership_snapshot)
-    with external_col:
-        render_market_stage_heading("External", "Display-only external universe.")
-        render_market_snapshot_panel(result.external_snapshot)
+    render_market_stage_heading("External", "Display-only external market context.")
+    render_market_snapshot_panel(result.external_snapshot)
 
     render_data_health_table(artifacts)
 

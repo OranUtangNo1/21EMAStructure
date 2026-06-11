@@ -67,20 +67,13 @@ Current implemented behavior:
 
 - annotation-filter availability is controlled by `annotation_filter_status_map`
 - annotation filters are defined by `scan.annotation_filters`
-- the default config ships thirteen available filters:
-  - `RS 21 >= 63`
-  - `High Est. EPS Growth`
-  - `PP Count (20d)`
-  - `Trend Base`
-  - `Stage 2 Confirmed`
+- the default config ships five available filters:
   - `Stage 2 Quality Score`
-  - `Trend Template`
   - `Mature / Late Stage Risk Filter`
   - `Industry Leadership Gate`
-  - `Stage 4 Avoid`
-  - `Fund Score > 70`
-  - `Resistance Tests >= 2`
   - `Recent Power Gap`
+  - `Trend Template`
+- legacy annotation filter evaluators remain in `ANNOTATION_FILTER_REGISTRY` for compatibility with custom or older configs, but they are not part of the default UI filter set
 - only annotation filters marked `enabled` remain available for runtime evaluation, preset loading, and UI selection
 - the default config enables none of them at runtime because `enabled_annotation_filters` is `[]`
 - annotation results are attached to the raw watchlist as:

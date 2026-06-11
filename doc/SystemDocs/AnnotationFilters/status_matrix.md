@@ -9,21 +9,15 @@ Column meaning:
 - `Startup`: selected by default in Watchlist controls.
 
 Current totals:
-- active enabled: 13
+- active enabled: 5
 - startup selected: 0
 
 | Annotation filter | Status | Startup |
 | --- | --- | --- |
-| `RS 21 >= 63` | `enabled` | `no` |
-| `High Est. EPS Growth` | `enabled` | `no` |
-| `PP Count (20d)` | `enabled` | `no` |
-| `Trend Base` | `enabled` | `no` |
-| `Stage 2 Confirmed` | `enabled` | `no` |
 | `Stage 2 Quality Score` | `enabled` | `no` |
-| `Trend Template` | `enabled` | `no` |
 | `Mature / Late Stage Risk Filter` | `enabled` | `no` |
 | `Industry Leadership Gate` | `enabled` | `no` |
-| `Stage 4 Avoid` | `enabled` | `no` |
-| `Fund Score > 70` | `enabled` | `no` |
-| `Resistance Tests >= 2` | `enabled` | `no` |
 | `Recent Power Gap` | `enabled` | `no` |
+| `Trend Template` | `enabled` | `no` |
+
+Compatibility-only evaluators remain in `src/scan/rules.py::ANNOTATION_FILTER_REGISTRY` for custom and older configs, but are not listed in the default runtime filter set.

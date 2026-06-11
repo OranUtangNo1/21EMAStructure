@@ -204,6 +204,9 @@ Archived final discretionary execution, sizing, and trade-management parameters 
 ### indicators.structure_pivot_priority_mode
 - current default: `tightest`
 
+### indicators.structure_pivot_include_short
+- current default: `false`
+
 ### indicators.resistance_test_lookback
 - current default: `20`
 
@@ -345,20 +348,13 @@ RS scoring also emits `rs_ratio_52w_high`, `rs_ratio_at_52w_high`, `rs_ratio_3y_
 - `enabled_list_rules`: compatibility alias still accepted for annotation rules
 - misplaced scan names inside `enabled_annotation_filters` are coerced into the enabled scan rule set during config loading
 - `annotation_filters`: available annotation-filter definitions and display names
-- built-in annotation filter names include:
-  - `RS 21 >= 63`
-  - `High Est. EPS Growth`
-  - `PP Count (20d)`
-  - `Trend Base`
-  - `Stage 2 Confirmed`
+- default annotation filter names include:
   - `Stage 2 Quality Score`
-  - `Trend Template`
   - `Mature / Late Stage Risk Filter`
   - `Industry Leadership Gate`
-  - `Stage 4 Avoid`
-  - `Fund Score > 70`
-  - `Resistance Tests >= 2`
   - `Recent Power Gap`
+  - `Trend Template`
+- older annotation filter evaluators remain available to custom configs through `ANNOTATION_FILTER_REGISTRY`, but are not included in the default UI filter set
 - `watchlist_presets`: built-in watchlist preset definitions loaded into the watchlist preset picker
   - each preset supports `preset_name`, `selected_scan_names`, `selected_annotation_filters`, `selected_duplicate_subfilters`, `duplicate_threshold`, optional `duplicate_rule`, and `preset_status`
   - `duplicate_rule.mode: min_count` uses `min_count` scan hits
@@ -472,9 +468,10 @@ The same `entry_ready.rr_ratio_min` value is used as the minimum acceptable `R/R
 
 ### Universes
 - `market_condition_etf_universe`: core ETF universe used for market scoring
-- `leadership_etfs`: display-only leadership ETF universe
 - `external_etfs`: display-only external ETF universe
 - `factor_etfs`: factor-comparison ETF universe
+
+Market Dashboard does not fetch or compute the former leadership ETF snapshot by default. Sector and industry leadership ranking belongs to RS Radar.
 
 ### Market document
 - `market_report.output.write_json`: current default `true`; writes the AI-input market document to `data_runs/market_documents/YYYYMMDD.json`

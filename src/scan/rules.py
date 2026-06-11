@@ -35,19 +35,11 @@ DEFAULT_SCAN_RULE_NAMES = (
 )
 
 DEFAULT_ANNOTATION_FILTER_NAMES = (
-    "RS 21 >= 63",
-    "High Est. EPS Growth",
-    "PP Count (20d)",
-    "Trend Base",
-    "Stage 2 Confirmed",
     "Stage 2 Quality Score",
-    "Trend Template",
     "Mature / Late Stage Risk Filter",
     "Industry Leadership Gate",
-    "Stage 4 Avoid",
-    "Fund Score > 70",
-    "Resistance Tests >= 2",
     "Recent Power Gap",
+    "Trend Template",
 )
 
 ANNOTATION_FILTER_NAME_ALIASES = {
@@ -82,19 +74,11 @@ DEFAULT_CARD_SECTION_PAYLOADS = (
     {"scan_name": "Fresh Stage 2 Breakout", "display_name": "Fresh Stage 2"},
 )
 DEFAULT_ANNOTATION_FILTER_PAYLOADS = (
-    {"filter_name": "RS 21 >= 63", "display_name": "RS 21 >= 63"},
-    {"filter_name": "High Est. EPS Growth", "display_name": "High Est. EPS Growth"},
-    {"filter_name": "PP Count (20d)", "display_name": "PP Count (20d)"},
-    {"filter_name": "Trend Base", "display_name": "Trend Base"},
-    {"filter_name": "Stage 2 Confirmed", "display_name": "Stage 2 Confirmed"},
     {"filter_name": "Stage 2 Quality Score", "display_name": "Stage 2 Quality"},
-    {"filter_name": "Trend Template", "display_name": "Trend Template"},
     {"filter_name": "Mature / Late Stage Risk Filter", "display_name": "Mature Risk Filter"},
     {"filter_name": "Industry Leadership Gate", "display_name": "Industry Leadership"},
-    {"filter_name": "Stage 4 Avoid", "display_name": "Stage 4 Avoid"},
-    {"filter_name": "Fund Score > 70", "display_name": "Fund Score > 70"},
-    {"filter_name": "Resistance Tests >= 2", "display_name": "Resistance Tests >= 2"},
     {"filter_name": "Recent Power Gap", "display_name": "Recent Power Gap"},
+    {"filter_name": "Trend Template", "display_name": "Trend Template"},
 )
 ANNOTATION_FILTER_COLUMN_NAMES = {
     "RS 21 >= 63": "annotation_rs21_gte_63",

@@ -46,23 +46,6 @@ DEFAULT_MARKET_CONDITION_ETFS = (
     MarketUniverseItem("XLY", "Consumer Discretionary"),
 )
 
-DEFAULT_LEADERSHIP_ETFS = (
-    MarketUniverseItem("SMH", "Semiconductors"),
-    MarketUniverseItem("SOXX", "Semiconductors Broad"),
-    MarketUniverseItem("IGV", "Software"),
-    MarketUniverseItem("FDN", "Internet"),
-    MarketUniverseItem("HACK", "Cybersecurity"),
-    MarketUniverseItem("XBI", "Biotech"),
-    MarketUniverseItem("IBB", "Biotech Large Cap"),
-    MarketUniverseItem("ITA", "Aerospace and Defense"),
-    MarketUniverseItem("KRE", "Regional Banks"),
-    MarketUniverseItem("XRT", "Retail"),
-    MarketUniverseItem("XOP", "Oil and Gas Exploration"),
-    MarketUniverseItem("TAN", "Solar"),
-    MarketUniverseItem("IYT", "Transportation"),
-    MarketUniverseItem("IPO", "IPOs"),
-)
-
 DEFAULT_EXTERNAL_ETFS = (
     MarketUniverseItem("EEM", "Emerging Markets"),
     MarketUniverseItem("FXI", "China Large Cap"),
@@ -111,7 +94,7 @@ class MarketConditionConfig:
     """Configurable scoring model for the market dashboard."""
 
     condition_etfs: tuple[MarketUniverseItem, ...] = field(default_factory=lambda: DEFAULT_MARKET_CONDITION_ETFS)
-    leadership_etfs: tuple[MarketUniverseItem, ...] = field(default_factory=lambda: DEFAULT_LEADERSHIP_ETFS)
+    leadership_etfs: tuple[MarketUniverseItem, ...] = ()
     external_etfs: tuple[MarketUniverseItem, ...] = field(default_factory=lambda: DEFAULT_EXTERNAL_ETFS)
     factor_etfs: tuple[MarketUniverseItem, ...] = field(default_factory=lambda: DEFAULT_FACTOR_ETFS)
     component_weights: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_COMPONENT_WEIGHTS))
@@ -154,7 +137,7 @@ class MarketConditionConfig:
         external_payload = payload.get("external_etfs", [])
         factor_payload = payload.get("factor_etfs", [])
         condition_items = tuple(MarketUniverseItem.from_payload(item) for item in condition_payload) if condition_payload else DEFAULT_MARKET_CONDITION_ETFS
-        leadership_items = tuple(MarketUniverseItem.from_payload(item) for item in leadership_payload) if leadership_payload else DEFAULT_LEADERSHIP_ETFS
+        leadership_items = tuple(MarketUniverseItem.from_payload(item) for item in leadership_payload) if leadership_payload else ()
         external_items = tuple(MarketUniverseItem.from_payload(item) for item in external_payload) if external_payload else DEFAULT_EXTERNAL_ETFS
         factor_items = tuple(MarketUniverseItem.from_payload(item) for item in factor_payload) if factor_payload else DEFAULT_FACTOR_ETFS
         component_weights = dict(DEFAULT_COMPONENT_WEIGHTS)
@@ -384,7 +367,7 @@ class MarketConditionScorer:
     def required_symbols(self) -> list[str]:
         symbols = [
             item.ticker
-            for item in [*self.config.condition_etfs, *self.config.leadership_etfs, *self.config.external_etfs, *self.config.factor_etfs]
+            for item in [*self.config.condition_etfs, *self.config.external_etfs, *self.config.factor_etfs]
         ]
         symbols.extend(
             [
@@ -427,10 +410,10 @@ class MarketConditionScorer:
         vix_history = market_histories.get("^VIX", pd.DataFrame())
         vix_close = self._latest_close(vix_history)
         market_snapshot = self.snapshot_builder.build(market_histories, self.config.condition_etfs)
-        leadership_snapshot = self.snapshot_builder.build(market_histories, self.config.leadership_etfs)
+        leadership_snapshot = pd.DataFrame()
         external_snapshot = self.snapshot_builder.build(market_histories, self.config.external_etfs)
         factors_vs_sp500 = self.factor_calculator.build(market_histories, benchmark_history)
-        sector_relative_strength = self._sector_relative_strength(market_histories, benchmark_history)
+        sector_relative_strength = pd.DataFrame()
         style_pair_summary = self._style_pair_summary(market_histories)
         defensive_cyclical_summary = self._defensive_cyclical_summary(market_histories)
         s5th_series = self._build_s5th_series(stock_histories)

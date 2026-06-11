@@ -118,35 +118,6 @@ market:
     name: Health Care
   - ticker: XLY
     name: Consumer Discretionary
-  leadership_etfs:
-  - ticker: SMH
-    name: Semiconductors
-  - ticker: SOXX
-    name: Semiconductors Broad
-  - ticker: IGV
-    name: Software
-  - ticker: FDN
-    name: Internet
-  - ticker: HACK
-    name: Cybersecurity
-  - ticker: XBI
-    name: Biotech
-  - ticker: IBB
-    name: Biotech Large Cap
-  - ticker: ITA
-    name: Aerospace and Defense
-  - ticker: KRE
-    name: Regional Banks
-  - ticker: XRT
-    name: Retail
-  - ticker: XOP
-    name: Oil and Gas Exploration
-  - ticker: TAN
-    name: Solar
-  - ticker: IYT
-    name: Transportation
-  - ticker: IPO
-    name: IPOs
   external_etfs:
   - ticker: EEM
     name: Emerging Markets

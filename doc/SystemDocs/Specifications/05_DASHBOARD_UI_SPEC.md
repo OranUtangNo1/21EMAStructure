@@ -508,16 +508,17 @@ Market Dashboard sections expose a circular `?` help control next to the section
 
 Market Dashboard computation also produces non-scoring diagnostics for `breadth_momentum_summary` (A20 current value and 1D/5D/10D/21D deltas), `breadth_internal_summary` (active-universe advancers/decliners, A/D line, 52W new high-low net, Stage 2 percentage, McClellan oscillator/summation, and Zweig breadth thrust flag), `volatility_term_structure` (`VIX9D/VIX`, `VIX/VIX3M`, front inversion, and full backwardation flags), `credit_risk_proxy` (`HYG/LQD`, `HYG/IEF`, and FRED high-yield OAS / delta OAS), `index_state_summary` (`SPY` / `QQQ` FTD, rally-attempt day, distribution-day count, and pressure flag), and `drawdown_summary` (`DD 252D %`, `T_DD`, and rolling high by configured index). These are persisted in market summary JSON for report inputs; the active UI does not render dedicated cards for them yet.
 
-### 7.5 Core / Leadership / External
+### 7.5 Core / External
 
-The page renders three snapshot sections using the same card layout:
+The page renders two snapshot sections using the same card layout:
 
 - `Core`
-- `Leadership`
 - `External`
 
 `Core` is the only universe used for the current Market Score when `market.calculation_mode = etf`.
-`Leadership` and `External` are display-only sections and do not feed the score directly.
+`External` is display-only and does not feed the score directly.
+
+Market Dashboard does not render or compute the former `Leadership` ETF snapshot. Sector and industry leadership discovery belongs to RS Radar.
 
 Current market-score composition notes:
 
@@ -567,7 +568,7 @@ The underlying result object may still carry `result.s5th_series`, but the activ
 
 The pipeline may persist a deterministic daily AI-input market document under `data_runs/market_documents/`. The final report-writing skill may later write the human-facing report under `data_runs/market_reports/`.
 
-The active Market Dashboard does not render this document or the final report yet. The current UI continues to render the Market Conditions hero, metric panels, Core / Leadership / External snapshots, and Factors vs SP500 sections described above.
+The active Market Dashboard does not render this document or the final report yet. The current UI continues to render the Market Conditions hero, metric panels, Core / External snapshots, and Factors vs SP500 sections described above.
 
 ## 8. Setting
 

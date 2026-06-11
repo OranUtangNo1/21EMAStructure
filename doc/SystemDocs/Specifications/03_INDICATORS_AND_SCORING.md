@@ -281,6 +281,14 @@ Implemented field:
 
 - `trend_base = (close > sma50) and (wma10_weekly > wma30_weekly)`
 
+### 3.7 Structure Pivot Runtime Scope
+
+Current default behavior:
+
+- long structure pivot and LLHL/CT fields are computed by default
+- short-side `structure_pivot_short_*` compatibility fields are retained
+- short-side structure pivot detection is skipped unless `structure_pivot_include_short = true`
+
 ## 4. Relative Strength
 
 ### 4.1 Raw RS And RS Fields
