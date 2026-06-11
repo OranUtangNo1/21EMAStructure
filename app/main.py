@@ -504,9 +504,9 @@ def _format_radar_value(column: str, value: object) -> str:
         return "" if value is None else str(value)
     if column == "PRICE":
         return f"${number:,.2f}"
-    if column in {"DAY %", "WK %", "MTH %", "RS DAY%", "RS WK%", "RS MTH%", "52W HIGH"}:
+    if column in {"DAY %", "WK %", "MTH %", "QTR %", "HY %", "RS DAY%", "RS WK%", "RS MTH%", "RS QTR%", "RS HY%", "52W HIGH"}:
         return f"{number:+.2f}%"
-    if column in {"RS", "1D", "1W", "1M"}:
+    if column in {"STRUCT RS", "RS", "1D", "1W", "1M", "3M", "6M"}:
         return f"{number:.0f}"
     return f"{number:.2f}"
 
@@ -530,7 +530,7 @@ def build_radar_styler(frame: pd.DataFrame):
         return frame
     formatters = {column: (lambda value, column=column: _format_radar_value(column, value)) for column in frame.columns}
     styler = frame.style.format(formatters, na_rep="")
-    for column in ["DAY %", "WK %", "MTH %", "RS DAY%", "RS WK%", "RS MTH%", "52W HIGH"]:
+    for column in ["DAY %", "WK %", "MTH %", "QTR %", "HY %", "RS DAY%", "RS WK%", "RS MTH%", "RS QTR%", "RS HY%", "52W HIGH"]:
         if column in frame.columns:
             styler = styler.map(_signed_style, subset=[column])
     if "TICKER" in frame.columns:
@@ -2704,7 +2704,7 @@ def _metric_delta_text(result, key: str, decimals: int = 1, unit: str = "pt") ->
     return "Δ " + " / ".join(parts) if parts else ""
 
 
-def _market_metric_items(result) -> tuple[list[tuple[str, ...]], list[tuple[str, ...]], list[tuple[str, ...]], list[tuple[str, ...]], list[tuple[str, ...]]]:
+def _market_metric_items(result) -> tuple[list[tuple[str, ...]], list[tuple[str, ...]], list[tuple[str, ...]], list[tuple[str, ...]], list[tuple[str, ...]], list[tuple[str, ...]]]:
     breadth_keys = (
         ("pct_above_sma10", "SMA 10"),
         ("pct_above_sma20", "SMA 20"),
@@ -2746,10 +2746,16 @@ def _market_metric_items(result) -> tuple[list[tuple[str, ...]], list[tuple[str,
     vix_status = _vix_label_from_score(result.component_scores.get("vix_score"))
     safe_haven_value = result.high_vix_summary.get("SAFE HAVEN %")
     safe_haven_status = _safe_haven_label_from_score(result.component_scores.get("safe_haven_score"))
+    vix_percentile = result.high_vix_summary.get("VIX 252D PCTL")
+    vix_peak_days = result.high_vix_summary.get("VIX PEAK DAYS")
+    vix_peak_ratio = result.high_vix_summary.get("VIX PEAK RATIO %")
     high_vix_items = [
         ("S2W High", _format_market_percent(high_value, signed=False, decimals=2), high_status, _tone_class(high_status), _metric_delta_text(result, "pct_2w_high")),
         ("VIX", _format_market_number(vix_value, 2), vix_status, _tone_class(vix_status), _metric_delta_text(result, "VIX", decimals=2, unit="pt")),
         ("Safe Haven", _format_market_percent(safe_haven_value, signed=True, decimals=2), safe_haven_status, _tone_class(safe_haven_status), _metric_delta_text(result, "SAFE HAVEN %")),
+        ("VIX Pctl", _format_market_percent(vix_percentile, signed=False, decimals=1), vix_status, _tone_class(vix_status), _metric_delta_text(result, "VIX 252D PCTL", decimals=1, unit="pt")),
+        ("VIX Peak Days", _format_market_number(vix_peak_days, 0), "Neutral", "neutral", _metric_delta_text(result, "VIX PEAK DAYS", decimals=0, unit="d")),
+        ("VIX Peak Ratio", _format_market_percent(vix_peak_ratio, signed=True, decimals=1), vix_status, _tone_class(vix_status), _metric_delta_text(result, "VIX PEAK RATIO %", decimals=1)),
     ]
 
     ratio_summary = getattr(result, "risk_on_ratio_summary", {}) or {}
@@ -2771,7 +2777,24 @@ def _market_metric_items(result) -> tuple[list[tuple[str, ...]], list[tuple[str,
         ("High Delta", _format_market_percent(high_distance, signed=True, decimals=2), high_distance_status, _tone_class(high_distance_status), _metric_delta_text(result, "risk_on:HIGH DIST %")),
         ("MA", ma_value, ma_status, _tone_class(ma_status)),
     ]
-    return breadth_items, participation_items, performance_items, high_vix_items, risk_on_ratio_items
+
+    style_pair_frame = getattr(result, "style_pair_summary", pd.DataFrame())
+    leadership_ratio_items = []
+    if not style_pair_frame.empty:
+        for pair, label in (("RSP/SPY", "RSP/SPY"), ("QQQ/SPY", "QQQ/SPY")):
+            row = style_pair_frame.loc[style_pair_frame["PAIR"] == pair]
+            if row.empty:
+                continue
+            row_values = row.iloc[0]
+            value = row_values.get("REL 1M %")
+            status = _performance_label(float(value)) if value is not None and not pd.isna(value) else "Neutral"
+            ma_count_value = row_values.get("ABOVE MA COUNT")
+            total_ma_value = row_values.get("MA COUNT")
+            ma_text = ""
+            if ma_count_value is not None and total_ma_value is not None and not pd.isna(ma_count_value) and not pd.isna(total_ma_value):
+                ma_text = f"MA {int(ma_count_value)}/{int(total_ma_value)}"
+            leadership_ratio_items.append((label, _format_market_percent(value, signed=True, decimals=2), status, _tone_class(status), ma_text))
+    return breadth_items, participation_items, performance_items, high_vix_items, risk_on_ratio_items, leadership_ratio_items
 
 
 def render_market_snapshot_panel(frame: pd.DataFrame) -> None:
@@ -2828,7 +2851,7 @@ def render_market_dashboard(artifacts: PlatformArtifacts) -> None:
     updated_meta = f"Updated: {result.update_time.split('T')[-1]}" if result.update_time else "Updated: N/A"
     render_page_header("Market Dashboard", meta=updated_meta, centered=True)
 
-    breadth_items, participation_items, performance_items, high_vix_items, risk_on_ratio_items = _market_metric_items(result)
+    breadth_items, participation_items, performance_items, high_vix_items, risk_on_ratio_items, leadership_ratio_items = _market_metric_items(result)
 
     summary_col, history_col = st.columns([0.82, 1.18])
     with summary_col:
@@ -2846,9 +2869,11 @@ def render_market_dashboard(artifacts: PlatformArtifacts) -> None:
 
     high_vix_col, risk_ratio_col = st.columns([0.9, 1.1])
     with high_vix_col:
-        render_market_metric_panel("High, VIX & Safe Haven", high_vix_items, 3, "No High, VIX & Safe Haven metrics available.")
+        render_market_metric_panel("High, VIX & Safe Haven", high_vix_items, 6, "No High, VIX & Safe Haven metrics available.")
     with risk_ratio_col:
         render_market_metric_panel("Risk-On Ratio IWO/IWN", risk_on_ratio_items, 4, "No IWO/IWN ratio metrics available.")
+
+    render_market_metric_panel("Leadership Ratios", leadership_ratio_items, 2, "No leadership ratio metrics available.")
 
     core_col, factor_col = st.columns([2.0, 1.0])
     with core_col:

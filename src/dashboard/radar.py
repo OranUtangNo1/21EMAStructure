@@ -89,6 +89,7 @@ class RadarConfig:
     )
     top_movers_count: int = 3
     overall_rs_weights: tuple[float, float, float] = (1.0, 2.0, 2.0)
+    structural_rs_weights: tuple[float, float] = (1.0, 1.0)
     near_high_threshold_pct: float = 0.5
 
     @classmethod
@@ -101,11 +102,16 @@ class RadarConfig:
         weights = tuple(float(value) for value in weights_raw)
         if len(weights) != 3:
             weights = (1.0, 2.0, 2.0)
+        structural_weights_raw = payload.get("structural_rs_weights", [1.0, 1.0])
+        structural_weights = tuple(float(value) for value in structural_weights_raw)
+        if len(structural_weights) != 2:
+            structural_weights = (1.0, 1.0)
         return cls(
             sector_etfs=sector_items,
             industry_etfs=industry_items,
             top_movers_count=int(payload.get("top_movers_count", 3)),
             overall_rs_weights=(weights[0], weights[1], weights[2]),
+            structural_rs_weights=(structural_weights[0], structural_weights[1]),
             near_high_threshold_pct=float(payload.get("near_high_threshold_pct", 0.5)),
         )
 
@@ -161,6 +167,8 @@ class RadarViewModelBuilder:
         benchmark_day = self._pct_change(benchmark_close, 1)
         benchmark_week = self._pct_change(benchmark_close, 5)
         benchmark_month = self._pct_change(benchmark_close, 21)
+        benchmark_quarter = self._pct_change(benchmark_close, 63)
+        benchmark_half = self._pct_change(benchmark_close, 126)
 
         records: list[dict[str, object]] = []
         items = {item.ticker: item for item in [*self.config.sector_etfs, *self.config.industry_etfs]}
@@ -176,9 +184,13 @@ class RadarViewModelBuilder:
             day_pct = self._pct_change(close, 1)
             week_pct = self._pct_change(close, 5)
             month_pct = self._pct_change(close, 21)
+            quarter_pct = self._pct_change(close, 63)
+            half_pct = self._pct_change(close, 126)
             rs_day_pct = day_pct - benchmark_day if pd.notna(day_pct) and pd.notna(benchmark_day) else np.nan
             rs_week_pct = week_pct - benchmark_week if pd.notna(week_pct) and pd.notna(benchmark_week) else np.nan
             rs_month_pct = month_pct - benchmark_month if pd.notna(month_pct) and pd.notna(benchmark_month) else np.nan
+            rs_quarter_pct = quarter_pct - benchmark_quarter if pd.notna(quarter_pct) and pd.notna(benchmark_quarter) else np.nan
+            rs_half_pct = half_pct - benchmark_half if pd.notna(half_pct) and pd.notna(benchmark_half) else np.nan
 
             high_source = history["high"].dropna().astype(float) if "high" in history.columns else close
             rolling_high = high_source.rolling(252).max().iloc[-1] if len(high_source) >= 1 else np.nan
@@ -193,9 +205,13 @@ class RadarViewModelBuilder:
                     "DAY %": day_pct,
                     "WK %": week_pct,
                     "MTH %": month_pct,
+                    "QTR %": quarter_pct,
+                    "HY %": half_pct,
                     "RS DAY%": rs_day_pct,
                     "RS WK%": rs_week_pct,
                     "RS MTH%": rs_month_pct,
+                    "RS QTR%": rs_quarter_pct,
+                    "RS HY%": rs_half_pct,
                     "52W HIGH": high_label,
                     "MAJOR STOCKS": ", ".join(item.major_stocks),
                 }
@@ -209,11 +225,17 @@ class RadarViewModelBuilder:
         frame["1D"] = percent_rank(frame["RS DAY%"])
         frame["1W"] = percent_rank(frame["RS WK%"])
         frame["1M"] = percent_rank(frame["RS MTH%"])
+        frame["3M"] = percent_rank(frame["RS QTR%"])
+        frame["6M"] = percent_rank(frame["RS HY%"])
         frame["RS"] = frame[["1D", "1W", "1M"]].apply(
             lambda row: self._weighted_average(row.to_list(), self.config.overall_rs_weights),
             axis=1,
         )
-        return frame.sort_values(["RS", "1W", "1D"], ascending=[False, False, False])
+        frame["STRUCT RS"] = frame[["3M", "6M"]].apply(
+            lambda row: self._weighted_average(row.to_list(), self.config.structural_rs_weights),
+            axis=1,
+        )
+        return frame.sort_values(["STRUCT RS", "RS", "1W", "1D"], ascending=[False, False, False, False])
 
     def _build_leader_table(
         self,
@@ -227,11 +249,51 @@ class RadarViewModelBuilder:
             return pd.DataFrame()
 
         display = frame.reset_index(names="TICKER")
-        columns = ["RS", "1D", "1W", "1M", "TICKER", "NAME", "DAY %", "WK %", "MTH %", "RS DAY%", "RS WK%", "RS MTH%", "52W HIGH"]
+        columns = [
+            "STRUCT RS",
+            "RS",
+            "1D",
+            "1W",
+            "1M",
+            "3M",
+            "6M",
+            "TICKER",
+            "NAME",
+            "DAY %",
+            "WK %",
+            "MTH %",
+            "QTR %",
+            "HY %",
+            "RS DAY%",
+            "RS WK%",
+            "RS MTH%",
+            "RS QTR%",
+            "RS HY%",
+            "52W HIGH",
+        ]
         if include_major_stocks:
             columns.append("MAJOR STOCKS")
         display = display[columns].copy()
-        for column in ["RS", "1D", "1W", "1M", "PRICE", "DAY %", "WK %", "MTH %", "RS DAY%", "RS WK%", "RS MTH%"]:
+        for column in [
+            "STRUCT RS",
+            "RS",
+            "1D",
+            "1W",
+            "1M",
+            "3M",
+            "6M",
+            "PRICE",
+            "DAY %",
+            "WK %",
+            "MTH %",
+            "QTR %",
+            "HY %",
+            "RS DAY%",
+            "RS WK%",
+            "RS MTH%",
+            "RS QTR%",
+            "RS HY%",
+        ]:
             if column in display.columns:
                 display[column] = display[column].round(2)
         if not include_major_stocks and "MAJOR STOCKS" in display.columns:

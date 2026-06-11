@@ -51,6 +51,9 @@ def test_market_dashboard_result_contains_expanded_sections() -> None:
         "BAMLH0A0HYM2": _make_history([4.2 - (i * 0.002) for i in range(320)], dates, volume_scale=0),
         "SPY": _make_history([100.0 + (i * 0.12) for i in range(320)], dates),
         "QQQ": _make_history([110.0 + (i * 0.14) for i in range(320)], dates),
+        "RSP": _make_history([98.0 + (i * 0.10) for i in range(320)], dates),
+        "XLK": _make_history([100.0 + (i * 0.22) for i in range(320)], dates),
+        "XLP": _make_history([100.0 + (i * 0.04) for i in range(320)], dates),
     }
     market_histories = {ticker: calculator.calculate(history) for ticker, history in market_raw.items()}
     benchmark_history = calculator.calculate(benchmark_raw)
@@ -63,8 +66,8 @@ def test_market_dashboard_result_contains_expanded_sections() -> None:
     config = MarketConditionConfig.from_dict(
         {
             "market_condition_etf_universe": [
-                {"ticker": "AAA", "name": "Alpha"},
-                {"ticker": "BBB", "name": "Beta"},
+                {"ticker": "XLK", "name": "Technology"},
+                {"ticker": "XLP", "name": "Consumer Staples"},
             ],
             "leadership_etfs": [
                 {"ticker": "LDR", "name": "Leadership"},
@@ -80,8 +83,8 @@ def test_market_dashboard_result_contains_expanded_sections() -> None:
     core_only_config = MarketConditionConfig.from_dict(
         {
             "market_condition_etf_universe": [
-                {"ticker": "AAA", "name": "Alpha"},
-                {"ticker": "BBB", "name": "Beta"},
+                {"ticker": "XLK", "name": "Technology"},
+                {"ticker": "XLP", "name": "Consumer Staples"},
             ],
             "factor_etfs": [
                 {"ticker": "FFF", "name": "Factor"},
@@ -117,10 +120,14 @@ def test_market_dashboard_result_contains_expanded_sections() -> None:
     assert "pct_positive_1m" in result.participation_summary
     assert "1D" in result.metric_deltas["pct_above_sma20"]
     assert "1W" in result.metric_deltas["VIX"]
+    assert "1W" in result.metric_deltas["VIX 252D PCTL"]
     assert "1M" in result.metric_deltas["risk_on:REL 1M %"]
     assert "% 1M" in result.performance_overview
     assert "S2W HIGH %" in result.high_vix_summary
     assert "SAFE HAVEN %" in result.high_vix_summary
+    assert "VIX 252D PCTL" in result.high_vix_summary
+    assert "VIX PEAK DAYS" in result.high_vix_summary
+    assert "VIX PEAK RATIO %" in result.high_vix_summary
     assert result.risk_on_ratio_summary["REL 1M %"] > 0.0
     assert result.risk_on_ratio_summary["ABOVE MA COUNT"] == pytest.approx(3.0)
     assert result.risk_on_ratio_summary["MA COUNT"] == pytest.approx(3.0)
@@ -139,15 +146,17 @@ def test_market_dashboard_result_contains_expanded_sections() -> None:
     assert result.drawdown_summary["SPY DD 252D %"] == pytest.approx(0.0)
     assert result.drawdown_summary["SPY T_DD"] == pytest.approx(0.0)
     assert not result.market_snapshot.empty
-    assert list(result.market_snapshot["TICKER"]) == ["AAA", "BBB"]
+    assert list(result.market_snapshot["TICKER"]) == ["XLK", "XLP"]
     assert result.leadership_snapshot.empty
     assert "LDR" not in MarketConditionScorer(config).required_symbols()
-    assert result.sector_relative_strength.empty
+    assert not result.sector_relative_strength.empty
+    assert {"REL 1W %", "REL 1M %", "REL 3M %", "RANK 1M", "RANK DELTA 1W", "RANK DELTA 1M"}.issubset(result.sector_relative_strength.columns)
     assert not result.external_snapshot.empty
     assert list(result.external_snapshot["TICKER"]) == ["EXT"]
     assert list(result.market_snapshot.columns) == ["TICKER", "NAME", "PRICE", "DAY %", "VOL vs 50D %", "21EMA POS"]
     assert not result.factors_vs_sp500.empty
     assert list(result.factors_vs_sp500.columns) == ["TICKER", "NAME", "REL 1W %", "REL 1M %", "REL 1Y %"]
+    assert {"RSP/SPY", "QQQ/SPY"}.issubset(set(result.style_pair_summary["PAIR"]))
     assert not result.s5th_series.empty
     assert list(result.s5th_series.columns) == ["date", "pct_above_sma200"]
 
@@ -210,6 +219,7 @@ def test_market_dashboard_required_symbols_include_risk_on_ratio_pair() -> None:
 
     assert "IWO" in required_symbols
     assert "IWN" in required_symbols
+    assert "RSP" in required_symbols
     assert "^VIX9D" in required_symbols
     assert "^VIX3M" in required_symbols
     assert "HYG" in required_symbols
@@ -295,8 +305,10 @@ def test_market_dashboard_index_state_detects_ftd_and_distribution_days() -> Non
         }
     )
 
+    active_up = calculator.calculate(_make_history([50.0 + (i * 0.20) for i in range(30)], dates))
+    active_down = calculator.calculate(_make_history([80.0 - (i * 0.05) for i in range(30)], dates))
     result = MarketConditionScorer(config).score(
-        {"AAA": index_history},
+        {"AAA": index_history, "UP": active_up, "DOWN": active_down},
         {
             "SPY": index_history,
             "^VIX": calculator.calculate(_make_history([15.0 for _ in range(30)], dates, volume_scale=100_000)),
@@ -307,6 +319,10 @@ def test_market_dashboard_index_state_detects_ftd_and_distribution_days() -> Non
     assert result.index_state_summary["SPY RALLY ATTEMPT DAY"] == pytest.approx(25.0)
     assert result.index_state_summary["SPY FTD FLAG"] == pytest.approx(1.0)
     assert result.index_state_summary["SPY FTD AGE DAYS"] == pytest.approx(21.0)
+    assert result.index_state_summary["SPY FTD GAIN %"] == pytest.approx(round((94.0 / 92.0 - 1.0) * 100.0, 3))
+    assert result.index_state_summary["SPY FTD VOLUME RATIO"] == pytest.approx(round(120.0 / 86.0, 3))
+    assert result.index_state_summary["SPY FTD ADVANCE RATIO"] == pytest.approx(round(2.0 / 3.0, 3))
+    assert 0.0 <= result.index_state_summary["SPY FTD QUALITY SCORE"] <= 100.0
     assert result.index_state_summary["SPY DISTRIBUTION DAY COUNT"] == pytest.approx(5.0)
     assert result.index_state_summary["SPY UNDER PRESSURE FLAG"] == pytest.approx(1.0)
 

@@ -471,7 +471,7 @@ The same `entry_ready.rr_ratio_min` value is used as the minimum acceptable `R/R
 - `external_etfs`: display-only external ETF universe
 - `factor_etfs`: factor-comparison ETF universe
 
-Market Dashboard does not fetch or compute the former leadership ETF snapshot by default. Sector and industry leadership ranking belongs to RS Radar.
+Market Dashboard does not fetch or compute the former leadership ETF snapshot by default. Sector and industry leadership ranking belongs to RS Radar. Market Dashboard does compute `sector_relative_strength` for configured sector ETFs in the core universe so market documents can read sector rotation rank deltas.
 
 ### Market document
 - `market_report.output.write_json`: current default `true`; writes the AI-input market document to `data_runs/market_documents/YYYYMMDD.json`
@@ -504,6 +504,7 @@ Market Dashboard does not fetch or compute the former leadership ETF snapshot by
 ### Radar parameters
 - `top_movers_count`: `3`
 - `overall_rs_weights`: `[1.0, 2.0, 2.0]`
+- `structural_rs_weights`: `[1.0, 1.0]`
 - `near_high_threshold_pct`: `0.5`
 
 ### Radar universes

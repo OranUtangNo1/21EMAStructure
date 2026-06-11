@@ -449,7 +449,11 @@ class MarketReportBuilder:
 
     def _volatility_and_safe_haven(self, summary: dict[str, object], history: list[dict[str, object]]) -> MarketReportSection:
         vix = _optional_float(summary.get("vix_close"))
-        safe_haven = _optional_float(_mapping(summary.get("high_vix_summary")).get("SAFE HAVEN %"))
+        high_vix = _mapping(summary.get("high_vix_summary"))
+        safe_haven = _optional_float(high_vix.get("SAFE HAVEN %"))
+        vix_percentile = _optional_float(high_vix.get("VIX 252D PCTL"))
+        vix_peak_days = _optional_float(high_vix.get("VIX PEAK DAYS"))
+        vix_peak_ratio = _optional_float(high_vix.get("VIX PEAK RATIO %"))
         vix_label = self._vix_label(vix)
         safe_haven_label = self._safe_haven_label(safe_haven)
         previous_vix_label = self._previous_vix_label(history)
@@ -471,6 +475,9 @@ class MarketReportBuilder:
             summary="Volatility and Safe Haven input. The skill must not infer macro causes from this section.",
             metrics=[
                 self._evidence("VIX Close", "vix_close", summary.get("vix_close"), delta_1d=_metric_delta(summary, "VIX", "1D"), delta_1w=_metric_delta(summary, "VIX", "1W"), delta_1m=_metric_delta(summary, "VIX", "1M")),
+                self._evidence("VIX 252D Percentile", "high_vix_summary.VIX 252D PCTL", vix_percentile, delta_1d=_metric_delta(summary, "VIX 252D PCTL", "1D"), delta_1w=_metric_delta(summary, "VIX 252D PCTL", "1W"), delta_1m=_metric_delta(summary, "VIX 252D PCTL", "1M")),
+                self._evidence("VIX Peak Days", "high_vix_summary.VIX PEAK DAYS", vix_peak_days, delta_1d=_metric_delta(summary, "VIX PEAK DAYS", "1D"), delta_1w=_metric_delta(summary, "VIX PEAK DAYS", "1W"), delta_1m=_metric_delta(summary, "VIX PEAK DAYS", "1M")),
+                self._evidence("VIX Peak Ratio", "high_vix_summary.VIX PEAK RATIO %", vix_peak_ratio, delta_1d=_metric_delta(summary, "VIX PEAK RATIO %", "1D"), delta_1w=_metric_delta(summary, "VIX PEAK RATIO %", "1W"), delta_1m=_metric_delta(summary, "VIX PEAK RATIO %", "1M")),
                 self._metric_evidence(summary, "Safe Haven Spread", "high_vix_summary.SAFE HAVEN %", raw=True),
                 self._metric_evidence(summary, "VIX Score", "component_scores.vix_score", score=True),
                 self._metric_evidence(summary, "Safe Haven Score", "component_scores.safe_haven_score", score=True),
@@ -478,6 +485,9 @@ class MarketReportBuilder:
             facts_for_ai=[
                 f"VIX={_format_number(vix)}",
                 f"VIX label={vix_label}",
+                f"VIX 252D PCTL={_format_number(vix_percentile)}",
+                f"VIX PEAK DAYS={_format_number(vix_peak_days)}",
+                f"VIX PEAK RATIO %={_format_number(vix_peak_ratio)}",
                 f"Safe Haven={_format_number(safe_haven)}",
                 f"Safe Haven label={safe_haven_label}",
             ],
@@ -573,12 +583,21 @@ class MarketReportBuilder:
             rally_day = _optional_float(index_state.get(f"{symbol} RALLY ATTEMPT DAY"))
             ftd_flag = _optional_float(index_state.get(f"{symbol} FTD FLAG"))
             ftd_age = _optional_float(index_state.get(f"{symbol} FTD AGE DAYS"))
+            ftd_gain = _optional_float(index_state.get(f"{symbol} FTD GAIN %"))
+            ftd_volume_ratio = _optional_float(index_state.get(f"{symbol} FTD VOLUME RATIO"))
+            ftd_advance_ratio = _optional_float(index_state.get(f"{symbol} FTD ADVANCE RATIO"))
+            ftd_quality_score = _optional_float(index_state.get(f"{symbol} FTD QUALITY SCORE"))
             distribution_count = _optional_float(index_state.get(f"{symbol} DISTRIBUTION DAY COUNT"))
             pressure_flag = _optional_float(index_state.get(f"{symbol} UNDER PRESSURE FLAG"))
             metrics.extend(
                 [
                     self._evidence(f"{symbol} Rally Attempt Day", f"index_state_summary.{symbol} RALLY ATTEMPT DAY", rally_day),
                     self._evidence(f"{symbol} FTD Flag", f"index_state_summary.{symbol} FTD FLAG", ftd_flag),
+                    self._evidence(f"{symbol} FTD Age Days", f"index_state_summary.{symbol} FTD AGE DAYS", ftd_age),
+                    self._evidence(f"{symbol} FTD Gain", f"index_state_summary.{symbol} FTD GAIN %", ftd_gain),
+                    self._evidence(f"{symbol} FTD Volume Ratio", f"index_state_summary.{symbol} FTD VOLUME RATIO", ftd_volume_ratio),
+                    self._evidence(f"{symbol} FTD Advance Ratio", f"index_state_summary.{symbol} FTD ADVANCE RATIO", ftd_advance_ratio),
+                    self._evidence(f"{symbol} FTD Quality Score", f"index_state_summary.{symbol} FTD QUALITY SCORE", ftd_quality_score),
                     self._evidence(f"{symbol} Distribution Days", f"index_state_summary.{symbol} DISTRIBUTION DAY COUNT", distribution_count),
                     self._evidence(f"{symbol} Under Pressure", f"index_state_summary.{symbol} UNDER PRESSURE FLAG", pressure_flag),
                 ]
@@ -586,7 +605,7 @@ class MarketReportBuilder:
             facts.append(
                 f"{symbol} status={statuses.get(symbol, 'no_data')}, rally_day={_format_number(rally_day)}, "
                 f"ftd_flag={_format_number(ftd_flag)}, ftd_age={_format_number(ftd_age)}, "
-                f"distribution_days={_format_number(distribution_count)}"
+                f"ftd_quality={_format_number(ftd_quality_score)}, distribution_days={_format_number(distribution_count)}"
             )
         direction = "weakening" if under_pressure else ("improving" if ftd_confirmed else "stable")
         return MarketReportSection(

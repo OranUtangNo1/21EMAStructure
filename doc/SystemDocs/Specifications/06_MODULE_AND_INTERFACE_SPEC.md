@@ -363,6 +363,8 @@ The active pipeline bundle includes:
 - `top_weekly`
 - `update_time`
 
+Radar leader tables include both tactical relative strength (`RS`, based on 1D / 1W / 1M ranks) and structural relative strength (`STRUCT RS`, based on 3M / 6M ranks). They also expose absolute and benchmark-relative 3M / 6M return columns for sector and industry leadership review.
+
 ### 4.4 MarketConditionResult
 
 `MarketConditionResult` contains:
@@ -386,7 +388,7 @@ The active pipeline bundle includes:
 - `leadership_snapshot` retained as a compatibility field; current Market Dashboard scoring leaves it empty
 - `external_snapshot`
 - `factors_vs_sp500`
-- `sector_relative_strength` retained as a compatibility field; RS Radar is the current source for sector and industry leadership
+- `sector_relative_strength` for core sector ETF relative strength and rank-delta diagnostics
 - `style_pair_summary`
 - `defensive_cyclical_summary`
 - `s5th_series`

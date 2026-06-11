@@ -311,6 +311,7 @@ Each panel is sourced from the ETF radar universe and is driven by `radar.top_mo
 Each mover row is built from:
 
 - `RS`
+- `STRUCT RS` is available in the source table but the mover tile still displays `RS`
 - `TICKER`
 - `NAME`
 - `PRICE`
@@ -328,18 +329,25 @@ These sections use styled dataframes.
 
 Current `Sector Leaders` columns:
 
+- `STRUCT RS`
 - `RS`
 - `1D`
 - `1W`
 - `1M`
+- `3M`
+- `6M`
 - `TICKER`
 - `NAME`
 - `DAY %`
 - `WK %`
 - `MTH %`
+- `QTR %`
+- `HY %`
 - `RS DAY%`
 - `RS WK%`
 - `RS MTH%`
+- `RS QTR%`
+- `RS HY%`
 - `52W HIGH`
 
 Current `Industry Leaders` columns:
@@ -441,6 +449,7 @@ The page uses a three-part top layout:
   - `Performance Overview`
   - `High, VIX & Safe Haven`
   - `Risk-On Ratio IWO/IWN`
+  - `Leadership Ratios`
 
 The page does not render the older top stat-card row or a separate component-score table.
 
@@ -492,6 +501,9 @@ Current `High, VIX & Safe Haven` items:
 - `S2W High`
 - `VIX`
 - `Safe Haven`
+- `VIX Pctl`
+- `VIX Peak Days`
+- `VIX Peak Ratio`
 
 `S2W High` uses `Strong` at `>= 30.0`, `Mixed` from `15.0` to below `30.0`, and `Weak` below `15.0`.
 
@@ -502,11 +514,16 @@ Current `Risk-On Ratio IWO/IWN` items:
 - `High Delta` versus the configured lookback high, capped by loaded price history
 - `MA` count of configured ratio moving averages currently below the ratio
 
+Current `Leadership Ratios` items:
+
+- `RSP/SPY`: equal-weight S&P 500 versus cap-weight S&P 500, shown as 1M ratio relative return plus moving-average confirmation count
+- `QQQ/SPY`: Nasdaq 100 versus S&P 500, shown as 1M ratio relative return plus moving-average confirmation count
+
 Metric cards for breadth, participation, high/VIX/safe-haven, and risk-on ratio values may show compact, color-coded `Delta 1D / 1W / 2W / 1M` text computed from already loaded histories. Percentage deltas are displayed as `pt` because they represent percentage-point changes, not percent returns. These deltas do not require extra provider symbols or a longer configured price period.
 
 Market Dashboard sections expose a circular `?` help control next to the section title. Clicking it opens Japanese explanatory text that describes what the section measures and how the values should be interpreted for short-to-medium-term long-only swing context. This help text is explanatory only and does not change scoring, scans, Watchlist output, or EntrySignal evaluation.
 
-Market Dashboard computation also produces non-scoring diagnostics for `breadth_momentum_summary` (A20 current value and 1D/5D/10D/21D deltas), `breadth_internal_summary` (active-universe advancers/decliners, A/D line, 52W new high-low net, Stage 2 percentage, McClellan oscillator/summation, and Zweig breadth thrust flag), `volatility_term_structure` (`VIX9D/VIX`, `VIX/VIX3M`, front inversion, and full backwardation flags), `credit_risk_proxy` (`HYG/LQD`, `HYG/IEF`, and FRED high-yield OAS / delta OAS), `index_state_summary` (`SPY` / `QQQ` FTD, rally-attempt day, distribution-day count, and pressure flag), and `drawdown_summary` (`DD 252D %`, `T_DD`, and rolling high by configured index). These are persisted in market summary JSON for report inputs; the active UI does not render dedicated cards for them yet.
+Market Dashboard computation also produces non-scoring diagnostics for `breadth_momentum_summary` (A20 current value and 1D/5D/10D/21D deltas), `breadth_internal_summary` (active-universe advancers/decliners, A/D line, 52W new high-low net, Stage 2 percentage, McClellan oscillator/summation, and Zweig breadth thrust flag), `sector_relative_strength` (sector REL 1W / 1M / 3M and rank deltas), `volatility_term_structure` (`VIX9D/VIX`, `VIX/VIX3M`, front inversion, and full backwardation flags), `credit_risk_proxy` (`HYG/LQD`, `HYG/IEF`, and FRED high-yield OAS / delta OAS), `index_state_summary` (`SPY` / `QQQ` FTD, FTD quality metrics, rally-attempt day, distribution-day count, and pressure flag), and `drawdown_summary` (`DD 252D %`, `T_DD`, and rolling high by configured index). VIX percentile and peak-decay diagnostics are rendered in the `High, VIX & Safe Haven` panel and persisted through `high_vix_summary`. FTD quality metrics include FTD-day gain, FTD-day volume ratio, active-universe advance ratio on the FTD date, and a bounded quality score; they do not change Market Score.
 
 ### 7.5 Core / External
 
@@ -526,6 +543,7 @@ Current market-score composition notes:
 - the composite score itself now applies score-specific transforms instead of directly summing raw percentages
 - `Safe Haven` is derived from the configured risk-on vs risk-off ETF spread
 - `Risk-On Ratio IWO/IWN` is display-only and does not feed the composite Market Score
+- `Leadership Ratios` are display-only and do not feed the composite Market Score
 
 Each card currently shows:
 

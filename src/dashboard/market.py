@@ -66,6 +66,8 @@ SECTOR_ROTATION_TICKERS = frozenset({"XLB", "XLC", "XLE", "XLF", "XLI", "XLK", "
 DEFENSIVE_SECTOR_TICKERS = ("XLP", "XLU", "XLV")
 CYCLICAL_GROWTH_SECTOR_TICKERS = ("XLC", "XLE", "XLF", "XLI", "XLK", "XLY")
 STYLE_RATIO_PAIRS = (
+    ("RSP", "SPY", "Equal Weight vs Market"),
+    ("QQQ", "SPY", "Nasdaq vs Market"),
     ("VUG", "VTV", "Growth vs Value"),
     ("MTUM", "SPY", "Momentum vs Market"),
     ("VB", "MGC", "Small vs Large"),
@@ -369,6 +371,7 @@ class MarketConditionScorer:
             item.ticker
             for item in [*self.config.condition_etfs, *self.config.external_etfs, *self.config.factor_etfs]
         ]
+        symbols.extend(symbol for numerator, denominator, _ in STYLE_RATIO_PAIRS for symbol in (numerator, denominator))
         symbols.extend(
             [
                 "^VIX",
@@ -409,18 +412,19 @@ class MarketConditionScorer:
         performance_overview = self._performance_overview(benchmark_history)
         vix_history = market_histories.get("^VIX", pd.DataFrame())
         vix_close = self._latest_close(vix_history)
+        vix_diagnostics = self._vix_diagnostics(vix_history)
         market_snapshot = self.snapshot_builder.build(market_histories, self.config.condition_etfs)
         leadership_snapshot = pd.DataFrame()
         external_snapshot = self.snapshot_builder.build(market_histories, self.config.external_etfs)
         factors_vs_sp500 = self.factor_calculator.build(market_histories, benchmark_history)
-        sector_relative_strength = pd.DataFrame()
+        sector_relative_strength = self._sector_relative_strength(market_histories, benchmark_history)
         style_pair_summary = self._style_pair_summary(market_histories)
         defensive_cyclical_summary = self._defensive_cyclical_summary(market_histories)
         s5th_series = self._build_s5th_series(stock_histories)
         risk_on_ratio_summary = self._risk_on_ratio_summary(market_histories)
         volatility_term_structure = self._volatility_term_structure(market_histories)
         credit_risk_proxy = self._credit_risk_proxy(market_histories)
-        index_state_summary = self._index_state_summary(market_histories, benchmark_history)
+        index_state_summary = self._index_state_summary(market_histories, benchmark_history, stock_histories)
         metric_deltas = self._market_metric_deltas(stock_histories, market_histories)
         breadth_momentum_summary = self._breadth_momentum_summary(latest_raw_components, metric_deltas)
         breadth_internal_summary = self._breadth_internal_summary(stock_histories)
@@ -453,6 +457,7 @@ class MarketConditionScorer:
                 "S2W HIGH %": round(latest_raw_components.get("pct_2w_high", 0.0), 2),
                 "VIX": round(vix_close, 2) if vix_close is not None else np.nan,
                 "SAFE HAVEN %": round(self._safe_haven_spread(market_histories, 0), 2),
+                **{key: round(value, 3) for key, value in vix_diagnostics.items()},
             },
             risk_on_ratio_summary={key: round(value, 3) for key, value in risk_on_ratio_summary.items()},
             volatility_term_structure={key: round(value, 3) for key, value in volatility_term_structure.items()},
@@ -578,6 +583,7 @@ class MarketConditionScorer:
     ) -> dict[str, float]:
         values = self._raw_component_values_at_offset(stock_histories, market_histories, offset)
         vix_score = self._vix_score(market_histories.get("^VIX", pd.DataFrame()), offset)
+        vix_diagnostics = self._vix_diagnostics(market_histories.get("^VIX", pd.DataFrame()), offset)
         safe_haven = self._safe_haven_spread(market_histories, offset)
         risk_on_ratio = self._risk_on_ratio_summary(market_histories, offset)
         volatility_term_structure = self._volatility_term_structure(market_histories, offset)
@@ -589,6 +595,8 @@ class MarketConditionScorer:
         vix_close = self._close_at_offset(market_histories.get("^VIX", pd.DataFrame()), offset)
         if vix_close is not None:
             enriched["VIX"] = vix_close
+        for key, value in vix_diagnostics.items():
+            enriched[key] = value
         enriched["SAFE HAVEN %"] = safe_haven
         enriched["vix_score"] = vix_score
         enriched["safe_haven_score"] = self._safe_haven_score(market_histories, offset)
@@ -867,6 +875,31 @@ class MarketConditionScorer:
         centered_score = 50.0 - ((vix_close - self.config.vix_neutral_level) * self.config.vix_score_slope)
         return max(0.0, min(100.0, centered_score))
 
+    def _vix_diagnostics(self, vix_history: pd.DataFrame, offset: int = 0) -> dict[str, float]:
+        if vix_history.empty or "close" not in vix_history.columns:
+            return {}
+        close = pd.to_numeric(vix_history["close"], errors="coerce").dropna().astype(float)
+        if offset > 0:
+            if len(close) <= offset:
+                return {}
+            close = close.iloc[: len(close) - offset]
+        if close.empty:
+            return {}
+
+        window = max(1, min(252, len(close)))
+        window_close = close.tail(window)
+        latest = float(window_close.iloc[-1])
+        percentile = float((window_close <= latest).mean() * 100.0)
+        peak = float(window_close.max())
+        peak_positions = np.flatnonzero(np.isclose(window_close.to_numpy(dtype=float), peak, equal_nan=False))
+        peak_position = int(peak_positions[-1]) if len(peak_positions) else len(window_close) - 1
+        peak_ratio = (latest / peak - 1.0) * 100.0 if peak != 0.0 else np.nan
+        return {
+            "VIX 252D PCTL": percentile,
+            "VIX PEAK DAYS": float(len(window_close) - 1 - peak_position),
+            "VIX PEAK RATIO %": peak_ratio,
+        }
+
     def _safe_haven_score(self, market_histories: dict[str, pd.DataFrame], offset: int) -> float:
         spread = self._safe_haven_spread(market_histories, offset)
         return max(0.0, min(100.0, 50.0 + (spread * self.config.safe_haven_score_scale)))
@@ -1051,13 +1084,16 @@ class MarketConditionScorer:
         self,
         market_histories: dict[str, pd.DataFrame],
         benchmark_history: pd.DataFrame,
+        stock_histories: dict[str, pd.DataFrame] | None = None,
     ) -> dict[str, float]:
         summary: dict[str, float] = {}
+        breadth_frame = self._breadth_internal_frame(stock_histories or {})
         for symbol in self.config.index_state_symbols:
             history = market_histories.get(symbol, pd.DataFrame())
             if history.empty and symbol == "SPY":
                 history = benchmark_history
             state = self._single_index_state(history)
+            state.update(self._ftd_quality_state(history, state, breadth_frame))
             for key, value in state.items():
                 summary[f"{symbol} {key}"] = value
         return summary
@@ -1113,6 +1149,59 @@ class MarketConditionScorer:
             "FTD AGE DAYS": ftd_age,
             "DISTRIBUTION DAY COUNT": distribution_count,
             "UNDER PRESSURE FLAG": under_pressure,
+        }
+
+    def _ftd_quality_state(
+        self,
+        history: pd.DataFrame,
+        index_state: dict[str, float],
+        breadth_frame: pd.DataFrame,
+    ) -> dict[str, float]:
+        ftd_age = index_state.get("FTD AGE DAYS")
+        if not self._is_finite_number(ftd_age) or float(ftd_age) < 0.0:
+            return {}
+        if history.empty or not {"close", "volume"}.issubset(history.columns):
+            return {}
+        frame = history.loc[:, ["close", "volume"]].copy()
+        frame["close"] = pd.to_numeric(frame["close"], errors="coerce")
+        frame["volume"] = pd.to_numeric(frame["volume"], errors="coerce")
+        frame = frame.dropna()
+        if frame.empty:
+            return {}
+        ftd_offset = int(float(ftd_age))
+        if len(frame) <= ftd_offset:
+            return {}
+
+        ftd_row_pos = len(frame) - 1 - ftd_offset
+        if ftd_row_pos <= 0:
+            return {}
+        close = frame["close"].astype(float)
+        volume = frame["volume"].astype(float)
+        ftd_gain = close.pct_change(fill_method=None).iloc[ftd_row_pos] * 100.0
+        previous_volume = volume.iloc[ftd_row_pos - 1]
+        ftd_volume_ratio = volume.iloc[ftd_row_pos] / previous_volume if previous_volume != 0.0 else np.nan
+        ftd_date = frame.index[ftd_row_pos]
+        ftd_advance_ratio = np.nan
+        if not breadth_frame.empty and ftd_date in breadth_frame.index:
+            ftd_advance_ratio = breadth_frame.loc[ftd_date].get("advance_ratio", np.nan)
+        score_inputs = [
+            max(0.0, min(100.0, (float(ftd_gain) / max(self.config.index_state_ftd_min_gain_pct, 0.1)) * 50.0))
+            if self._is_finite_number(ftd_gain)
+            else np.nan,
+            max(0.0, min(100.0, (float(ftd_volume_ratio) - 1.0) * 200.0))
+            if self._is_finite_number(ftd_volume_ratio)
+            else np.nan,
+            max(0.0, min(100.0, float(ftd_advance_ratio) * 100.0))
+            if self._is_finite_number(ftd_advance_ratio)
+            else np.nan,
+        ]
+        valid_scores = [value for value in score_inputs if self._is_finite_number(value)]
+        quality_score = float(np.mean(valid_scores)) if valid_scores else np.nan
+        return {
+            "FTD GAIN %": float(ftd_gain) if self._is_finite_number(ftd_gain) else np.nan,
+            "FTD VOLUME RATIO": float(ftd_volume_ratio) if self._is_finite_number(ftd_volume_ratio) else np.nan,
+            "FTD ADVANCE RATIO": float(ftd_advance_ratio) if self._is_finite_number(ftd_advance_ratio) else np.nan,
+            "FTD QUALITY SCORE": quality_score,
         }
 
     def _ratio_diagnostic_summary(
