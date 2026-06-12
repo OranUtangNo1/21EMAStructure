@@ -7,6 +7,7 @@ from typing import Any
 
 import pandas as pd
 
+from src.dashboard.market_context import MarketContextBuilder, MarketContextConfig, MarketContextMarkdownRenderer
 from src.dashboard.market_report import MarketReportBuilder, MarketReportConfig, MarketReportMarkdownRenderer
 from src.data.tracking_repository import read_scan_hits_for_watchlist
 from src.data.tracking_db import connect_tracking_db
@@ -16,13 +17,19 @@ from src.data.results import RunArtifactsLoadResult, UniverseSnapshotLoadResult
 class DataSnapshotStore:
     """Persist daily research artifacts in file-type folders and reusable universe snapshots."""
 
-    def __init__(self, root_dir: str | Path, market_report_config: MarketReportConfig | None = None) -> None:
+    def __init__(
+        self,
+        root_dir: str | Path,
+        market_report_config: MarketReportConfig | None = None,
+        market_context_config: MarketContextConfig | None = None,
+    ) -> None:
         self.root_dir = Path(root_dir)
         self.root_dir.mkdir(parents=True, exist_ok=True)
         self.eligible_snapshot_dir = self.root_dir / "eligible_snapshot"
         self.watchlist_dir = self.root_dir / "watchlist"
         self.market_summary_dir = self.root_dir / "market_summary"
         self.market_document_dir = self.root_dir / "market_documents"
+        self.market_context_dir = self.root_dir / "market_context"
         self.market_report_dir = self.root_dir / "market_reports"
         self.radar_summary_dir = self.root_dir / "radar_summary"
         self.metadata_dir = self.root_dir / "run_metadata"
@@ -30,11 +37,15 @@ class DataSnapshotStore:
         self.market_report_config = market_report_config or MarketReportConfig()
         self.market_report_builder = MarketReportBuilder(self.market_report_config)
         self.market_report_renderer = MarketReportMarkdownRenderer()
+        self.market_context_config = market_context_config or MarketContextConfig()
+        self.market_context_builder = MarketContextBuilder(self.market_context_config)
+        self.market_context_renderer = MarketContextMarkdownRenderer()
         for directory in [
             self.eligible_snapshot_dir,
             self.watchlist_dir,
             self.market_summary_dir,
             self.market_document_dir,
+            self.market_context_dir,
             self.market_report_dir,
             self.radar_summary_dir,
             self.metadata_dir,
@@ -174,6 +185,7 @@ class DataSnapshotStore:
             "credit_risk_proxy": dict(getattr(market_result, "credit_risk_proxy", {})),
             "index_state_summary": dict(getattr(market_result, "index_state_summary", {})),
             "drawdown_summary": dict(getattr(market_result, "drawdown_summary", {})),
+            "index_context_summary": dict(getattr(market_result, "index_context_summary", {})),
             "vix_close": market_result.vix_close,
             "update_time": market_result.update_time,
             "market_snapshot": self._frame_to_records(getattr(market_result, "market_snapshot", pd.DataFrame())),
@@ -183,12 +195,14 @@ class DataSnapshotStore:
             "sector_relative_strength": self._frame_to_records(getattr(market_result, "sector_relative_strength", pd.DataFrame())),
             "style_pair_summary": self._frame_to_records(getattr(market_result, "style_pair_summary", pd.DataFrame())),
             "defensive_cyclical_summary": dict(getattr(market_result, "defensive_cyclical_summary", {})),
+            "sector_leaders": self._frame_to_records(getattr(radar_result, "sector_leaders", pd.DataFrame())) if radar_result is not None else [],
             "industry_leaders": self._frame_to_records(getattr(radar_result, "industry_leaders", pd.DataFrame())) if radar_result is not None else [],
         }
         summary_path = self.market_summary_dir / f"{date_key}.json"
         with summary_path.open("w", encoding="utf-8") as handle:
             json.dump(payload, handle, ensure_ascii=False, indent=2)
         self._save_market_document(date_key, payload, summary_path, metadata)
+        self._save_market_context(date_key, payload)
 
     def _save_market_document(self, date_key: str, payload: dict[str, object], summary_path: Path, metadata: dict[str, Any]) -> None:
         document = self.market_report_builder.build(
@@ -203,6 +217,18 @@ class DataSnapshotStore:
         if self.market_report_config.write_markdown:
             with (self.market_document_dir / f"{date_key}.md").open("w", encoding="utf-8") as handle:
                 handle.write(self.market_report_renderer.render(document))
+
+    def _save_market_context(self, date_key: str, payload: dict[str, object]) -> None:
+        context = self.market_context_builder.build(
+            payload,
+            history_summaries=self._recent_market_summaries(date_key),
+        )
+        if self.market_context_config.write_json:
+            with (self.market_context_dir / f"{date_key}.json").open("w", encoding="utf-8", newline="\n") as handle:
+                handle.write(self.market_context_renderer.render_json(context))
+        if self.market_context_config.write_markdown:
+            with (self.market_context_dir / f"{date_key}.md").open("w", encoding="utf-8", newline="\n") as handle:
+                handle.write(self.market_context_renderer.render(context))
 
     def _save_radar_result(self, date_key: str, radar_result: Any) -> None:
         payload = {

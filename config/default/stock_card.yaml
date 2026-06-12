@@ -1,0 +1,10 @@
+stock_card:
+  enabled: true
+  output_dir: data_runs/stock_cards
+  validate_snapshot_last_close: false
+  compressed_tape:
+    t0_days: 15
+    t1_days: 50
+    events_lookback_days: 50
+    volume_window: 50
+    max_events: 8

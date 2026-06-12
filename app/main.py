@@ -3,6 +3,7 @@
 import html
 import importlib
 import inspect
+import json
 import sys
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -18,7 +19,22 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.configuration import load_settings
+from src.dashboard.compressed_tape import (
+    CompressedTapeConfig,
+    CompressedTapeDocument,
+    CompressedTapeError,
+    CompressedTapeExportResult,
+    CompressedTapeGenerator,
+)
 from src.dashboard.effectiveness import sync_preset_effectiveness_logs
+from src.dashboard.stock_card import (
+    StockCardConfig,
+    StockCardDocument,
+    StockCardError,
+    StockCardExportResult,
+    StockCardGenerator,
+    StockCardMetadata,
+)
 from src.dashboard.watchlist import WatchlistViewModelBuilder
 from src.data.cache import CacheLayer
 from src.data.providers import YFinancePriceDataProvider
@@ -712,6 +728,369 @@ def export_watchlist_preset_csvs(
         details_frame.to_csv(export_dir / "preset_details.csv", index=False)
 
     return export_dir
+
+
+def load_compressed_tape_config(config_path: str) -> tuple[CompressedTapeConfig, dict[str, object]]:
+    settings = load_settings(config_path)
+    raw_config = settings.get("compressed_tape", {})
+    if not isinstance(raw_config, dict):
+        raw_config = {}
+    return CompressedTapeConfig.from_dict(raw_config), raw_config
+
+
+def load_stock_card_config(config_path: str) -> tuple[StockCardConfig, dict[str, object]]:
+    settings = load_settings(config_path)
+    raw_config = settings.get("stock_card", {})
+    if not isinstance(raw_config, dict):
+        raw_config = {}
+    return StockCardConfig.from_dict(raw_config), raw_config
+
+
+def _resolve_compressed_tape_export_directory(config_path: str, output_dir: str, artifacts: PlatformArtifacts) -> Path:
+    base_dir = Path(output_dir).expanduser()
+    if not base_dir.is_absolute():
+        base_dir = ROOT / base_dir
+    return base_dir / _export_folder_name(artifacts)
+
+
+def _resolve_stock_card_export_directory(config_path: str, output_dir: str, artifacts: PlatformArtifacts) -> Path:
+    base_dir = Path(output_dir).expanduser()
+    if not base_dir.is_absolute():
+        base_dir = ROOT / base_dir
+    return base_dir / _export_folder_name(artifacts)
+
+
+def _snapshot_last_close_lookup(artifacts: PlatformArtifacts) -> dict[str, float]:
+    snapshot = artifacts.snapshot.copy() if artifacts.snapshot is not None else pd.DataFrame()
+    if snapshot.empty or "close" not in snapshot.columns:
+        return {}
+    lookup: dict[str, float] = {}
+    for ticker, value in snapshot["close"].items():
+        if pd.notna(value):
+            lookup[str(ticker).strip().upper()] = float(value)
+    return lookup
+
+
+def _normalize_symbol_list(symbols: list[str] | tuple[str, ...]) -> list[str]:
+    return list(dict.fromkeys(str(symbol).strip().upper() for symbol in symbols if str(symbol).strip()))
+
+
+def _parse_symbol_text(symbol_text: str) -> list[str]:
+    return _normalize_symbol_list(symbol_text.replace("\n", ",").split(","))
+
+
+def _write_compressed_tape_manifest(
+    output_dir: Path,
+    *,
+    documents: list[CompressedTapeDocument],
+    missing: dict[str, str],
+    tier: str,
+    source: str,
+    fetch_status: dict[str, object],
+) -> Path:
+    manifest_path = output_dir / "manifest.json"
+    payload = {
+        "schema_version": "compressed_tape_manifest_v1",
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "tier": tier,
+        "source": source,
+        "output_dir": str(output_dir),
+        "documents": [
+            {
+                "ticker": document.ticker,
+                "filename": document.filename,
+                "path": str(document.path) if document.path is not None else "",
+                "end_date": document.end_date.strftime("%Y-%m-%d"),
+                "row_count": document.row_count,
+            }
+            for document in documents
+        ],
+        "missing": missing,
+        "fetch_status": fetch_status,
+    }
+    manifest_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+    return manifest_path
+
+
+def _write_stock_card_manifest(
+    output_dir: Path,
+    *,
+    documents: list[StockCardDocument],
+    missing: dict[str, str],
+    source: str,
+    fetch_status: dict[str, object],
+) -> Path:
+    manifest_path = output_dir / "manifest.json"
+    payload = {
+        "schema_version": "stock_card_manifest_v1",
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "source": source,
+        "output_dir": str(output_dir),
+        "documents": [
+            {
+                "ticker": document.ticker,
+                "filename": document.filename,
+                "path": str(document.path) if document.path is not None else "",
+                "end_date": document.end_date.strftime("%Y-%m-%d"),
+            }
+            for document in documents
+        ],
+        "missing": missing,
+        "fetch_status": fetch_status,
+    }
+    manifest_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+    return manifest_path
+
+
+SECTOR_NAME_TO_ETF = {
+    "basic materials": "XLB",
+    "communication services": "XLC",
+    "communications": "XLC",
+    "consumer cyclical": "XLY",
+    "consumer defensive": "XLP",
+    "consumer discretionary": "XLY",
+    "consumer staples": "XLP",
+    "energy": "XLE",
+    "financial": "XLF",
+    "financial services": "XLF",
+    "financials": "XLF",
+    "health care": "XLV",
+    "healthcare": "XLV",
+    "industrial goods": "XLI",
+    "industrials": "XLI",
+    "real estate": "XLRE",
+    "technology": "XLK",
+    "utilities": "XLU",
+}
+
+
+def _stock_card_metadata_lookup(config_path: str, artifacts: PlatformArtifacts) -> dict[str, StockCardMetadata]:
+    settings = load_settings(config_path)
+    radar_config = settings.get("radar", {})
+    industry_map: dict[str, str] = {}
+    for item in radar_config.get("industry_etfs", []) if isinstance(radar_config, dict) else []:
+        if not isinstance(item, dict):
+            continue
+        etf = str(item.get("ticker", "")).strip().upper()
+        for symbol in item.get("major_stocks", []) or []:
+            if etf and str(symbol).strip():
+                industry_map[str(symbol).strip().upper()] = etf
+
+    industry_rank: dict[str, int] = {}
+    industry_leaders = getattr(getattr(artifacts, "radar_result", None), "industry_leaders", pd.DataFrame())
+    if isinstance(industry_leaders, pd.DataFrame) and not industry_leaders.empty and "TICKER" in industry_leaders.columns:
+        for index, ticker in enumerate(industry_leaders["TICKER"].astype(str).str.upper().tolist(), start=1):
+            industry_rank[ticker] = index
+
+    source_frames = [artifacts.snapshot, artifacts.eligible_snapshot, artifacts.watchlist]
+    rows: dict[str, pd.Series] = {}
+    for frame in source_frames:
+        if isinstance(frame, pd.DataFrame) and not frame.empty:
+            for ticker, row in frame.iterrows():
+                rows.setdefault(str(ticker).strip().upper(), row)
+
+    lookup: dict[str, StockCardMetadata] = {}
+    for ticker, row in rows.items():
+        sector_raw = str(row.get("sector", "")).strip().lower() if isinstance(row, pd.Series) else ""
+        sector_etf = SECTOR_NAME_TO_ETF.get(sector_raw, "NA")
+        industry_etf = industry_map.get(ticker, "NA")
+        rs_pctl = next(
+            (
+                row.get(column)
+                for column in ("rs_pctl", "rs_percentile", "rs_percentile_12_1", "rs12_1_pctl")
+                if isinstance(row, pd.Series) and column in row.index and pd.notna(row.get(column))
+            ),
+            None,
+        )
+        lookup[ticker] = StockCardMetadata(
+            sector_etf=sector_etf,
+            industry_etf=industry_etf,
+            industry_rs_rank=industry_rank.get(industry_etf),
+            rs_pctl=float(rs_pctl) if rs_pctl is not None and pd.notna(rs_pctl) else None,
+        )
+    return lookup
+
+
+def export_compressed_tapes_for_symbols(
+    config_path: str,
+    artifacts: PlatformArtifacts,
+    symbols: list[str],
+    *,
+    source: str,
+    tier: str = "T0",
+    force_price_refresh: bool = False,
+) -> CompressedTapeExportResult:
+    tape_config, raw_config = load_compressed_tape_config(config_path)
+    if not bool(raw_config.get("enabled", True)):
+        raise RuntimeError("compressed_tape export is disabled by config.")
+    normalized_symbols = _normalize_symbol_list(symbols)
+    if not normalized_symbols:
+        raise ValueError("At least one symbol is required for compressed tape export.")
+
+    output_dir = _resolve_compressed_tape_export_directory(
+        config_path,
+        str(raw_config.get("output_dir", "data_runs/compressed_tape")),
+        artifacts,
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    platform = ResearchPlatform(config_path)
+    price_batch = platform.load_price_histories(normalized_symbols, force_refresh=force_price_refresh)
+    last_close_lookup = _snapshot_last_close_lookup(artifacts) if bool(raw_config.get("validate_snapshot_last_close", False)) else {}
+    generator = CompressedTapeGenerator(tape_config)
+    documents: list[CompressedTapeDocument] = []
+    missing: dict[str, str] = {}
+
+    for symbol in normalized_symbols:
+        history = price_batch.histories.get(symbol, pd.DataFrame())
+        if history.empty:
+            status = price_batch.statuses.get(symbol)
+            missing[symbol] = status.note if status is not None and status.note else "price history unavailable"
+            continue
+        try:
+            if tier.upper() == "T1":
+                document = generator.build_t1(symbol, history, last_close=last_close_lookup.get(symbol))
+            else:
+                document = generator.build_t0(symbol, history, last_close=last_close_lookup.get(symbol))
+        except CompressedTapeError as exc:
+            missing[symbol] = str(exc)
+            continue
+        path = output_dir / document.filename
+        path.write_text(document.text, encoding="utf-8", newline="\n")
+        documents.append(
+            CompressedTapeDocument(
+                ticker=document.ticker,
+                text=document.text,
+                end_date=document.end_date,
+                path=path,
+                row_count=document.row_count,
+                tier=document.tier,
+            )
+        )
+
+    fetch_status = {symbol: price_batch.statuses[symbol].to_record() for symbol in normalized_symbols if symbol in price_batch.statuses}
+    manifest_path = _write_compressed_tape_manifest(
+        output_dir,
+        documents=documents,
+        missing=missing,
+        tier=tier.upper(),
+        source=source,
+        fetch_status=fetch_status,
+    )
+    return CompressedTapeExportResult(output_dir=output_dir, documents=documents, missing=missing, manifest_path=manifest_path)
+
+
+def export_stock_cards_for_symbols(
+    config_path: str,
+    artifacts: PlatformArtifacts,
+    symbols: list[str],
+    *,
+    source: str,
+    force_price_refresh: bool = False,
+) -> StockCardExportResult:
+    card_config, raw_config = load_stock_card_config(config_path)
+    if not bool(raw_config.get("enabled", True)):
+        raise RuntimeError("stock_card export is disabled by config.")
+    normalized_symbols = _normalize_symbol_list(symbols)
+    if not normalized_symbols:
+        raise ValueError("At least one symbol is required for stock card export.")
+
+    output_dir = _resolve_stock_card_export_directory(
+        config_path,
+        str(raw_config.get("output_dir", "data_runs/stock_cards")),
+        artifacts,
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    platform = ResearchPlatform(config_path)
+    price_batch = platform.load_price_histories(normalized_symbols, force_refresh=force_price_refresh)
+    last_close_lookup = _snapshot_last_close_lookup(artifacts) if bool(raw_config.get("validate_snapshot_last_close", False)) else {}
+    metadata_lookup = _stock_card_metadata_lookup(config_path, artifacts)
+    generator = StockCardGenerator(card_config)
+    documents: list[StockCardDocument] = []
+    missing: dict[str, str] = {}
+
+    for symbol in normalized_symbols:
+        history = price_batch.histories.get(symbol, pd.DataFrame())
+        if history.empty:
+            status = price_batch.statuses.get(symbol)
+            missing[symbol] = status.note if status is not None and status.note else "price history unavailable"
+            continue
+        try:
+            document = generator.build(
+                symbol,
+                history,
+                metadata=metadata_lookup.get(symbol, StockCardMetadata()),
+                last_close=last_close_lookup.get(symbol),
+            )
+        except StockCardError as exc:
+            missing[symbol] = str(exc)
+            continue
+        path = output_dir / document.filename
+        path.write_text(document.text, encoding="utf-8", newline="\n")
+        documents.append(StockCardDocument(ticker=document.ticker, text=document.text, end_date=document.end_date, path=path))
+
+    fetch_status = {symbol: price_batch.statuses[symbol].to_record() for symbol in normalized_symbols if symbol in price_batch.statuses}
+    manifest_path = _write_stock_card_manifest(output_dir, documents=documents, missing=missing, source=source, fetch_status=fetch_status)
+    return StockCardExportResult(output_dir=output_dir, documents=documents, missing=missing, manifest_path=manifest_path)
+
+
+def export_preset_hit_compressed_tapes(
+    config_path: str,
+    artifacts: PlatformArtifacts,
+    *,
+    tier: str = "T0",
+    force_price_refresh: bool = False,
+) -> CompressedTapeExportResult | None:
+    scan_config = load_scan_config(config_path)
+    preset_definitions = load_watchlist_preset_definitions(config_path, scan_config)
+    if not preset_definitions:
+        return None
+    summary_frame, _ = build_watchlist_preset_hit_exports(
+        preset_definitions,
+        artifacts,
+        WatchlistViewModelBuilder(scan_config),
+        trade_date=_latest_trade_date_for_export(artifacts),
+        output_date=datetime.now().strftime("%Y-%m-%d"),
+    )
+    if summary_frame.empty or "ticker" not in summary_frame.columns:
+        return None
+    return export_compressed_tapes_for_symbols(
+        config_path,
+        artifacts,
+        [str(symbol) for symbol in summary_frame["ticker"].tolist()],
+        source="preset_hits",
+        tier=tier,
+        force_price_refresh=force_price_refresh,
+    )
+
+
+def export_preset_hit_stock_cards(
+    config_path: str,
+    artifacts: PlatformArtifacts,
+    *,
+    force_price_refresh: bool = False,
+) -> StockCardExportResult | None:
+    scan_config = load_scan_config(config_path)
+    preset_definitions = load_watchlist_preset_definitions(config_path, scan_config)
+    if not preset_definitions:
+        return None
+    summary_frame, _ = build_watchlist_preset_hit_exports(
+        preset_definitions,
+        artifacts,
+        WatchlistViewModelBuilder(scan_config),
+        trade_date=_latest_trade_date_for_export(artifacts),
+        output_date=datetime.now().strftime("%Y-%m-%d"),
+    )
+    if summary_frame.empty or "ticker" not in summary_frame.columns:
+        return None
+    return export_stock_cards_for_symbols(
+        config_path,
+        artifacts,
+        [str(symbol) for symbol in summary_frame["ticker"].tolist()],
+        source="preset_hits",
+        force_price_refresh=force_price_refresh,
+    )
 
 
 def build_watchlist_preset_hit_exports(
@@ -2184,7 +2563,7 @@ def render_preset_hits_panel(
                 hide_index=True,
             )
 
-        download_col, write_col = st.columns([1, 1])
+        download_col, write_col, tape_col, card_col = st.columns([1, 1, 1, 1])
         with download_col:
             st.download_button(
                 "Download preset hits CSV",
@@ -2206,13 +2585,99 @@ def render_preset_hits_panel(
                     else:
                         st.session_state["preset_export_directory"] = str(export_dir)
                         st.success(f"Preset CSV files written to: {export_dir}")
+        with tape_col:
+            if st.button("Write preset tapes", type="secondary", use_container_width=True, disabled=summary_frame.empty):
+                try:
+                    tape_result = export_preset_hit_compressed_tapes(config_path, artifacts)
+                except Exception as exc:
+                    st.error(f"Compressed tape export failed: {exc}")
+                else:
+                    if tape_result is None:
+                        st.warning("No preset hit tickers were available for tape export.")
+                    else:
+                        st.session_state["compressed_tape_export_directory"] = str(tape_result.output_dir)
+                        st.success(f"Compressed tapes written: {len(tape_result.documents)} files")
+        with card_col:
+            if st.button("Write preset stock cards", type="secondary", use_container_width=True, disabled=summary_frame.empty):
+                try:
+                    card_result = export_preset_hit_stock_cards(config_path, artifacts)
+                except Exception as exc:
+                    st.error(f"Stock card export failed: {exc}")
+                else:
+                    if card_result is None:
+                        st.warning("No preset hit tickers were available for stock card export.")
+                    else:
+                        st.session_state["stock_card_export_directory"] = str(card_result.output_dir)
+                        st.success(f"Stock cards written: {len(card_result.documents)} files")
 
         export_dir = st.session_state.get("preset_export_directory")
         if export_dir:
             st.caption(f"Latest preset CSV output: {export_dir}")
+        tape_export_dir = st.session_state.get("compressed_tape_export_directory")
+        if tape_export_dir:
+            st.caption(f"Latest compressed tape output: {tape_export_dir}")
+        card_export_dir = st.session_state.get("stock_card_export_directory")
+        if card_export_dir:
+            st.caption(f"Latest stock card output: {card_export_dir}")
         export_error = st.session_state.get("preset_export_error")
         if export_error:
             st.caption(f"Automatic preset CSV output failed: {export_error}")
+
+        with st.expander("Compressed tape manual symbols", expanded=False):
+            symbol_text = st.text_input("Symbols", key="compressed_tape_manual_symbols", placeholder="AAPL, MSFT, NVDA")
+            manual_col, refresh_col = st.columns([1, 1])
+            with refresh_col:
+                force_refresh = st.checkbox("Force price refresh", key="compressed_tape_force_refresh")
+            with manual_col:
+                if st.button("Write symbol tapes", type="secondary", use_container_width=True):
+                    symbols = _parse_symbol_text(symbol_text)
+                    if not symbols:
+                        st.warning("Enter at least one symbol.")
+                    else:
+                        try:
+                            tape_result = export_compressed_tapes_for_symbols(
+                                config_path,
+                                artifacts,
+                                symbols,
+                                source="manual_symbols",
+                                force_price_refresh=force_refresh,
+                            )
+                        except Exception as exc:
+                            st.error(f"Compressed tape export failed: {exc}")
+                        else:
+                            st.session_state["compressed_tape_export_directory"] = str(tape_result.output_dir)
+                            if tape_result.missing:
+                                st.warning(f"Compressed tapes written: {len(tape_result.documents)} files; missing: {len(tape_result.missing)}")
+                            else:
+                                st.success(f"Compressed tapes written: {len(tape_result.documents)} files")
+
+        with st.expander("Stock card manual symbols", expanded=False):
+            symbol_text = st.text_input("Symbols", key="stock_card_manual_symbols", placeholder="AAPL, MSFT, NVDA")
+            manual_col, refresh_col = st.columns([1, 1])
+            with refresh_col:
+                force_refresh = st.checkbox("Force price refresh", key="stock_card_force_refresh")
+            with manual_col:
+                if st.button("Write symbol stock cards", type="secondary", use_container_width=True):
+                    symbols = _parse_symbol_text(symbol_text)
+                    if not symbols:
+                        st.warning("Enter at least one symbol.")
+                    else:
+                        try:
+                            card_result = export_stock_cards_for_symbols(
+                                config_path,
+                                artifacts,
+                                symbols,
+                                source="manual_symbols",
+                                force_price_refresh=force_refresh,
+                            )
+                        except Exception as exc:
+                            st.error(f"Stock card export failed: {exc}")
+                        else:
+                            st.session_state["stock_card_export_directory"] = str(card_result.output_dir)
+                            if card_result.missing:
+                                st.warning(f"Stock cards written: {len(card_result.documents)} files; missing: {len(card_result.missing)}")
+                            else:
+                                st.success(f"Stock cards written: {len(card_result.documents)} files")
 
 
 def _existing_columns(frame: pd.DataFrame, columns: tuple[str, ...]) -> list[str]:

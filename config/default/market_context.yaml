@@ -1,0 +1,6 @@
+market_context:
+  output:
+    dir: data_runs/market_context
+    write_markdown: true
+    write_json: true
+  industry_top_n: 8

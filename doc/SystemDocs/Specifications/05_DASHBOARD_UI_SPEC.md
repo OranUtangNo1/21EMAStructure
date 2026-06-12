@@ -160,6 +160,10 @@ Preset-hit panel behavior:
 - the summary table groups by ticker and shows hit presets, preset count, built-in/custom split, matched scans, and rule modes
 - `Download preset hits CSV` downloads the long one-row-per-`preset_name x ticker` hit table
 - `Write preset CSV files` writes `preset_summary.csv`, `preset_hits.csv`, and, when enabled, `preset_details.csv` to the configured preset export folder
+- `Write preset tapes` writes compressed tape Markdown files for the current preset-hit tickers under `data_runs/compressed_tape/YYYYMMDD/`
+- `Write preset stock cards` writes stock-card Markdown files for the current preset-hit tickers under `data_runs/stock_cards/YYYYMMDD/`
+- the collapsed `Compressed tape manual symbols` control accepts comma-separated symbols and writes compressed tape Markdown files for those explicit symbols through the same export path
+- the collapsed `Stock card manual symbols` control accepts comma-separated symbols and writes stock-card Markdown files for those explicit symbols through the same export path
 
 Manual selected-preset export CSV behavior:
 

@@ -9,4 +9,7 @@ includes:
   - default/entry_signals.yaml
   - default/market.yaml
   - default/radar.yaml
+  - default/compressed_tape.yaml
+  - default/stock_card.yaml
+  - default/market_context.yaml
   - default/optional.yaml

@@ -44,73 +44,108 @@ radar:
   industry_etfs:
   - ticker: SLX
     name: Steel
+    major_stocks: [NUE, STLD, X]
   - ticker: IBB
     name: Biotechnology
+    major_stocks: [AMGN, GILD, VRTX]
   - ticker: KRE
     name: Regional Bank
+    major_stocks: [MTB, RF, CFG]
   - ticker: XBI
     name: Biotech
+    major_stocks: [VRTX, REGN, MRNA]
   - ticker: PEJ
     name: Leisure
+    major_stocks: [BKNG, CMG, SBUX]
   - ticker: LIT
     name: Lithium
+    major_stocks: [ALB, SQM, TSLA]
   - ticker: UFO
     name: Space
+    major_stocks: [RKLB, IRDM, GSAT]
   - ticker: JETS
     name: Global Jets
+    major_stocks: [DAL, UAL, AAL]
   - ticker: SMH
     name: Semiconductor
+    major_stocks: [NVDA, AVGO, AMD]
   - ticker: IYT
     name: Transportation
+    major_stocks: [UNP, UPS, FDX]
   - ticker: MOO
     name: Agribusiness
+    major_stocks: [DE, CTVA, MOS]
   - ticker: KARS
     name: Electric Cars
+    major_stocks: [TSLA, NIO, LI]
   - ticker: TAN
     name: Solar
+    major_stocks: [FSLR, ENPH, SEDG]
   - ticker: WOOD
     name: Timber
+    major_stocks: [WY, RYN, PCH]
   - ticker: COPX
     name: Copper Miners
+    major_stocks: [FCX, SCCO, TECK]
   - ticker: QTUM
     name: Quantum-Tech
+    major_stocks: [NVDA, IBM, IONQ]
   - ticker: URA
     name: Uranium
+    major_stocks: [CCJ, UEC, NXE]
   - ticker: IAI
     name: Broker-Dealers
+    major_stocks: [GS, MS, IBKR]
   - ticker: ICLN
     name: Clean Energy
+    major_stocks: [FSLR, ENPH, PLUG]
   - ticker: XOP
     name: Oil & Gas Exp.
+    major_stocks: [EOG, FANG, DVN]
   - ticker: GDX
     name: Gold Miners
+    major_stocks: [NEM, GOLD, AEM]
   - ticker: XRT
     name: Retail
+    major_stocks: [WMT, COST, TGT]
   - ticker: SIL
     name: Silver Miners
+    major_stocks: [WPM, PAAS, AG]
   - ticker: IPO
     name: IPO
+    major_stocks: [RDDT, COIN, ARM]
   - ticker: REMX
     name: Rare Earth
+    major_stocks: [MP, ALB, LAC]
   - ticker: KIE
     name: Insurance
+    major_stocks: [PGR, TRV, CB]
   - ticker: ITA
     name: Aerospace
+    major_stocks: [RTX, BA, LMT]
   - ticker: CIBR
     name: Cybersecurity
+    major_stocks: [PANW, CRWD, FTNT]
   - ticker: ITB
     name: Home Construction
+    major_stocks: [DHI, LEN, PHM]
   - ticker: BLOK
     name: Blockchain
+    major_stocks: [COIN, MSTR, RIOT]
   # - ticker: WGMI
   #   name: Bitcoin Miners
   - ticker: IGV
     name: Tech-Software
+    major_stocks: [MSFT, CRM, ADBE]
   - ticker: KWEB
     name: China Internet
+    major_stocks: [BABA, PDD, JD]
   - ticker: IPAY
     name: Mobile Payments
+    major_stocks: [V, MA, PYPL]
   - ticker: IHI
     name: Med. Devices
+    major_stocks: [ISRG, BSX, SYK]
   - ticker: FINX
     name: FinTech
+    major_stocks: [PYPL, SOFI, AFRM]

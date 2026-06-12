@@ -499,6 +499,33 @@ Market Dashboard does not fetch or compute the former leadership ETF snapshot by
 - `market_report.confidence.minimum_required_metric_coverage`: current default `0.8`
 - `market_report.confidence.disagreement_penalty`: current default `0.2`
 
+### Market context
+- `market_context.output.dir`: current default `data_runs/market_context`
+- `market_context.output.write_markdown`: current default `true`; writes `data_runs/market_context/YYYYMMDD.md`
+- `market_context.output.write_json`: current default `true`; writes `data_runs/market_context/YYYYMMDD.json`
+- `market_context.industry_top_n`: current default `8`; controls the fixed top industry count rendered in `INDUSTRY_RS`
+- `INDUSTRY_RS` row format: `tactRS|structRS63|dRank1W|majors`
+- `INDUSTRY_RS.dRank1W`: prior full-universe `STRUCT RS` rank minus current full-universe `STRUCT RS` rank; emits `NA` when comparable structural-rank history is unavailable
+
+### Compressed tape
+- `compressed_tape.enabled`: current default `true`
+- `compressed_tape.output_dir`: current default `data_runs/compressed_tape`
+- `compressed_tape.t0_days`: current default `15`
+- `compressed_tape.t1_days`: current default `50`
+- `compressed_tape.events_lookback_days`: current default `50`
+- `compressed_tape.volume_window`: current default `50`
+- `compressed_tape.max_events`: current default `8`
+- `compressed_tape.validate_snapshot_last_close`: current default `false`; standalone tape export does not require snapshot close matching unless this is enabled
+
+### Stock card
+- `stock_card.enabled`: current default `true`
+- `stock_card.output_dir`: current default `data_runs/stock_cards`
+- `stock_card.validate_snapshot_last_close`: current default `false`; standalone stock-card export does not require snapshot close matching unless this is enabled
+- `stock_card.compressed_tape.*`: nested compressed-tape settings used for the embedded `TAPE` section
+- emitted schema: `card-v1.0.1`
+- non-pivot setup candidates expire when current close is more than 2% above the candidate basis
+- structural stop candidates must be within -8% of basis and at least `max(1.0 * ATR14, 2.5%)` below basis
+
 ## 10. RS Radar
 
 ### Radar parameters
@@ -509,7 +536,7 @@ Market Dashboard does not fetch or compute the former leadership ETF snapshot by
 
 ### Radar universes
 - `sector_etfs`: configured sector ETF list
-- `industry_etfs`: configured industry ETF list with optional `major_stocks`
+- `industry_etfs`: configured industry ETF list with optional `major_stocks`; current default count is 35
 
 ## 11. Inactive shipped config block
 

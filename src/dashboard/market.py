@@ -257,6 +257,7 @@ class MarketConditionResult:
     credit_risk_proxy: dict[str, float] = field(default_factory=dict)
     index_state_summary: dict[str, float] = field(default_factory=dict)
     drawdown_summary: dict[str, float] = field(default_factory=dict)
+    index_context_summary: dict[str, object] = field(default_factory=dict)
 
 
 class MarketSnapshotBuilder:
@@ -425,6 +426,7 @@ class MarketConditionScorer:
         volatility_term_structure = self._volatility_term_structure(market_histories)
         credit_risk_proxy = self._credit_risk_proxy(market_histories)
         index_state_summary = self._index_state_summary(market_histories, benchmark_history, stock_histories)
+        index_context_summary = self._index_context_summary(market_histories, benchmark_history, stock_histories)
         metric_deltas = self._market_metric_deltas(stock_histories, market_histories)
         breadth_momentum_summary = self._breadth_momentum_summary(latest_raw_components, metric_deltas)
         breadth_internal_summary = self._breadth_internal_summary(stock_histories)
@@ -457,13 +459,17 @@ class MarketConditionScorer:
                 "S2W HIGH %": round(latest_raw_components.get("pct_2w_high", 0.0), 2),
                 "VIX": round(vix_close, 2) if vix_close is not None else np.nan,
                 "SAFE HAVEN %": round(self._safe_haven_spread(market_histories, 0), 2),
-                **{key: round(value, 3) for key, value in vix_diagnostics.items()},
+                **{
+                    key: round(float(value), 3) if isinstance(value, (int, float, np.integer, np.floating)) and self._is_finite_number(value) else value
+                    for key, value in vix_diagnostics.items()
+                },
             },
             risk_on_ratio_summary={key: round(value, 3) for key, value in risk_on_ratio_summary.items()},
             volatility_term_structure={key: round(value, 3) for key, value in volatility_term_structure.items()},
             credit_risk_proxy={key: round(value, 3) for key, value in credit_risk_proxy.items()},
             index_state_summary={key: round(value, 3) for key, value in index_state_summary.items()},
             drawdown_summary={key: round(value, 3) for key, value in drawdown_summary.items()},
+            index_context_summary=index_context_summary,
             market_snapshot=market_snapshot,
             leadership_snapshot=leadership_snapshot,
             external_snapshot=external_snapshot,
@@ -503,6 +509,7 @@ class MarketConditionScorer:
             credit_risk_proxy={},
             index_state_summary={},
             drawdown_summary={},
+            index_context_summary={},
             market_snapshot=empty,
             leadership_snapshot=empty,
             external_snapshot=empty,
@@ -896,6 +903,8 @@ class MarketConditionScorer:
         peak_ratio = (latest / peak - 1.0) * 100.0 if peak != 0.0 else np.nan
         return {
             "VIX 252D PCTL": percentile,
+            "VIX PEAK": peak,
+            "VIX PEAK DATE": pd.Timestamp(window_close.index[peak_position]).strftime("%m%d"),
             "VIX PEAK DAYS": float(len(window_close) - 1 - peak_position),
             "VIX PEAK RATIO %": peak_ratio,
         }
@@ -1079,6 +1088,99 @@ class MarketConditionScorer:
             "ROLLING HIGH": high,
             "DRAWDOWN WINDOW DAYS": float(window),
         }
+
+    def _index_context_summary(
+        self,
+        market_histories: dict[str, pd.DataFrame],
+        benchmark_history: pd.DataFrame,
+        stock_histories: dict[str, pd.DataFrame] | None = None,
+    ) -> dict[str, object]:
+        summary: dict[str, object] = {}
+        breadth_frame = self._breadth_internal_frame(stock_histories or {})
+        for symbol in self.config.index_state_symbols:
+            history = market_histories.get(symbol, pd.DataFrame())
+            if history.empty and symbol == "SPY":
+                history = benchmark_history
+            state = self._single_index_context_state(history, breadth_frame)
+            for key, value in state.items():
+                summary[f"{symbol} {key}"] = value
+        return summary
+
+    def _single_index_context_state(self, history: pd.DataFrame, breadth_frame: pd.DataFrame) -> dict[str, object]:
+        if history.empty or "close" not in history.columns:
+            return {}
+        frame = history.copy()
+        for column in ["open", "high", "low", "close", "volume"]:
+            if column in frame.columns:
+                frame[column] = pd.to_numeric(frame[column], errors="coerce")
+        if "high" not in frame.columns:
+            frame["high"] = frame["close"]
+        if "low" not in frame.columns:
+            frame["low"] = frame["close"]
+        if "volume" not in frame.columns:
+            frame["volume"] = np.nan
+        frame = frame.dropna(subset=["close"]).sort_index()
+        if len(frame) < 2:
+            return {}
+
+        close = frame["close"].astype(float)
+        high = frame["high"].astype(float)
+        low = frame["low"].astype(float)
+        latest_close = float(close.iloc[-1])
+        previous_close = float(close.iloc[-2])
+        day_pct = (latest_close / previous_close - 1.0) * 100.0 if previous_close != 0.0 else np.nan
+        ema21_high = high.ewm(span=21, adjust=False).mean().iloc[-1]
+        ema21_low = low.ewm(span=21, adjust=False).mean().iloc[-1]
+        if latest_close > float(ema21_high):
+            ema21_position = "above"
+        elif latest_close < float(ema21_low):
+            ema21_position = "below"
+        else:
+            ema21_position = "inside"
+        sma50 = close.rolling(50).mean().iloc[-1]
+        sma50_pct = (latest_close / float(sma50) - 1.0) * 100.0 if pd.notna(sma50) and float(sma50) != 0.0 else np.nan
+
+        index_state = self._single_index_state(frame)
+        quality_state = self._ftd_quality_state(frame, index_state, breadth_frame)
+        ftd_age = index_state.get("FTD AGE DAYS")
+        ftd_pos: int | None = None
+        if self._is_finite_number(ftd_age) and float(ftd_age) >= 0.0:
+            candidate = len(frame) - 1 - int(float(ftd_age))
+            if 0 <= candidate < len(frame):
+                ftd_pos = candidate
+
+        ftd_date = ""
+        ftd_valid = 0.0
+        if ftd_pos is not None:
+            ftd_date = pd.Timestamp(frame.index[ftd_pos]).strftime("%m%d")
+            rally_low_pos = self._rally_low_position(close)
+            if rally_low_pos is not None:
+                rally_low_close = float(close.iloc[rally_low_pos])
+                post_ftd_close = close.iloc[ftd_pos + 1 :]
+                ftd_valid = 1.0 if post_ftd_close.empty or float(post_ftd_close.min()) >= rally_low_close else 0.0
+
+        return {
+            "CLOSE": latest_close,
+            "DAY %": day_pct,
+            "21EMA POSITION": ema21_position,
+            "50SMA %": sma50_pct,
+            "BELOW 50SMA FLAG": 1.0 if self._is_finite_number(sma50_pct) and float(sma50_pct) < 0.0 else 0.0,
+            "FTD DATE": ftd_date,
+            "FTD VALID FLAG": ftd_valid,
+            **index_state,
+            **quality_state,
+        }
+
+    def _rally_low_position(self, close: pd.Series) -> int | None:
+        if close.empty:
+            return None
+        low_lookback = max(2, min(self.config.index_state_rally_low_lookback, len(close)))
+        recent_close = close.tail(low_lookback)
+        low_label = recent_close.idxmin()
+        low_pos = close.index.get_loc(low_label)
+        if isinstance(low_pos, slice):
+            low_pos = low_pos.start
+        return int(low_pos)
 
     def _index_state_summary(
         self,

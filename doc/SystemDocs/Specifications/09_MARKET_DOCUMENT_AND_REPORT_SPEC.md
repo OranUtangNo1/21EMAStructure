@@ -13,6 +13,8 @@ The system does not attempt to write the final human-facing market report direct
 | Market summary JSON | System | Persisted `MarketConditionResult` payload. | `data_runs/market_summary/YYYYMMDD.json` |
 | Market document JSON | System | Canonical AI-input structured document. | `data_runs/market_documents/YYYYMMDD.json` |
 | Market document Markdown | System | Skill-friendly rendering of the same market document. | `data_runs/market_documents/YYYYMMDD.md` |
+| Market context JSON | System | Fixed-schema compact market and RS context artifact. | `data_runs/market_context/YYYYMMDD.json` |
+| Market context Markdown | System | Fixed-schema compact Markdown rendering of the same context. | `data_runs/market_context/YYYYMMDD.md` |
 | Final market report Markdown | Skill | Human-facing daily market report. | `data_runs/market_reports/YYYYMMDD.md` |
 
 The system does not write final-report JSON metadata. The final report is a Markdown artifact only.
@@ -22,9 +24,14 @@ The system does not write final-report JSON metadata. The final report is a Mark
 1. The pipeline computes `MarketConditionResult` and `RadarResult`.
 2. `DataSnapshotStore` persists `market_summary/YYYYMMDD.json`.
 3. The market-document builder reads the current summary, RS Radar industry leadership rows, and recent same-folder summaries.
-4. The system writes `market_documents/YYYYMMDD.json` and `market_documents/YYYYMMDD.md`.
-5. The report-writing skill reads the market document, preferably the Markdown rendering with the JSON treated as canonical data.
-6. The skill writes `market_reports/YYYYMMDD.md`.
+4. The market-context builder reads the current summary and recent same-folder summaries.
+5. The system writes `market_documents/YYYYMMDD.json`, `market_documents/YYYYMMDD.md`, `market_context/YYYYMMDD.json`, and `market_context/YYYYMMDD.md`.
+6. The report-writing skill reads the market document, preferably the Markdown rendering with the JSON treated as canonical data.
+7. The skill writes `market_reports/YYYYMMDD.md`.
+
+`market_context` is a separate compact AI-input artifact. It uses the same market and RS data family as the market document, but it has its own fixed `MARKET_CONTEXT` schema and does not replace the market document or final report.
+
+`market_context` renders `INDUSTRY_RS` rows as `tactRS|structRS63|dRank1W|majors`. `tactRS` is RS Radar tactical `RS`, `structRS63` is RS Radar structural `STRUCT RS`, and `dRank1W` is the prior comparable structural-rank position minus the current structural-rank position across the full configured industry ETF universe. Positive `dRank1W` means the ETF moved up in structural rank. When no previous summary exists, the row delta is `NA` and `NEW_IN_TOP8` / `OUT` are `NA(no_history)`. When previous industry rows exist but lack `STRUCT RS`, the row delta is `NA` and `NEW_IN_TOP8` / `OUT` are `NA(no_struct_history)`.
 
 ## 4. Market Document Contract
 

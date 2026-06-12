@@ -178,7 +178,7 @@ The current default config sets this to `false`, so sample fallback is inactive 
 - fundamental cache under `data_cache/`
 - user preferences under `data_cache/user_preferences.yaml`
 - weekly universe snapshots under `data_runs/universe_snapshots/`
-- run artifacts under file-type folders keyed by trade-date date key, such as `data_runs/run_metadata/YYYYMMDD.json`, `data_runs/eligible_snapshot/YYYYMMDD.csv`, `data_runs/market_summary/YYYYMMDD.json`, `data_runs/market_documents/YYYYMMDD.json`, `data_runs/market_documents/YYYYMMDD.md`, `data_runs/market_reports/YYYYMMDD.md`, and `data_runs/radar_summary/YYYYMMDD.json`
+- run artifacts under file-type folders keyed by trade-date date key, such as `data_runs/run_metadata/YYYYMMDD.json`, `data_runs/eligible_snapshot/YYYYMMDD.csv`, `data_runs/market_summary/YYYYMMDD.json`, `data_runs/market_documents/YYYYMMDD.json`, `data_runs/market_documents/YYYYMMDD.md`, `data_runs/market_context/YYYYMMDD.json`, `data_runs/market_context/YYYYMMDD.md`, `data_runs/market_reports/YYYYMMDD.md`, and `data_runs/radar_summary/YYYYMMDD.json`
 - scan-hit history and preset-hit tracking under `data_runs/tracking.db`
 - EntrySignal startup exports under `data_runs/entry_signals/`
 
@@ -306,12 +306,22 @@ When `data.persist_research_snapshots` is true, the pipeline saves:
 - `market_summary/YYYYMMDD.json`
 - `market_documents/YYYYMMDD.json`
 - `market_documents/YYYYMMDD.md`
+- `market_context/YYYYMMDD.json`
+- `market_context/YYYYMMDD.md`
 - `radar_summary/YYYYMMDD.json`
 - date-level scan hits into `tracking.db`
 
 `eligible_snapshot` is retained as the inspectable scan universe and saved-run restore base. The raw watchlist CSV is optional and controlled by `data.persist_watchlist_snapshot`; the default is false. When the watchlist CSV is absent, same-day saved-run restore rebuilds the watchlist from `eligible_snapshot` and stored scan hits. Preset-hit CSVs remain separate under `data_runs/preset_exports/`.
 
-`market_documents/YYYYMMDD.json` is generated deterministically from the saved market summary, RS Radar industry leadership rows, and recent same-folder market summaries. It is an AI-input market document, not the final human-facing report. The document stores `schema_version=market_document.v1`, executive context, section facts, evidence source fields, trajectory summaries, significance flags, recent transitions, watchpoint candidates, analysis boundaries, missing inputs, and a data appendix. When `industry_leaders` are available, the document includes an `industry_leadership` section for industry-level RS leadership, 52W HIGH, acceleration, sustained leadership, and weak-industry context. The market summary and document include `volatility_term_structure`, `credit_risk_proxy`, and `index_state_summary` diagnostics when the configured auxiliary/index symbols are available. The saved market summary also includes `breadth_momentum_summary`, `breadth_internal_summary`, and `drawdown_summary`; report prose consumption for those fields is a later report-improvement phase. `market_documents/YYYYMMDD.md` renders the same market document for AI/skill input. The final human-facing report is owned by a report-writing skill and is written to `market_reports/YYYYMMDD.md`.
+`market_documents/YYYYMMDD.json` is generated deterministically from the saved market summary, RS Radar industry leadership rows, and recent same-folder market summaries. It is an AI-input market document, not the final human-facing report. The document stores `schema_version=market_document.v1`, executive context, section facts, evidence source fields, trajectory summaries, significance flags, recent transitions, watchpoint candidates, analysis boundaries, missing inputs, and a data appendix. When `industry_leaders` are available, the document includes an `industry_leadership` section for industry-level RS leadership, 52W HIGH, acceleration, sustained leadership, and weak-industry context. The market summary and document include `volatility_term_structure`, `credit_risk_proxy`, and `index_state_summary` diagnostics when the configured auxiliary/index symbols are available. The saved market summary also includes `breadth_momentum_summary`, `breadth_internal_summary`, `drawdown_summary`, `index_context_summary`, `sector_leaders`, and `industry_leaders`.
+
+`market_context/YYYYMMDD.json` and `market_context/YYYYMMDD.md` are separate fixed-schema AI-input artifacts generated from the saved market summary plus recent market summaries. They are not the market document and do not replace final market reports. The Markdown output uses the `MARKET_CONTEXT` v1.0 section order: `M_GATE`, `INDEX`, `BREADTH`, `SENTIMENT`, `STYLE`, `SECTOR_RS`, `INDUSTRY_RS`, and `CHANGES_1W`. `INDUSTRY_RS` rows render `tactRS|structRS63|dRank1W|majors`; `dRank1W` uses comparable full-universe `STRUCT RS` rank history and is `NA` when that history is unavailable.
+
+`market_documents/YYYYMMDD.md` renders the same market document for AI/skill input. The final human-facing report is owned by a report-writing skill and is written to `market_reports/YYYYMMDD.md`.
+
+Standalone compressed tape exports are user-triggered and write under `data_runs/compressed_tape/YYYYMMDD/` as one `tape_{TICKER}_{YYYYMMDD}.md` file per symbol plus `manifest.json`.
+
+Standalone stock-card exports are user-triggered and write under `data_runs/stock_cards/YYYYMMDD/` as one `card_{TICKER}_{YYYYMMDD}.md` file per symbol plus `manifest.json`. A stock card uses schema `card-v1.0.1` and embeds the compressed tape section generated from the same adjusted OHLCV pipeline.
 
 After the Streamlit artifact load syncs EntrySignal pools, the app evaluates the startup-selected entry signals and writes inspectable exports under `data_runs/entry_signals/`:
 

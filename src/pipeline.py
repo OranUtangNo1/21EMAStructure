@@ -11,6 +11,7 @@ import pandas as pd
 from pandas.tseries.offsets import BDay
 
 from src.configuration import load_settings
+from src.dashboard.market_context import MarketContextConfig
 from src.dashboard.market import MarketConditionConfig, MarketConditionResult, MarketConditionScorer
 from src.dashboard.market_report import MarketReportConfig
 from src.dashboard.radar import RadarConfig, RadarResult, RadarViewModelBuilder
@@ -132,9 +133,11 @@ class ResearchPlatform:
         cache_dir = self.root / app_settings.get("cache_dir", "data_cache")
         self.cache = CacheLayer(cache_dir)
         self.sample_factory = SampleDataFactory()
+        market_context_settings = self._market_context_settings_with_radar_majors()
         self.snapshot_store = DataSnapshotStore(
             self.root / app_settings.get("snapshot_dir", "data_runs"),
             market_report_config=MarketReportConfig.from_dict(self.settings.get("market", {}).get("market_report", {})),
+            market_context_config=MarketContextConfig.from_dict(market_context_settings),
         )
         self.allow_sample_fallback = bool(app_settings.get("use_sample_data_if_fetch_fails", False))
 
@@ -198,6 +201,21 @@ class ResearchPlatform:
         else:
             raise ValueError(f"Unsupported universe discovery provider: {self.discovery_provider_name}")
         self._mark_timing("pipeline.init.end", discovery_provider=self.discovery_provider_name)
+
+    def _market_context_settings_with_radar_majors(self) -> dict[str, object]:
+        settings = dict(self.settings.get("market_context", {}))
+        radar_settings = self.settings.get("radar", {})
+        industry_etfs = radar_settings.get("industry_etfs", []) if isinstance(radar_settings, dict) else []
+        majors: dict[str, object] = {}
+        for item in industry_etfs:
+            if not isinstance(item, dict):
+                continue
+            ticker = str(item.get("ticker", "")).strip().upper()
+            if ticker and item.get("major_stocks"):
+                majors[ticker] = item.get("major_stocks")
+        if majors:
+            settings["industry_major_stocks"] = majors
+        return settings
 
     def _mark_timing(self, milestone: str, **fields: object) -> None:
         if self.startup_timer is not None:
@@ -463,6 +481,25 @@ class ResearchPlatform:
             entry_signal_watchlist=entry_signal_watchlist,
         )
 
+    def load_price_histories(
+        self,
+        symbols: list[str],
+        *,
+        period: str | None = None,
+        force_refresh: bool = False,
+    ) -> PriceHistoryBatch:
+        """Load daily price histories through the configured cache/provider stack."""
+        normalized_symbols = self._normalize_symbols(symbols)
+        if not normalized_symbols:
+            return PriceHistoryBatch(histories={}, statuses={})
+        app_settings = self.settings.get("app", {})
+        resolved_period = str(period or app_settings.get("price_period", "18mo"))
+        return self.price_provider.get_price_history(
+            normalized_symbols,
+            period=resolved_period,
+            force_refresh=force_refresh,
+        )
+
     def _saved_run_watchlist_frames(
         self,
         saved_watchlist: pd.DataFrame | None,
@@ -565,6 +602,7 @@ class ResearchPlatform:
             credit_risk_proxy=self._float_mapping(metadata.get("credit_risk_proxy")),
             index_state_summary=self._float_mapping(metadata.get("index_state_summary")),
             drawdown_summary=self._float_mapping(metadata.get("drawdown_summary")),
+            index_context_summary=self._object_mapping(metadata.get("index_context_summary")),
             market_snapshot=market_snapshot,
             leadership_snapshot=leadership_snapshot,
             external_snapshot=external_snapshot,
@@ -610,8 +648,13 @@ class ResearchPlatform:
         for key, value in payload.items():
             if value is None:
                 continue
-            result[str(key)] = float(value)
+            numeric = pd.to_numeric(value, errors="coerce")
+            if pd.notna(numeric):
+                result[str(key)] = float(numeric)
         return result
+
+    def _object_mapping(self, payload: object) -> dict[str, object]:
+        return {str(key): value for key, value in payload.items()} if isinstance(payload, dict) else {}
 
     def _nested_float_mapping(self, payload: object) -> dict[str, dict[str, float]]:
         if not isinstance(payload, dict):

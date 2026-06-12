@@ -111,6 +111,12 @@ This keeps settings, reusable calculations, and display-ready outputs separate.
     - market condition scoring
     - ETF snapshot panels
     - factor-relative-strength tables
+- `src/dashboard/compressed_tape.py`
+    - compressed tape Markdown generation from adjusted OHLCV histories
+- `src/dashboard/stock_card.py`
+    - stock-card Markdown generation from adjusted OHLCV histories
+    - embeds compressed tape output from the same preprocessing path
+    - applies stock-card v1.0.1 setup expiry, pivot-date marker, and structural-stop distance floor rules
 - `src/dashboard/effectiveness.py`
     - export-enabled preset detection sync
     - scan-hit history persistence
@@ -311,6 +317,12 @@ The scorer supports these calculation modes:
 
 `MarketReportMarkdownRenderer.render(report)` renders a Markdown market document from `MarketReportResult`. This Markdown is not the final human-facing report. The final report is expected to be produced by a report-writing skill that uses the market document as its only evidence source.
 
+`MarketContextBuilder.build(summary, history_summaries=None)` returns `MarketContextResult`. It consumes the saved market summary shape and emits the separate fixed-schema `MARKET_CONTEXT` v1.0 artifact for AI input. It does not replace `MarketReportBuilder` and does not write human-facing report prose.
+
+`MarketContextMarkdownRenderer.render(context)` renders the fixed eight-section `MARKET_CONTEXT` Markdown artifact. `MarketContextMarkdownRenderer.render_json(context)` renders the corresponding JSON artifact.
+
+`CompressedTapeGenerator.build_t0(ticker, history, last_close=None)` and `CompressedTapeGenerator.build_t1(ticker, history, last_close=None)` return standalone `CompressedTapeDocument` payloads. The app-level export functions write one Markdown file per symbol plus a manifest.
+
 ## 4. Result Objects
 
 ### 4.1 PlatformArtifacts
@@ -384,6 +396,7 @@ Radar leader tables include both tactical relative strength (`RS`, based on 1D /
 - `credit_risk_proxy`
 - `index_state_summary`
 - `drawdown_summary`
+- `index_context_summary`
 - `market_snapshot`
 - `leadership_snapshot` retained as a compatibility field; current Market Dashboard scoring leaves it empty
 - `external_snapshot`

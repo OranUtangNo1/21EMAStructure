@@ -238,6 +238,8 @@ def test_snapshot_store_loads_latest_run_with_dashboard_payloads() -> None:
         assert "industry_leaders" in loaded.market_metadata
         assert any(section["key"] == "industry_leadership" for section in loaded.market_report_metadata["sections"])
         assert (Path(tmp_dir) / "market_documents" / "20260408.md").exists()
+        assert (Path(tmp_dir) / "market_context" / "20260408.md").exists()
+        assert (Path(tmp_dir) / "market_context" / "20260408.json").exists()
         assert not (Path(tmp_dir) / "market_reports" / "20260408.json").exists()
         assert "market_snapshot" in loaded.market_metadata
         assert "sector_leaders" in loaded.radar_metadata
