@@ -11,6 +11,7 @@ class MarketReportConfig:
 
     write_json: bool = True
     write_markdown: bool = True
+    output_mode: str = "daily_history"
     score_improving_1w: float = 3.0
     score_deteriorating_1w: float = -3.0
     score_improving_1m: float = 5.0
@@ -44,6 +45,7 @@ class MarketReportConfig:
         return cls(
             write_json=bool(output.get("write_json", True)),
             write_markdown=bool(output.get("write_markdown", True)),
+            output_mode=_output_mode(output.get("mode", payload.get("output_mode")), "daily_history"),
             score_improving_1w=_float(regime.get("score_improving_1w"), 3.0),
             score_deteriorating_1w=_float(regime.get("score_deteriorating_1w"), -3.0),
             score_improving_1m=_float(regime.get("score_improving_1m"), 5.0),
@@ -1658,6 +1660,11 @@ def _posture_item(label: str, guidance: str, reason: str) -> dict[str, str]:
 
 def _mapping(value: object) -> dict[str, object]:
     return value if isinstance(value, dict) else {}
+
+
+def _output_mode(value: object, default: str) -> str:
+    mode = str(value or default).strip().lower()
+    return mode if mode in {"daily_history", "latest_only", "on_demand", "disabled"} else default
 
 
 def _records(value: object) -> list[dict[str, object]]:

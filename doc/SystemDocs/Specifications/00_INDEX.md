@@ -39,6 +39,7 @@ Related folders:
 - Codex output docs: `doc/ForCodexOutput/`
 - user-managed docs: `doc/ForUsersOnly/`
 - warehouse references: `doc/Archive/`
+- modularization refactor specs and work plans: `doc/SystemDocs/Modularization/`
 - annotation filter catalog: `doc/SystemDocs/AnnotationFilters/`
 - entry signal catalog: `doc/SystemDocs/EntrySignal/`
 - watchlist preset catalog: `doc/SystemDocs/WatchlistPresets/`
@@ -137,6 +138,13 @@ Related folders:
   - built-in watchlist preset catalog
   - one preset per document
   - exact preset scan selections, duplicate rule, and filter settings
+
+## Modularization Refactor
+
+- `doc/SystemDocs/Modularization/00_INDEX.md`
+  - central entry point for the current modularization refactor
+  - shared price schema, service-boundary plans, DB pause decision, and work plan
+  - transition contracts that must be promoted into numbered specs when implemented
 
 ## Suggested Reading Order
 

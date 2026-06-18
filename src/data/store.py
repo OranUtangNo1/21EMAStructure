@@ -9,6 +9,7 @@ import pandas as pd
 
 from src.dashboard.market_context import MarketContextBuilder, MarketContextConfig, MarketContextMarkdownRenderer
 from src.dashboard.market_report import MarketReportBuilder, MarketReportConfig, MarketReportMarkdownRenderer
+from src.dashboard.preset_diagnostics import PresetDiagnosticsArtifact
 from src.data.tracking_repository import read_scan_hits_for_watchlist
 from src.data.tracking_db import connect_tracking_db
 from src.data.results import RunArtifactsLoadResult, UniverseSnapshotLoadResult
@@ -22,6 +23,8 @@ class DataSnapshotStore:
         root_dir: str | Path,
         market_report_config: MarketReportConfig | None = None,
         market_context_config: MarketContextConfig | None = None,
+        eligible_snapshot_retention_count: int | None = None,
+        run_metadata_retention_count: int | None = None,
     ) -> None:
         self.root_dir = Path(root_dir)
         self.root_dir.mkdir(parents=True, exist_ok=True)
@@ -31,6 +34,7 @@ class DataSnapshotStore:
         self.market_document_dir = self.root_dir / "market_documents"
         self.market_context_dir = self.root_dir / "market_context"
         self.market_report_dir = self.root_dir / "market_reports"
+        self.preset_diagnostics_dir = self.root_dir / "preset_diagnostics"
         self.radar_summary_dir = self.root_dir / "radar_summary"
         self.metadata_dir = self.root_dir / "run_metadata"
         self.universe_dir = self.root_dir / "universe_snapshots"
@@ -40,6 +44,8 @@ class DataSnapshotStore:
         self.market_context_config = market_context_config or MarketContextConfig()
         self.market_context_builder = MarketContextBuilder(self.market_context_config)
         self.market_context_renderer = MarketContextMarkdownRenderer()
+        self.eligible_snapshot_retention_count = self._normalize_retention_count(eligible_snapshot_retention_count)
+        self.run_metadata_retention_count = self._normalize_retention_count(run_metadata_retention_count)
         for directory in [
             self.eligible_snapshot_dir,
             self.watchlist_dir,
@@ -47,6 +53,7 @@ class DataSnapshotStore:
             self.market_document_dir,
             self.market_context_dir,
             self.market_report_dir,
+            self.preset_diagnostics_dir,
             self.radar_summary_dir,
             self.metadata_dir,
             self.universe_dir,
@@ -64,6 +71,7 @@ class DataSnapshotStore:
         scan_hits: pd.DataFrame | None = None,
         market_result: Any | None = None,
         radar_result: Any | None = None,
+        preset_diagnostics: PresetDiagnosticsArtifact | None = None,
         persist_watchlist: bool = True,
     ) -> Path:
         date_key = self._date_key_from_metadata(metadata, snapshot)
@@ -79,6 +87,8 @@ class DataSnapshotStore:
             self._save_market_result(date_key, market_result, metadata, radar_result=radar_result)
         if radar_result is not None:
             self._save_radar_result(date_key, radar_result)
+        if preset_diagnostics is not None:
+            self._save_preset_diagnostics(date_key, trade_date_iso, preset_diagnostics)
 
         fetch_summary = self._build_fetch_summary(fetch_status)
         metadata_payload = {
@@ -93,6 +103,7 @@ class DataSnapshotStore:
         }
         with (self.metadata_dir / f"{date_key}.json").open("w", encoding="utf-8") as handle:
             json.dump(metadata_payload, handle, ensure_ascii=False, indent=2)
+        self._apply_run_retention()
         return self.metadata_dir / f"{date_key}.json"
 
     def load_latest_run(self) -> RunArtifactsLoadResult:
@@ -119,7 +130,7 @@ class DataSnapshotStore:
             scan_hits=self._load_scan_hits(date_key),
             market_metadata=self._load_json(self.market_summary_dir / f"{date_key}.json"),
             radar_metadata=self._load_json(self.radar_summary_dir / f"{date_key}.json"),
-            market_report_metadata=self._load_json(self.market_document_dir / f"{date_key}.json"),
+            market_report_metadata=self._load_json_for_date_or_latest(self.market_document_dir, date_key),
             market_frames={},
             radar_frames={},
         )
@@ -211,11 +222,14 @@ class DataSnapshotStore:
             data_health_summary=self._as_mapping(metadata.get("data_health_summary")),
             history_summaries=self._recent_market_summaries(date_key),
         )
+        stem = self._output_stem(date_key, self.market_report_config.output_mode)
+        if stem is None:
+            return
         if self.market_report_config.write_json:
-            with (self.market_document_dir / f"{date_key}.json").open("w", encoding="utf-8") as handle:
+            with (self.market_document_dir / f"{stem}.json").open("w", encoding="utf-8") as handle:
                 json.dump(document.to_dict(), handle, ensure_ascii=False, indent=2)
         if self.market_report_config.write_markdown:
-            with (self.market_document_dir / f"{date_key}.md").open("w", encoding="utf-8") as handle:
+            with (self.market_document_dir / f"{stem}.md").open("w", encoding="utf-8") as handle:
                 handle.write(self.market_report_renderer.render(document))
 
     def _save_market_context(self, date_key: str, payload: dict[str, object]) -> None:
@@ -223,11 +237,14 @@ class DataSnapshotStore:
             payload,
             history_summaries=self._recent_market_summaries(date_key),
         )
+        stem = self._output_stem(date_key, self.market_context_config.output_mode)
+        if stem is None:
+            return
         if self.market_context_config.write_json:
-            with (self.market_context_dir / f"{date_key}.json").open("w", encoding="utf-8", newline="\n") as handle:
+            with (self.market_context_dir / f"{stem}.json").open("w", encoding="utf-8", newline="\n") as handle:
                 handle.write(self.market_context_renderer.render_json(context))
         if self.market_context_config.write_markdown:
-            with (self.market_context_dir / f"{date_key}.md").open("w", encoding="utf-8", newline="\n") as handle:
+            with (self.market_context_dir / f"{stem}.md").open("w", encoding="utf-8", newline="\n") as handle:
                 handle.write(self.market_context_renderer.render(context))
 
     def _save_radar_result(self, date_key: str, radar_result: Any) -> None:
@@ -240,6 +257,35 @@ class DataSnapshotStore:
         }
         with (self.radar_summary_dir / f"{date_key}.json").open("w", encoding="utf-8") as handle:
             json.dump(payload, handle, ensure_ascii=False, indent=2)
+
+
+    def _save_preset_diagnostics(
+        self,
+        date_key: str,
+        trade_date_iso: str | None,
+        artifact: PresetDiagnosticsArtifact,
+    ) -> None:
+        files = {
+            "scan_counts": "latest_scan_counts.csv",
+            "annotation_counts": "latest_annotation_counts.csv",
+            "preset_steps": "latest_preset_steps.csv",
+            "preset_ticker_steps": "latest_preset_ticker_steps.csv",
+            "preset_hits": "latest_preset_hits.csv",
+        }
+        artifact.scan_counts.to_csv(self.preset_diagnostics_dir / files["scan_counts"], index=False)
+        artifact.annotation_counts.to_csv(self.preset_diagnostics_dir / files["annotation_counts"], index=False)
+        artifact.preset_steps.to_csv(self.preset_diagnostics_dir / files["preset_steps"], index=False)
+        artifact.preset_ticker_steps.to_csv(self.preset_diagnostics_dir / files["preset_ticker_steps"], index=False)
+        artifact.preset_hits.to_csv(self.preset_diagnostics_dir / files["preset_hits"], index=False)
+
+        manifest = {
+            **artifact.manifest,
+            "date_key": date_key,
+            "trade_date": artifact.manifest.get("trade_date") or trade_date_iso,
+            "files": files,
+        }
+        with (self.preset_diagnostics_dir / "latest_manifest.json").open("w", encoding="utf-8") as handle:
+            json.dump(manifest, handle, ensure_ascii=False, indent=2)
 
     def _load_frame(self, path: Path) -> pd.DataFrame | None:
         if not path.exists():
@@ -294,6 +340,64 @@ class DataSnapshotStore:
             return None
         with path.open("r", encoding="utf-8") as handle:
             return json.load(handle)
+
+    def _load_json_for_date_or_latest(self, directory: Path, date_key: str) -> dict[str, object] | None:
+        dated = self._load_json(directory / f"{date_key}.json")
+        if dated is not None:
+            return dated
+        latest = self._load_json(directory / "latest.json")
+        if latest is not None and self._payload_matches_date_key(latest, date_key):
+            return latest
+        return None
+
+    def _payload_matches_date_key(self, payload: dict[str, object], date_key: str) -> bool:
+        raw = payload.get("trade_date")
+        if raw is None:
+            return False
+        parsed = pd.to_datetime(raw, errors="coerce")
+        return bool(pd.notna(parsed) and pd.Timestamp(parsed).strftime("%Y%m%d") == date_key)
+
+    def _output_stem(self, date_key: str, mode: object) -> str | None:
+        normalized = str(mode or "daily_history").strip().lower()
+        if normalized == "latest_only":
+            return "latest"
+        if normalized == "daily_history":
+            return date_key
+        if normalized in {"on_demand", "disabled"}:
+            return None
+        return date_key
+
+    def _apply_run_retention(self) -> None:
+        self._prune_date_keyed_files(
+            self.eligible_snapshot_dir,
+            suffix=".csv",
+            keep_count=self.eligible_snapshot_retention_count,
+        )
+        self._prune_date_keyed_files(
+            self.metadata_dir,
+            suffix=".json",
+            keep_count=self.run_metadata_retention_count,
+        )
+
+    def _prune_date_keyed_files(self, directory: Path, *, suffix: str, keep_count: int | None) -> None:
+        if keep_count is None:
+            return
+        candidates = sorted(
+            path
+            for path in directory.iterdir()
+            if path.is_file() and path.suffix == suffix and path.stem.isdigit() and len(path.stem) == 8
+        )
+        for path in candidates[: max(0, len(candidates) - keep_count)]:
+            path.unlink()
+
+    def _normalize_retention_count(self, value: int | None) -> int | None:
+        if value is None:
+            return None
+        try:
+            count = int(value)
+        except (TypeError, ValueError):
+            return None
+        return count if count > 0 else None
 
     def _recent_market_summaries(self, date_key: str, lookback: int = 10) -> list[dict[str, object]]:
         candidates = sorted(

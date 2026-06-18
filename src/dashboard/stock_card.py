@@ -248,12 +248,13 @@ class StockCardGenerator:
         return len(checks) - len(fail), len(checks), fail
 
     def _setup_state(self, ctx: "_CardContext") -> dict[str, object]:
-        pivot, _ = self._pivot(ctx)
+        pivot, pivot_date = self._pivot(ctx)
         base_depth, base_len, below_high = self._base(ctx)
         depths = self._depths(ctx)
         candidates: list[str] = []
         basis: dict[str, float] = {}
-        if base_len >= 25 and self._is_num(base_depth) and base_depth <= 35.0 and self._is_num(below_high) and below_high <= 5.0:
+        pivot_breakout = self._is_pivot_breakout_setup(ctx, pivot_date, base_len, base_depth, below_high)
+        if pivot_breakout:
             candidates.append("PIVOT_BREAKOUT")
             basis["PIVOT_BREAKOUT"] = self._buy_price(pivot)
         reclaim = self._reclaim_ref(ctx, pivot)
@@ -265,7 +266,7 @@ class StockCardGenerator:
             candidates.append("UR")
             basis["UR"] = self._buy_price(ur[1])
         pullback = self._pullback_ref(ctx)
-        if pullback is not None:
+        if pullback is not None and not pivot_breakout:
             candidates.append("PULLBACK")
             basis["PULLBACK"] = self._buy_price(pullback[1])
         candidates = [candidate for candidate in candidates if not self._is_expired_candidate(ctx, candidate, basis.get(candidate))]
@@ -278,7 +279,7 @@ class StockCardGenerator:
             "base_depth": base_depth,
             "base_len": base_len,
             "below_high": below_high,
-            "pullback_ref": "NA" if pullback is None else f"{pullback[0].strftime('%m%d')}({self._price(pullback[2])})",
+            "pullback_ref": "NA" if pullback is None else f"{pullback[3].strftime('%m%d')}({self._price(pullback[2])})",
             "ur_ref": "NA" if ur is None else f"{ur[0].strftime('%m%d')}({self._price(ur[2])})",
         }
 
@@ -439,11 +440,11 @@ class StockCardGenerator:
         rows = [(pd.Timestamp(idx), float(row["high"]), float(row["low"])) for idx, row in recent.iterrows() if "U" in str(row["flags"])]
         return rows[-1] if rows else None
 
-    def _pullback_ref(self, ctx: "_CardContext") -> tuple[pd.Timestamp, float, float] | None:
+    def _pullback_ref(self, ctx: "_CardContext") -> tuple[pd.Timestamp, float, float, pd.Timestamp] | None:
         if self._stage(ctx) != "Stage2":
             return None
         recent = ctx.source.tail(5)
-        candidates: list[tuple[pd.Timestamp, float, float]] = []
+        candidates: list[tuple[pd.Timestamp, float, float, pd.Timestamp]] = []
         for idx, row in recent.iterrows():
             ema = float(ctx.indicators.loc[idx, "ema21_close"])
             sma = float(ctx.indicators.loc[idx, "sma50"])
@@ -456,9 +457,40 @@ class StockCardGenerator:
             if not reversal.empty:
                 rev_idx = pd.Timestamp(reversal.index[-1])
                 zone = ctx.source.loc[idx:rev_idx].iloc[:-1]
-                pullback_low = low if zone.empty else float(zone["low"].min())
-                candidates.append((rev_idx, float(ctx.source.loc[rev_idx, "high"]), pullback_low))
+                if zone.empty:
+                    pullback_low = low
+                    pullback_low_date = pd.Timestamp(idx)
+                else:
+                    pullback_low_date = pd.Timestamp(zone["low"].idxmin())
+                    pullback_low = float(zone.loc[pullback_low_date, "low"])
+                candidates.append((rev_idx, float(ctx.source.loc[rev_idx, "high"]), pullback_low, pullback_low_date))
         return candidates[-1] if candidates else None
+
+    def _is_pivot_breakout_setup(
+        self,
+        ctx: "_CardContext",
+        pivot_date: pd.Timestamp,
+        base_len: int,
+        base_depth: float,
+        below_high: float,
+    ) -> bool:
+        classic_base = (
+            base_len >= 25
+            and self._is_num(base_depth)
+            and base_depth <= 35.0
+            and self._is_num(below_high)
+            and below_high <= 5.0
+        )
+        if classic_base:
+            return True
+        if pd.Timestamp(pivot_date).normalize() != ctx.end.normalize() or len(ctx.source) < 2:
+            return False
+        prior_window = ctx.source.iloc[:-1].tail(min(65, len(ctx.source) - 1))
+        if prior_window.empty:
+            return False
+        prior_high = float(prior_window["high"].max())
+        current_close = self._display_price_value(ctx.close)
+        return bool(self._is_num(current_close) and current_close > self._display_price_value(prior_high))
 
     def _struct_stop(self, ctx: "_CardContext", basis: float) -> tuple[float, pd.Timestamp]:
         lows = ctx.source["low"].tail(65)

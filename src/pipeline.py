@@ -14,6 +14,7 @@ from src.configuration import load_settings
 from src.dashboard.market_context import MarketContextConfig
 from src.dashboard.market import MarketConditionConfig, MarketConditionResult, MarketConditionScorer
 from src.dashboard.market_report import MarketReportConfig
+from src.dashboard.preset_diagnostics import PresetDiagnosticsArtifact, build_preset_diagnostics
 from src.dashboard.radar import RadarConfig, RadarResult, RadarViewModelBuilder
 from src.dashboard.watchlist import ScanCardViewModel, WatchlistViewModelBuilder
 from src.data.cache import CacheLayer
@@ -46,6 +47,7 @@ from src.scoring.industry import IndustryScoreConfig, IndustryScorer
 from src.scoring.rs import RSConfig, RSScorer
 from src.scoring.vcs import VCSCalculator, VCSConfig
 from src.utils import StartupTimer
+from src.watchlist_presets import load_watchlist_preset_configs
 
 VCP_3T_ARTIFACT_COLUMNS = (
     "vcp_t1_depth_pct",
@@ -127,6 +129,7 @@ class ResearchPlatform:
         self.settings = load_settings(config_path)
         app_settings = self.settings.get("app", {})
         data_settings = self.settings.get("data", {})
+        retention_settings = data_settings.get("retention", {})
         universe_settings = self.settings.get("universe", {})
         discovery_settings = self.settings.get("universe_discovery", {})
 
@@ -138,6 +141,16 @@ class ResearchPlatform:
             self.root / app_settings.get("snapshot_dir", "data_runs"),
             market_report_config=MarketReportConfig.from_dict(self.settings.get("market", {}).get("market_report", {})),
             market_context_config=MarketContextConfig.from_dict(market_context_settings),
+            eligible_snapshot_retention_count=self._optional_positive_int(
+                retention_settings.get("eligible_snapshot_runs")
+                if isinstance(retention_settings, dict)
+                else None
+            ),
+            run_metadata_retention_count=self._optional_positive_int(
+                retention_settings.get("run_metadata_runs")
+                if isinstance(retention_settings, dict)
+                else None
+            ),
         )
         self.allow_sample_fallback = bool(app_settings.get("use_sample_data_if_fetch_fails", False))
 
@@ -217,6 +230,13 @@ class ResearchPlatform:
             settings["industry_major_stocks"] = majors
         return settings
 
+    def _optional_positive_int(self, value: object) -> int | None:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed > 0 else None
+
     def _mark_timing(self, milestone: str, **fields: object) -> None:
         if self.startup_timer is not None:
             self.startup_timer.mark(milestone, **fields)
@@ -289,6 +309,9 @@ class ResearchPlatform:
             watchlist_cards = self.watchlist_builder.build_scan_cards(scan_result.watchlist, scan_result.hits)
             earnings_today = self.watchlist_builder.build_earnings_today(eligible_snapshot)
 
+        with self._timed("pipeline.preset_diagnostics.build", watchlist=len(watchlist), scan_hits=len(scan_result.hits)):
+            preset_diagnostics = self._build_preset_diagnostics_artifact(watchlist, scan_result.hits, snapshot)
+
         with self._timed("pipeline.radar.build"):
             radar_histories = self._build_indicator_histories(price_batch.histories, self.radar_builder.required_symbols())
             radar_result = self.radar_builder.build(radar_histories, benchmark_history)
@@ -313,6 +336,7 @@ class ResearchPlatform:
                 market_result,
                 radar_result,
                 scan_result.hits,
+                preset_diagnostics,
                 active_symbols,
                 manual_symbols,
                 universe_mode,
@@ -498,6 +522,21 @@ class ResearchPlatform:
             normalized_symbols,
             period=resolved_period,
             force_refresh=force_refresh,
+        )
+
+    def _build_preset_diagnostics_artifact(
+        self,
+        watchlist: pd.DataFrame,
+        scan_hits: pd.DataFrame,
+        snapshot: pd.DataFrame,
+    ) -> PresetDiagnosticsArtifact:
+        return build_preset_diagnostics(
+            config_path=self.config_path,
+            scan_config=self.scan_config,
+            watchlist=watchlist,
+            scan_hits=scan_hits,
+            presets=load_watchlist_preset_configs(str(self.config_path), self.scan_config),
+            trade_date=self._latest_trade_date_from_snapshot(snapshot),
         )
 
     def _saved_run_watchlist_frames(
@@ -991,6 +1030,7 @@ class ResearchPlatform:
         market_result: MarketConditionResult,
         radar_result: RadarResult,
         scan_hits: pd.DataFrame,
+        preset_diagnostics: PresetDiagnosticsArtifact | None,
         requested_symbols: list[str],
         manual_symbols_input: list[str],
         universe_mode: str,
@@ -1023,6 +1063,7 @@ class ResearchPlatform:
             scan_hits=scan_hits,
             market_result=market_result,
             radar_result=radar_result,
+            preset_diagnostics=preset_diagnostics,
             persist_watchlist=self.persist_watchlist_snapshot,
         )
         return str(run_dir)

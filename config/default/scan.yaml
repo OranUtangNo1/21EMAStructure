@@ -126,7 +126,7 @@
   - filter_name: Trend Template
     display_name: Trend Template
   preset_csv_export:
-    enabled: true
+    enabled: false
     output_dir: data_runs/preset_exports
     write_details: true
     top_ticker_limit: 5

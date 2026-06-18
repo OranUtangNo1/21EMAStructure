@@ -73,6 +73,10 @@ def test_load_settings_accepts_config_directory_paths() -> None:
 def test_default_settings_include_builtin_watchlist_presets() -> None:
     settings = load_settings()
 
+    assert settings["scan"]["preset_csv_export"]["enabled"] is False
+    assert settings["data"]["retention"]["eligible_snapshot_runs"] == 5
+    assert settings["data"]["retention"]["run_metadata_runs"] == 5
+
     presets = settings["scan"]["watchlist_presets"]
     preset_names = [preset["preset_name"] for preset in presets]
 
@@ -199,6 +203,7 @@ def test_default_settings_include_annotation_and_entry_signal_status_maps() -> N
 
     annotation_status_map = settings["scan"]["annotation_filter_status_map"]
     signal_status_map = settings["entry_signals"]["signal_status_map"]
+    signal_output = settings["entry_signals"]["output"]
     context_guard = settings["entry_signals"]["context_guard"]
     orderly_pool = settings["entry_signals"]["definitions"]["orderly_pullback_entry"]["pool"]
 
@@ -207,6 +212,7 @@ def test_default_settings_include_annotation_and_entry_signal_status_maps() -> N
     assert annotation_status_map["Industry Leadership Gate"] == "enabled"
     assert annotation_status_map["Recent Power Gap"] == "enabled"
     assert annotation_status_map["Trend Template"] == "enabled"
+    assert signal_output["mode"] == "latest_only"
     assert set(annotation_status_map) == {
         "Stage 2 Quality Score",
         "Mature / Late Stage Risk Filter",

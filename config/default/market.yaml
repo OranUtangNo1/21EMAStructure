@@ -49,6 +49,7 @@ market:
     distribution_pressure_count: 5
   market_report:
     output:
+      mode: latest_only
       write_json: true
       write_markdown: true
     horizons:

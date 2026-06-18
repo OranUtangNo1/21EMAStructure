@@ -176,7 +176,7 @@ Manual selected-preset export CSV behavior:
 
 Preset tracking behavior:
 
-- each full pipeline recompute writes preset CSV files when `scan.preset_csv_export.enabled` is true
+- each full pipeline recompute writes preset CSV files only when `scan.preset_csv_export.enabled` is explicitly true; the default is false
 - each artifact load syncs export-enabled preset detections into `data_runs/tracking.db`, including same-day saved-run restores
 - same-day saved-run restore uses the saved watchlist and scan-hit artifacts for idempotent detection registration
 - tracking sync is automatic and separate from manual CSV actions
@@ -291,7 +291,7 @@ Entry plans are generated as EntrySignal outputs for user review only; automated
 
 Valid `Ready Now` plans are persisted to `signal_entry_event` for outcome review. Tracking refresh updates those event rows with fixed-horizon returns, TP1/SL hit flags, first outcome, result R, and 20D / 21D maximum gain/drawdown. These event outcomes are diagnostics for EntrySignal calibration and do not represent broker orders or realized P&L.
 
-On app artifact load, the startup-selected EntrySignal set is also evaluated and exported to `data_runs/entry_signals/` as the date-keyed `YYYYMMDD_evaluations.csv` review artifact. Bucket-specific CSV and summary JSON write paths remain available in the runner but are disabled by default. `data_runs/tracking.db` remains the durable source for pool state, evaluations, and entry events.
+On app artifact load, the startup-selected EntrySignal set is also evaluated and exported to `data_runs/entry_signals/latest_evaluations.csv` by default. `entry_signals.output.mode=daily_history` keeps the older date-keyed `YYYYMMDD_evaluations.csv` behavior, while `on_demand` and `disabled` suppress startup file writes. Bucket-specific CSV and summary JSON write paths remain available in the runner but are disabled by default. `data_runs/tracking.db` remains the durable source for pool state, evaluations, and entry events.
 
 ## 5. RS Radar
 
@@ -588,7 +588,7 @@ The underlying result object may still carry `result.s5th_series`, but the activ
 
 ### 7.8 Daily market document
 
-The pipeline may persist a deterministic daily AI-input market document under `data_runs/market_documents/`. The final report-writing skill may later write the human-facing report under `data_runs/market_reports/`.
+The pipeline may persist a deterministic AI-input market document under `data_runs/market_documents/` according to `market_report.output.mode`. The default mode writes `latest.md` and `latest.json`. The final report-writing skill may later write the human-facing report under `data_runs/market_reports/`.
 
 The active Market Dashboard does not render this document or the final report yet. The current UI continues to render the Market Conditions hero, metric panels, Core / External snapshots, and Factors vs SP500 sections described above.
 

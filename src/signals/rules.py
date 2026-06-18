@@ -4,6 +4,7 @@ from dataclasses import dataclass, field as dc_field
 
 
 ENTRY_SIGNAL_STATUS_VALUES = ("enabled", "disabled")
+ENTRY_SIGNAL_OUTPUT_MODE_VALUES = ("daily_history", "latest_only", "on_demand", "disabled")
 ENTRY_SIGNAL_REGISTRY: dict[str, "EntrySignalDefinition"] = {}
 
 
@@ -121,6 +122,11 @@ class EntrySignalContextGuardConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class EntrySignalOutputConfig:
+    mode: str = "daily_history"
+
+
+@dataclass(frozen=True, slots=True)
 class EntrySignalDefinition:
     signal_key: str
     display_name: str
@@ -140,6 +146,7 @@ class EntrySignalConfig:
     definitions: dict[str, EntrySignalDefinition] = dc_field(default_factory=dict)
     status_map: dict[str, str] = dc_field(default_factory=dict)
     default_selected_signal_names: tuple[str, ...] | None = None
+    output: EntrySignalOutputConfig = dc_field(default_factory=EntrySignalOutputConfig)
     context_guard: EntrySignalContextGuardConfig = dc_field(
         default_factory=lambda: EntrySignalContextGuardConfig(
             enabled=False,
@@ -165,6 +172,7 @@ class EntrySignalConfig:
             )
             if "default_selected_signal_names" in data
             else None,
+            output=_normalize_output_config(data.get("output")),
             context_guard=_normalize_context_guard_config(data.get("context_guard")),
         )
 
@@ -494,6 +502,19 @@ def _normalize_context_guard_config(raw_value: object) -> EntrySignalContextGuar
         earnings_today_field=str(earnings_data.get("today_field", "")).strip() or None,
         signal_market_score_thresholds=signal_market_score_thresholds,
     )
+
+
+def _normalize_output_config(raw_value: object) -> EntrySignalOutputConfig:
+    if raw_value is None:
+        return EntrySignalOutputConfig()
+    if not isinstance(raw_value, dict):
+        raise ValueError("entry_signals.output must be a mapping")
+    mode = str(raw_value.get("mode", "daily_history")).strip().lower().replace("-", "_").replace(" ", "_")
+    if mode not in ENTRY_SIGNAL_OUTPUT_MODE_VALUES:
+        raise ValueError(
+            f"entry_signals.output.mode must be one of: {', '.join(ENTRY_SIGNAL_OUTPUT_MODE_VALUES)}"
+        )
+    return EntrySignalOutputConfig(mode=mode)
 
 
 def _normalize_signal_status_map(

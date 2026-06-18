@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 
-SCHEMA_VERSION = "v1.0"
+SCHEMA_VERSION = "v1.0.1"
 SECTOR_TICKERS = frozenset({"XLB", "XLC", "XLE", "XLF", "XLI", "XLK", "XLP", "XLRE", "XLU", "XLV", "XLY"})
 
 
@@ -15,6 +15,7 @@ class MarketContextConfig:
     output_dir: str = "data_runs/market_context"
     write_markdown: bool = True
     write_json: bool = True
+    output_mode: str = "daily_history"
     industry_top_n: int = 8
     industry_major_stocks: dict[str, str] = field(default_factory=dict)
 
@@ -27,9 +28,15 @@ class MarketContextConfig:
             output_dir=str(output_map.get("dir", data.get("output_dir", "data_runs/market_context"))),
             write_markdown=bool(output_map.get("write_markdown", data.get("write_markdown", True))),
             write_json=bool(output_map.get("write_json", data.get("write_json", True))),
+            output_mode=cls._output_mode(output_map.get("mode", data.get("output_mode")), "daily_history"),
             industry_top_n=max(1, int(data.get("industry_top_n", 8))),
             industry_major_stocks=cls._major_map(data.get("industry_major_stocks")),
         )
+
+    @staticmethod
+    def _output_mode(value: object, default: str) -> str:
+        mode = str(value or default).strip().lower()
+        return mode if mode in {"daily_history", "latest_only", "on_demand", "disabled"} else default
 
     @staticmethod
     def _major_map(payload: object) -> dict[str, str]:

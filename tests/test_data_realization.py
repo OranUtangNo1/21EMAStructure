@@ -8,6 +8,8 @@ from pathlib import Path
 import pandas as pd
 
 from src.dashboard.market import MarketConditionResult
+from src.dashboard.market_context import MarketContextConfig
+from src.dashboard.market_report import MarketReportConfig
 from src.dashboard.radar import RadarResult
 from src.data.cache import CacheLayer
 from src.data.quality import append_data_quality, summarize_data_source_label
@@ -105,6 +107,39 @@ def test_snapshot_store_can_skip_watchlist_csv_output() -> None:
         assert loaded.watchlist is None
         assert loaded.metadata is not None
         assert loaded.metadata["watchlist_persisted"] is False
+
+
+def test_snapshot_store_prunes_run_restore_artifacts_by_retention_count() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        store = DataSnapshotStore(
+            tmp_dir,
+            eligible_snapshot_retention_count=2,
+            run_metadata_retention_count=2,
+        )
+
+        for trade_date in pd.to_datetime(["2026-04-08", "2026-04-09", "2026-04-10"]):
+            snapshot = pd.DataFrame({"trade_date": [trade_date], "close": [101.5]}, index=["AAA"])
+            store.save_run(
+                snapshot,
+                snapshot.copy(),
+                pd.DataFrame({"vcs": [88.0]}, index=["AAA"]),
+                pd.DataFrame({"ticker": ["AAA"], "source": ["live"], "status": ["ok"]}),
+                {"trade_date": trade_date.isoformat(), "data_source_label": "live"},
+                persist_watchlist=False,
+            )
+
+        root = Path(tmp_dir)
+        assert not (root / "eligible_snapshot" / "20260408.csv").exists()
+        assert not (root / "run_metadata" / "20260408.json").exists()
+        assert (root / "eligible_snapshot" / "20260409.csv").exists()
+        assert (root / "eligible_snapshot" / "20260410.csv").exists()
+        assert (root / "run_metadata" / "20260409.json").exists()
+        assert (root / "run_metadata" / "20260410.json").exists()
+
+        loaded = store.load_latest_run()
+        assert loaded.metadata is not None
+        assert loaded.metadata["date_key"] == "20260410"
+        assert loaded.eligible_snapshot is not None
 
 
 def test_summarize_data_source_label_handles_mixed_sources() -> None:
@@ -244,6 +279,44 @@ def test_snapshot_store_loads_latest_run_with_dashboard_payloads() -> None:
         assert "market_snapshot" in loaded.market_metadata
         assert "sector_leaders" in loaded.radar_metadata
         assert list(loaded.scan_hits["ticker"]) == ["AAA"]
+
+
+def test_snapshot_store_latest_only_market_ai_inputs_restore_from_latest() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        store = DataSnapshotStore(
+            tmp_dir,
+            market_report_config=MarketReportConfig(output_mode="latest_only"),
+            market_context_config=MarketContextConfig(output_mode="latest_only"),
+        )
+        trade_date = pd.Timestamp("2026-04-08")
+        snapshot = pd.DataFrame({"trade_date": [trade_date], "close": [101.5]}, index=["AAA"])
+        eligible_snapshot = snapshot.copy()
+        watchlist = pd.DataFrame({"vcs": [88.0]}, index=["AAA"])
+        fetch_status = pd.DataFrame(
+            [{"symbol": "AAA", "dataset": "price", "source": "live", "has_data": True, "fetched_at": None, "note": None}]
+        )
+
+        store.save_run(
+            snapshot,
+            eligible_snapshot,
+            watchlist,
+            fetch_status,
+            {"data_source_label": "live", "config_path": "config/default.yaml", "manual_symbols_input": [], "requested_symbols": ["AAA"]},
+            scan_hits=pd.DataFrame([{"ticker": "AAA", "kind": "scan", "name": "Momentum 97"}]),
+            market_result=_sample_market_result(trade_date),
+            radar_result=_sample_radar_result(),
+        )
+
+        loaded = store.load_latest_run()
+
+        assert (Path(tmp_dir) / "market_documents" / "latest.md").exists()
+        assert (Path(tmp_dir) / "market_documents" / "latest.json").exists()
+        assert (Path(tmp_dir) / "market_context" / "latest.md").exists()
+        assert (Path(tmp_dir) / "market_context" / "latest.json").exists()
+        assert not (Path(tmp_dir) / "market_documents" / "20260408.md").exists()
+        assert not (Path(tmp_dir) / "market_context" / "20260408.md").exists()
+        assert loaded.market_report_metadata is not None
+        assert loaded.market_report_metadata["trade_date"] == "2026-04-08"
 
 
 def test_snapshot_store_preserves_eligible_snapshot_columns_for_saved_run() -> None:

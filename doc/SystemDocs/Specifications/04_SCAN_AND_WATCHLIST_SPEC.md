@@ -149,8 +149,8 @@ Current preset behavior:
 - `values` stores the watchlist control fields plus an editable `duplicate_rule` payload
 - the active UI supports save, load, update, and delete
 - built-in presets use `preset_status` to control UI visibility and automatic export participation
-- built-in presets with `preset_status: enabled` appear in the preset picker and are included in automatic preset CSV export and preset-hit listing
-- saved custom presets are included in preset-hit listing and preset CSV export
+- built-in presets with `preset_status: enabled` appear in the preset picker and are included in preset-hit listing and preset CSV export when that export is run
+- saved custom presets are included in preset-hit listing and preset CSV export when that export is run
 - built-in presets can be loaded and exported but not deleted or updated from the UI
 - at most 10 presets are stored per config namespace
 - preset load drops any saved preset that references scan names no longer available in the current config
@@ -236,7 +236,9 @@ The Watchlist page exposes a `Preset Hits` panel that lists tickers that satisfy
 
 The preset export contract treats `preset_summary.csv` as the user-facing aggregate and `preset_hits.csv` as normalized hit detail for analysis. `preset_hits.csv` preserves the preset-level lineage needed for later AI analysis and tracking joins. `preset_details.csv` is compatibility wide output and should not be treated as the primary analysis artifact.
 
-Automatic preset CSV export runs after a full pipeline recompute and writes under `scan.preset_csv_export.output_dir` using the trade-date folder. Saved-run restore does not create new preset CSV files. The Watchlist page also has a manual `Write preset CSV files` action that writes the same files.
+Preset CSV export is manual by default. The Watchlist page `Write preset CSV files` action writes under `scan.preset_csv_export.output_dir` using the trade-date folder. Automatic preset CSV export is disabled by default and runs after a full pipeline recompute only when `scan.preset_csv_export.enabled=true`. Saved-run restore does not create new preset CSV files.
+
+Full pipeline recompute also writes latest-only preset diagnostics under `data_runs/preset_diagnostics/`. These files are machine-oriented design-validation artifacts, not readable reports. `latest_preset_steps.csv` stores one row per preset condition step with input, pass, and output counts. `latest_preset_ticker_steps.csv` stores one row per preset x ticker x step with input eligibility, step pass state, cumulative pass state, hit count, and hit names. `latest_preset_hits.csv` stores final preset x ticker hits. `latest_scan_counts.csv` and `latest_annotation_counts.csv` store the run-level scan and annotation counts. `latest_manifest.json` stores schema, trade date, config path, row counts, and file names.
 
 ### 3.5 Preset tracking database
 

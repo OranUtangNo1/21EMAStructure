@@ -17,6 +17,7 @@
 - Treat implementation files and `config/default.yaml` as the source of truth for behavior.
 - Use `doc/SystemDocs/Specifications/00_INDEX.md` as the navigation entry for numbered design docs.
 - Use `doc/SystemDocs/Scan/` as the source of truth for per-scan definitions.
+- Use `doc/SystemDocs/Modularization/00_INDEX.md` as the central entry for the current modularization refactor specifications and work plan.
 - Keep architecture and behavior docs aligned under the Documentation Sync Rules below.
 
 ## Architecture Rules
@@ -55,6 +56,7 @@
 - `archived/` contains out-of-scope code and notes that are intentionally not active.
 - `config/` contains default and alternate configuration files.
 - `doc/SystemDocs/` contains the writable system specification set that must stay aligned with the active implementation.
+- `doc/SystemDocs/Modularization/` contains the current modularization refactor specifications, shared-data contracts, DB pause decisions, and work plan.
 - `doc/Archive/` contains read-only warehouse-style reference material such as original dashboard notes and legacy logic references.
 - `doc/ForCodexOutput/` contains user-requested answer documents and Codex-generated project notes intended for user review.
 - `doc/ForUsersOnly/` contains project documents reserved for user-managed reading and writing unless a task explicitly directs Codex to use them.
@@ -71,6 +73,7 @@
 - New UI files belong in `app/` or `src/dashboard/` depending on whether they are entrypoints or presentation helpers.
 - New configuration files belong in `config/`.
 - New numbered design documents belong in `doc/SystemDocs/Specifications/` and must be linked from `doc/SystemDocs/Specifications/00_INDEX.md`.
+- New modularization refactor specifications and work-plan updates belong in `doc/SystemDocs/Modularization/` and should be linked from `doc/SystemDocs/Modularization/00_INDEX.md`.
 - New per-scan documents belong in `doc/SystemDocs/Scan/` and should follow the strict scan spec format.
 - New answer-style documents requested by the user should be saved in `doc/ForCodexOutput/`.
 - User-only working documents should be kept in `doc/ForUsersOnly/`; do not read or edit them unless the task explicitly requires it.
@@ -90,6 +93,7 @@
 - Treat `doc/Archive/` as read-only warehouse material unless the user explicitly requests archive maintenance.
 - Keep active screening docs separate from archived entry/risk docs.
 - If numbered specs are added, moved, or repurposed, update `doc/SystemDocs/Specifications/00_INDEX.md` in the same pass.
+- During the modularization refactor, keep shared-data schema, service-boundary, DB-pause, and `as_of_date` contracts centralized in `doc/SystemDocs/Modularization/`.
 - Prefer ASCII-safe file edits by default. Only use non-ASCII text when it is explicitly needed and the write path has been verified to preserve UTF-8 without lossy replacement.
 - In this Windows Codex environment, if `rg` fails with `Access is denied`, switch immediately to `Get-ChildItem ... | Select-String`.
 - Preserve existing line endings when editing files; after edits, run `git diff --stat` and `git diff --check` to catch line-ending-only churn and trailing whitespace.

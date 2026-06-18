@@ -1,4 +1,6 @@
 entry_signals:
+  output:
+    mode: latest_only
   context_guard:
     enabled: true
     weak_market_score_threshold: 30.0

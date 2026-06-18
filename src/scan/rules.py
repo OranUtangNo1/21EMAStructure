@@ -329,9 +329,9 @@ class WatchlistPresetConfig:
 
 @dataclass(slots=True)
 class WatchlistPresetCsvExportConfig:
-    """Config for automatic preset CSV exports."""
+    """Config for preset CSV exports."""
 
-    enabled: bool = True
+    enabled: bool = False
     output_dir: str = "data_runs/preset_exports"
     write_details: bool = True
     top_ticker_limit: int = 5
@@ -346,7 +346,7 @@ class WatchlistPresetCsvExportConfig:
         if top_ticker_limit < 1:
             raise ValueError("preset_csv_export top_ticker_limit must be >= 1")
         return cls(
-            enabled=bool(data.get("enabled", True)),
+            enabled=bool(data.get("enabled", False)),
             output_dir=str(data.get("output_dir", "data_runs/preset_exports")).strip() or "data_runs/preset_exports",
             write_details=bool(data.get("write_details", True)),
             top_ticker_limit=top_ticker_limit,

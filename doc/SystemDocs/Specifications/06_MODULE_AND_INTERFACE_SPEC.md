@@ -116,7 +116,7 @@ This keeps settings, reusable calculations, and display-ready outputs separate.
 - `src/dashboard/stock_card.py`
     - stock-card Markdown generation from adjusted OHLCV histories
     - embeds compressed tape output from the same preprocessing path
-    - applies stock-card v1.0.1 setup expiry, pivot-date marker, and structural-stop distance floor rules
+    - applies stock-card v1.0.2 setup expiry, pivot-date marker, current-day pivot-breakout priority, display-value risk-plan rounding, and structural-stop distance floor rules
 - `src/dashboard/effectiveness.py`
     - export-enabled preset detection sync
     - scan-hit history persistence
@@ -241,7 +241,7 @@ The scan layer contract is:
 
 The active app uses raw `watchlist` plus `scan_hits` to rebuild cards and duplicate output from current watchlist selections.
 The persisted watchlist table keeps backward-compatible columns such as `duplicate_ticker`, `hit_scans`, and `annotation_hits`, and also exposes clearer aliases such as `backend_duplicate_ticker`, `backend_duplicate_rule`, `matched_scan_rules`, and `matched_annotation_filters`.
-The active app also builds preset-hit exports from built-in and saved custom preset definitions, then writes `preset_summary.csv`, `preset_hits.csv`, and `preset_details.csv` under `data_runs/preset_exports/<trade_date>/` when preset CSV export is enabled.
+The active app can build preset-hit exports from built-in and saved custom preset definitions, then write `preset_summary.csv`, `preset_hits.csv`, and `preset_details.csv` under `data_runs/preset_exports/<trade_date>/`. This is manual by default through the Watchlist page; startup automatic export runs only when `scan.preset_csv_export.enabled=true`.
 `earnings_today` remains part of `PlatformArtifacts`, but the active Watchlist UI currently hides the same-day earnings card.
 
 ### 3.6 Radar Interface
@@ -317,7 +317,7 @@ The scorer supports these calculation modes:
 
 `MarketReportMarkdownRenderer.render(report)` renders a Markdown market document from `MarketReportResult`. This Markdown is not the final human-facing report. The final report is expected to be produced by a report-writing skill that uses the market document as its only evidence source.
 
-`MarketContextBuilder.build(summary, history_summaries=None)` returns `MarketContextResult`. It consumes the saved market summary shape and emits the separate fixed-schema `MARKET_CONTEXT` v1.0 artifact for AI input. It does not replace `MarketReportBuilder` and does not write human-facing report prose.
+`MarketContextBuilder.build(summary, history_summaries=None)` returns `MarketContextResult`. It consumes the saved market summary shape and emits the separate fixed-schema `MARKET_CONTEXT` v1.0.1 artifact for AI input. It does not replace `MarketReportBuilder` and does not write human-facing report prose.
 
 `MarketContextMarkdownRenderer.render(context)` renders the fixed eight-section `MARKET_CONTEXT` Markdown artifact. `MarketContextMarkdownRenderer.render_json(context)` renders the corresponding JSON artifact.
 

@@ -108,7 +108,7 @@ def test_market_context_renderer_outputs_fixed_sections_and_gate() -> None:
     context = MarketContextBuilder().build(_summary(), history_summaries=[previous])
     markdown = MarketContextMarkdownRenderer().render(context)
 
-    assert markdown.startswith("# MARKET_CONTEXT | 2026-06-10 (Wed) | schema v1.0")
+    assert markdown.startswith("# MARKET_CONTEXT | 2026-06-10 (Wed) | schema v1.0.1")
     for section in ["M_GATE", "INDEX", "BREADTH", "SENTIMENT", "STYLE", "SECTOR_RS", "INDUSTRY_RS", "CHANGES_1W"]:
         assert f"## {section}" in markdown
     assert "VERDICT: GO" in markdown

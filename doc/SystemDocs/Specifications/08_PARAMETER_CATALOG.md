@@ -54,6 +54,14 @@ Archived final discretionary execution, sizing, and trade-management parameters 
 ### data.persist_research_snapshots
 - current default: `true`
 
+### data.retention.eligible_snapshot_runs
+- current default: `5`
+- after each successful run save, keeps only the latest N date-keyed files in `data_runs/eligible_snapshot/`
+
+### data.retention.run_metadata_runs
+- current default: `5`
+- after each successful run save, keeps only the latest N date-keyed files in `data_runs/run_metadata/`
+
 ### data.price_batch_size
 - current default: `80`
 
@@ -362,16 +370,16 @@ RS scoring also emits `rs_ratio_52w_high`, `rs_ratio_at_52w_high`, `rs_ratio_3y_
   - `duplicate_rule.mode: grouped_threshold` requires every scan in `required_scans` plus every group threshold in `optional_groups`
   - each grouped threshold item supports `group_name`, `scans`, and `min_hits`
   - duplicate-rule scan references must stay within the preset's `selected_scan_names`
-  - `preset_status: enabled` shows the preset in the UI and includes it in automatic preset exports
-  - `preset_status: hidden_enabled` hides the preset from the UI and still includes it in automatic preset exports
-  - `preset_status: disabled` hides the preset from the UI and excludes it from automatic preset exports
+  - `preset_status: enabled` shows the preset in the UI and includes it in preset export output when that export is run
+  - `preset_status: hidden_enabled` hides the preset from the UI and still includes it in preset export output when that export is run
+  - `preset_status: disabled` hides the preset from the UI and excludes it from preset export output
   - preset-selected annotation filters that are not currently enabled are dropped during config loading
   - a built-in preset that references any non-enabled scan is forced to `preset_status: disabled`
   - compatibility `export_enabled: false` is still accepted and maps to `preset_status: disabled`
-- `preset_csv_export`: automatic preset CSV export settings
-  - `enabled`: turn automatic batch export on or off after full pipeline recompute
+- `preset_csv_export`: preset CSV export settings
+  - `enabled`: current default `false`; turn startup automatic batch export on or off after full pipeline recompute
   - `output_dir`: root output directory for day-based export folders
-  - automatic export writes `preset_summary.csv` and `preset_hits.csv` for active built-in presets and saved custom presets
+  - preset export writes `preset_summary.csv` and `preset_hits.csv` for active built-in presets and saved custom presets
   - `write_details`: whether to also write the wide `preset_details.csv`
   - `top_ticker_limit`: compatibility setting; `preset_summary.csv` writes one row per output ticker and lists matching presets in `hit_presets`
 - `card_sections`: scan-based card definitions, display names, and optional `sort_columns`
@@ -380,6 +388,10 @@ RS scoring also emits `rs_ratio_52w_high`, `rs_ratio_at_52w_high`, `rs_ratio_3y_
 
 The `entry_signals` section controls the Entry Signals tab.
 
+- `output.mode`: current default `latest_only`; supported values are `daily_history`, `latest_only`, `on_demand`, and `disabled`
+  - `latest_only`: startup export writes `data_runs/entry_signals/latest_evaluations.csv`
+  - `daily_history`: startup export writes `data_runs/entry_signals/YYYYMMDD_evaluations.csv`
+  - `on_demand` or `disabled`: startup export evaluates signals but suppresses review CSV writes
 - `context_guard`: optional cross-signal safety layer applied after the signal-specific evaluator
   - `enabled`: turn the shared guard on or off
   - `weak_market_score_threshold`: cap detected signals below `Signal Detected` when `market_score` is below this value
@@ -474,8 +486,9 @@ The same `entry_ready.rr_ratio_min` value is used as the minimum acceptable `R/R
 Market Dashboard does not fetch or compute the former leadership ETF snapshot by default. Sector and industry leadership ranking belongs to RS Radar. Market Dashboard does compute `sector_relative_strength` for configured sector ETFs in the core universe so market documents can read sector rotation rank deltas.
 
 ### Market document
-- `market_report.output.write_json`: current default `true`; writes the AI-input market document to `data_runs/market_documents/YYYYMMDD.json`
-- `market_report.output.write_markdown`: current default `true`; writes a Markdown rendering of the AI-input market document to `data_runs/market_documents/YYYYMMDD.md`
+- `market_report.output.mode`: current default `latest_only`; supported values are `daily_history`, `latest_only`, `on_demand`, and `disabled`
+- `market_report.output.write_json`: current default `true`; writes the AI-input market document JSON using the configured output mode
+- `market_report.output.write_markdown`: current default `true`; writes a Markdown rendering of the same market document using the configured output mode
 - `market_report.horizons.short_days`: current default `5`
 - `market_report.horizons.medium_days`: current default `21`
 - `market_report.horizons.long_days`: current default `63`
@@ -501,9 +514,11 @@ Market Dashboard does not fetch or compute the former leadership ETF snapshot by
 
 ### Market context
 - `market_context.output.dir`: current default `data_runs/market_context`
-- `market_context.output.write_markdown`: current default `true`; writes `data_runs/market_context/YYYYMMDD.md`
-- `market_context.output.write_json`: current default `true`; writes `data_runs/market_context/YYYYMMDD.json`
+- `market_context.output.mode`: current default `latest_only`; supported values are `daily_history`, `latest_only`, `on_demand`, and `disabled`
+- `market_context.output.write_markdown`: current default `true`; writes Markdown using the configured output mode
+- `market_context.output.write_json`: current default `true`; writes JSON using the configured output mode
 - `market_context.industry_top_n`: current default `8`; controls the fixed top industry count rendered in `INDUSTRY_RS`
+- emitted schema: `v1.0.1`
 - `INDUSTRY_RS` row format: `tactRS|structRS63|dRank1W|majors`
 - `INDUSTRY_RS.dRank1W`: prior full-universe `STRUCT RS` rank minus current full-universe `STRUCT RS` rank; emits `NA` when comparable structural-rank history is unavailable
 
@@ -522,8 +537,10 @@ Market Dashboard does not fetch or compute the former leadership ETF snapshot by
 - `stock_card.output_dir`: current default `data_runs/stock_cards`
 - `stock_card.validate_snapshot_last_close`: current default `false`; standalone stock-card export does not require snapshot close matching unless this is enabled
 - `stock_card.compressed_tape.*`: nested compressed-tape settings used for the embedded `TAPE` section
-- emitted schema: `card-v1.0.1`
+- emitted schema: `card-v1.0.2`
+- stock-card metadata resolves `INDUSTRY_ETF` from configured industry major stocks first, then profile/snapshot industry names when a known industry-to-ETF mapping is available
 - non-pivot setup candidates expire when current close is more than 2% above the candidate basis
+- current-day pivot breakouts are prioritized over pullback candidates when the final close clears the prior 65-day high
 - structural stop candidates must be within -8% of basis and at least `max(1.0 * ATR14, 2.5%)` below basis
 
 ## 10. RS Radar

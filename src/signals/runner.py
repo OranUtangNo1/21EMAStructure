@@ -37,6 +37,17 @@ ENTRY_ACTION_WATCH_SETUP = "Watch Setup"
 ENTRY_ACTION_NEEDS_REVIEW = "Needs Review"
 ENTRY_ACTION_AVOID = "Avoid / Invalid"
 
+
+def _entry_signal_output_stem(date_key: str, output_mode: object) -> str | None:
+    mode = str(output_mode or "daily_history").strip().lower().replace("-", "_").replace(" ", "_")
+    if mode == "latest_only":
+        return "latest"
+    if mode == "daily_history":
+        return date_key
+    if mode in {"on_demand", "disabled"}:
+        return None
+    return date_key
+
 MISSING_PIECE_LABELS = {
     "weak_market_warning": "weak market warning",
     "earnings_today_warning": "earnings today warning",
@@ -153,6 +164,7 @@ class EntrySignalRunner:
         output_dir: str | Path,
         *,
         root_dir: str | Path | None = None,
+        output_mode: str = "daily_history",
         write_bucket_csvs: bool = False,
         write_summary_json: bool = False,
     ) -> EntrySignalExportResult:
@@ -165,26 +177,28 @@ class EntrySignalRunner:
         result = self.evaluate_active_pools(artifacts, selected, root_dir=root_dir)
         files: list[str] = []
 
-        all_path = output_path / f"{date_key}_evaluations.csv"
-        result.to_csv(all_path, index=False)
-        files.append(str(all_path))
+        output_stem = _entry_signal_output_stem(date_key, output_mode)
+        if output_stem is not None:
+            all_path = output_path / f"{output_stem}_evaluations.csv"
+            result.to_csv(all_path, index=False)
+            files.append(str(all_path))
 
         entry_ready_count = int((result["Action Bucket"] == ENTRY_ACTION_ENTRY_READY).sum()) if not result.empty else 0
         watch_setup_count = int((result["Action Bucket"] == ENTRY_ACTION_WATCH_SETUP).sum()) if not result.empty else 0
         needs_review_count = int((result["Action Bucket"] == ENTRY_ACTION_NEEDS_REVIEW).sum()) if not result.empty else 0
 
-        if write_bucket_csvs:
+        if write_bucket_csvs and output_stem is not None:
             for file_label, bucket in (
                 ("entry_ready", ENTRY_ACTION_ENTRY_READY),
                 ("watch_setup", ENTRY_ACTION_WATCH_SETUP),
                 ("needs_review", ENTRY_ACTION_NEEDS_REVIEW),
             ):
                 bucket_frame = result.loc[result["Action Bucket"] == bucket].copy() if not result.empty else result.copy()
-                bucket_path = output_path / f"{date_key}_{file_label}.csv"
+                bucket_path = output_path / f"{output_stem}_{file_label}.csv"
                 bucket_frame.to_csv(bucket_path, index=False)
                 files.append(str(bucket_path))
 
-        if write_summary_json:
+        if write_summary_json and output_stem is not None:
             summary = {
                 "date_key": date_key,
                 "trade_date": pd.Timestamp(trade_date).strftime("%Y-%m-%d") if trade_date is not None else None,
@@ -195,7 +209,7 @@ class EntrySignalRunner:
                 "needs_review_count": needs_review_count,
                 "files": [Path(file_name).name for file_name in files],
             }
-            summary_path = output_path / f"{date_key}_summary.json"
+            summary_path = output_path / f"{output_stem}_summary.json"
             with summary_path.open("w", encoding="utf-8") as handle:
                 json.dump(summary, handle, ensure_ascii=False, indent=2)
             files.append(str(summary_path))

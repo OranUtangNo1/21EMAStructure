@@ -40,7 +40,21 @@ def test_entry_signal_config_uses_definition_keys_and_status_map() -> None:
     assert definition.display_name == "Orderly Pullback Entry"
     assert definition.pool.detection_window_days == 10
     assert definition.risk_reward.stop.reference == "low_since_detection"
+    assert config.output.mode == "daily_history"
     assert not config.context_guard.enabled
+
+
+def test_entry_signal_config_loads_output_mode() -> None:
+    config = EntrySignalConfig.from_dict(
+        {
+            "output": {"mode": "latest-only"},
+            "definitions": {
+                "orderly_pullback_entry": _definition_payload("Orderly Pullback Entry"),
+            },
+        }
+    )
+
+    assert config.output.mode == "latest_only"
 
 
 def test_entry_signal_config_loads_context_guard() -> None:
@@ -521,6 +535,21 @@ def test_entry_signal_runner_builds_pool_and_persists_evaluation(tmp_path) -> No
     exported = pd.read_csv(evaluations_path)
     assert list(exported["Ticker"]) == ["AAA"]
     assert exported.iloc[0]["Action Bucket"] == "Entry Ready"
+
+    latest_export_dir = tmp_path / "data_runs" / "entry_signals_latest"
+    latest_export_result = runner.export_run_outputs(
+        artifacts,
+        ["orderly_pullback_entry"],
+        latest_export_dir,
+        root_dir=tmp_path,
+        output_mode="latest_only",
+    )
+    latest_evaluations_path = latest_export_dir / "latest_evaluations.csv"
+    assert latest_evaluations_path.exists()
+    assert not (latest_export_dir / "20260424_evaluations.csv").exists()
+    assert latest_export_result.files == (str(latest_evaluations_path),)
+    latest_exported = pd.read_csv(latest_evaluations_path)
+    assert list(latest_exported["Ticker"]) == ["AAA"]
 
     full_export_dir = tmp_path / "data_runs" / "entry_signals_full"
     full_export_result = runner.export_run_outputs(

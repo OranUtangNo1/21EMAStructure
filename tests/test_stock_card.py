@@ -5,7 +5,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 import pandas as pd
 
-from app.main import export_stock_cards_for_symbols
+from app.main import _stock_card_metadata_lookup, export_stock_cards_for_symbols
 from src.dashboard.stock_card import StockCardGenerator, StockCardMetadata
 from src.data.results import FetchStatus, PriceHistoryBatch
 from src.pipeline import PlatformArtifacts
@@ -63,6 +63,54 @@ def _artifacts() -> PlatformArtifacts:
 def _half_up(value: object, digits: int = 2) -> Decimal:
     quantizer = Decimal("1") if digits == 0 else Decimal("1").scaleb(-digits)
     return Decimal(str(value)).quantize(quantizer, rounding=ROUND_HALF_UP)
+
+
+def _breakout_pullback_history(dates: pd.DatetimeIndex) -> pd.DataFrame:
+    close = pd.Series([45.0 + index * 0.11 for index in range(len(dates))], index=dates)
+    history = pd.DataFrame(
+        {
+            "open": close - 0.40,
+            "high": close + 0.80,
+            "low": close - 0.80,
+            "close": close,
+            "adjusted_close": close,
+            "volume": [800_000 + (index % 11) * 10_000 for index in range(len(dates))],
+        },
+        index=dates,
+    )
+    history.iloc[-60, history.columns.get_loc("low")] = 40.00
+    last_rows = [
+        (68.40, 69.23, 66.77, 68.29, 900_000),
+        (70.30, 75.79, 65.20, 70.91, 1_500_000),
+        (69.51, 76.78, 69.02, 69.61, 1_000_000),
+        (71.48, 76.30, 69.47, 76.15, 1_100_000),
+        (76.34, 83.30, 75.23, 82.78, 1_700_000),
+    ]
+    for row, (open_, high, low, close_, volume) in zip(range(-5, 0), last_rows):
+        history.iloc[row, history.columns.get_loc("open")] = open_
+        history.iloc[row, history.columns.get_loc("high")] = high
+        history.iloc[row, history.columns.get_loc("low")] = low
+        history.iloc[row, history.columns.get_loc("close")] = close_
+        history.iloc[row, history.columns.get_loc("adjusted_close")] = close_
+        history.iloc[row, history.columns.get_loc("volume")] = volume
+    return history
+
+
+def _mock_indicator_frame(history: pd.DataFrame) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "stage_label": ["stage2_candidate"] * len(history),
+            "sma50": [70.00] * len(history),
+            "sma150": [58.00] * len(history),
+            "sma200": [54.00] * len(history),
+            "sma200_slope_1m_pct": [1.0] * len(history),
+            "ema21_close": [70.00] * len(history),
+            "atr": [3.00] * len(history),
+            "high_52w": [83.30] * len(history),
+            "low_52w": [19.64] * len(history),
+        },
+        index=history.index,
+    )
 
 
 def test_stock_card_generator_outputs_fixed_sections_and_embeds_tape() -> None:
@@ -129,10 +177,10 @@ def test_stock_card_expires_stale_non_pivot_candidates_and_uses_buy_ref_basis() 
     dates = pd.bdate_range("2025-03-03", periods=270)
     history = _history(dates)
     history.iloc[-65:, history.columns.get_loc("low")] = 30.0
-    history.iloc[-5:, history.columns.get_loc("open")] = [49.0, 50.0, 51.0, 58.0, 59.0]
-    history.iloc[-5:, history.columns.get_loc("high")] = [50.0, 51.0, 52.0, 59.0, 61.0]
-    history.iloc[-5:, history.columns.get_loc("low")] = [48.0, 49.0, 50.0, 57.0, 59.0]
-    history.iloc[-5:, history.columns.get_loc("close")] = [49.5, 50.5, 51.5, 58.5, 60.0]
+    history.iloc[-5:, history.columns.get_loc("open")] = [49.0, 50.0, 52.5, 58.0, 59.0]
+    history.iloc[-5:, history.columns.get_loc("high")] = [50.0, 51.0, 54.0, 61.5, 61.0]
+    history.iloc[-5:, history.columns.get_loc("low")] = [48.0, 49.0, 52.0, 57.0, 59.0]
+    history.iloc[-5:, history.columns.get_loc("close")] = [49.5, 50.5, 53.0, 58.5, 60.0]
     history.iloc[-5:, history.columns.get_loc("adjusted_close")] = history["close"].iloc[-5:]
 
     document = StockCardGenerator().build("AAA", history)
@@ -156,6 +204,52 @@ def test_stock_card_struct_stop_ignores_noise_inside_distance_floor() -> None:
     document = StockCardGenerator().build("AAA", history)
 
     assert "SL_CAND: struct=NA" in document.text
+
+
+def test_stock_card_prioritizes_current_day_pivot_breakout_over_pullback(monkeypatch) -> None:
+    dates = pd.bdate_range("2025-06-02", periods=270)
+    history = _breakout_pullback_history(dates)
+    generator = StockCardGenerator()
+    monkeypatch.setattr(generator.indicator_calculator, "calculate", lambda frame: _mock_indicator_frame(frame))
+
+    document = generator.build("AMKR", history)
+    candidate_line = next(line for line in document.text.splitlines() if line.startswith("CANDIDATES="))
+
+    assert candidate_line.startswith("CANDIDATES=PIVOT_BREAKOUT")
+    assert "PULLBACK" not in candidate_line
+    assert "## RISK_PLAN (basis: BUY=83.38)" in document.text
+    assert "PULLBACK_REF=0611(69.47)" in document.text
+
+
+def test_stock_card_metadata_falls_back_to_profile_industry(tmp_path) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "radar:",
+                "  industry_etfs:",
+                "  - ticker: SMH",
+                "    name: Semiconductor",
+                "    major_stocks: [NVDA, AVGO, AMD]",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    artifacts = _artifacts()
+    artifacts.snapshot.loc["BBB", "sector"] = "Technology"
+    artifacts.snapshot.loc["BBB", "industry"] = ""
+    artifacts.eligible_snapshot = artifacts.snapshot.copy()
+    artifacts.eligible_snapshot.loc["BBB", "industry"] = "Semiconductor Equipment & Materials"
+    artifacts.radar_result = type(
+        "RadarResult",
+        (),
+        {"industry_leaders": pd.DataFrame([{"TICKER": "SMH"}, {"TICKER": "XBI"}])},
+    )()
+
+    lookup = _stock_card_metadata_lookup(str(config_path), artifacts)
+
+    assert lookup["BBB"].industry_etf == "SMH"
+    assert lookup["BBB"].industry_rs_rank == 1
 
 
 def test_export_stock_cards_for_symbols_writes_manifest(tmp_path, monkeypatch) -> None:
