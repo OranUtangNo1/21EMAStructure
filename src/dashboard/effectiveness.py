@@ -288,7 +288,7 @@ def _load_tracking_price_histories(
     app_settings = settings.get("app", {}) if isinstance(settings.get("app", {}), dict) else {}
     data_settings = settings.get("data", {}) if isinstance(settings.get("data", {}), dict) else {}
     root = root_dir or Path(__file__).resolve().parents[2]
-    cache_dir = Path(str(app_settings.get("cache_dir", "data_cache"))).expanduser()
+    cache_dir = Path(str(data_settings.get("price_cache_dir", app_settings.get("cache_dir", "data_cache")))).expanduser()
     if not cache_dir.is_absolute():
         cache_dir = root / cache_dir
     provider = YFinancePriceDataProvider(

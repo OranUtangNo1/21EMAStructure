@@ -74,6 +74,7 @@ Purpose:
 
 - evaluate scan rules against a snapshot
 - keep one scan as one boolean output
+- compose each scan from named internal issue booleans
 - generate scan-hit records and preset hit views
 
 Inputs:
@@ -84,9 +85,11 @@ Inputs:
 
 Outputs:
 
-- scan boolean columns
 - scan-hit table
-- watchlist/preset hit tables
+- preset-hit table
+- aggregate issue diagnostics by date, scan, and issue
+
+External consumers should depend on `scan` and `preset` outputs. Issue-level ticker rows are internal implementation detail and should not be stored as full public artifacts because the row volume can grow quickly.
 
 ### StockCardService
 
@@ -94,6 +97,7 @@ Purpose:
 
 - generate the current stock-card format from a ticker price history
 - support historical cards by `as_of_date`
+- emit a canonical AI/system JSON payload for chart-analysis consumers while keeping Markdown as a compatibility rendering
 
 Inputs:
 
@@ -105,13 +109,16 @@ Inputs:
 Outputs:
 
 - stock-card Markdown document
+- stock-card JSON payload and JSON file
 - output path or in-memory document payload
+
+The JSON payload is the forward-compatible contract. Markdown is a rendering layer and may be disabled later when downstream consumers no longer require it.
 
 ### MarketService
 
 Purpose:
 
-- calculate market condition, RS Radar, and Market Context outputs from shared price data
+- calculate market condition and RS Radar outputs from shared price data
 - keep market component definitions extensible
 
 Inputs:
@@ -125,7 +132,10 @@ Outputs:
 
 - market condition result
 - radar result
-- market context artifact
+
+`market_context` is a downstream interpretation layer. It should read market/radar-style outputs and emit structured AI/system context instead of merging all module outputs into one package.
+
+The CLI user-facing market entrypoint should be unified as a market-environment action. Internally, market, radar, market-report input, and market_context remain separate modules/artifacts, but interactive users should not need to choose between market and radar as separate menu actions.
 
 ### EntrySignalService
 

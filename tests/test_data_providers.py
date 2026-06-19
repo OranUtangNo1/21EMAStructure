@@ -138,11 +138,11 @@ def test_snapshot_helpers_build_profile_and_fundamental_batches() -> None:
 def test_yfinance_price_provider_batches_downloads_and_merges_stale_cache(tmp_path, monkeypatch) -> None:
     cache = CacheLayer(tmp_path)
     stale_index = pd.to_datetime(["2026-03-27"])
-    cache.save_csv("prices_NVDA_18mo_1d", _normalized_history(300.0, stale_index))
-    cache.save_csv("prices_META_18mo_1d", _normalized_history(400.0, stale_index))
+    cache.save_csv("prices_NVDA_1d", _normalized_history(300.0, stale_index))
+    cache.save_csv("prices_META_1d", _normalized_history(400.0, stale_index))
     stale_timestamp = time.time() - 48 * 3600
-    os.utime(tmp_path / "prices_NVDA_18mo_1d.csv", (stale_timestamp, stale_timestamp))
-    os.utime(tmp_path / "prices_META_18mo_1d.csv", (stale_timestamp, stale_timestamp))
+    os.utime(tmp_path / "prices_NVDA_1d.csv", (stale_timestamp, stale_timestamp))
+    os.utime(tmp_path / "prices_META_1d.csv", (stale_timestamp, stale_timestamp))
 
     calls: list[tuple[tuple[str, ...], str]] = []
 
@@ -192,7 +192,7 @@ def test_yfinance_price_provider_batches_downloads_and_merges_stale_cache(tmp_pa
 def test_yfinance_price_provider_force_refresh_bypasses_fresh_cache(tmp_path, monkeypatch) -> None:
     cache = CacheLayer(tmp_path)
     cached_index = pd.to_datetime(["2026-03-27"])
-    cache.save_csv("prices_NVDA_18mo_1d", _normalized_history(300.0, cached_index))
+    cache.save_csv("prices_NVDA_1d", _normalized_history(300.0, cached_index))
 
     calls: list[tuple[tuple[str, ...], str]] = []
 
@@ -231,9 +231,9 @@ def test_yfinance_price_provider_uses_stale_cache_when_batch_fails(tmp_path, mon
     cache = CacheLayer(tmp_path)
     stale_index = pd.to_datetime(["2026-03-27"])
     stale_frame = _normalized_history(300.0, stale_index)
-    cache.save_csv("prices_NVDA_18mo_1d", stale_frame)
+    cache.save_csv("prices_NVDA_1d", stale_frame)
     stale_timestamp = time.time() - 48 * 3600
-    os.utime(tmp_path / "prices_NVDA_18mo_1d.csv", (stale_timestamp, stale_timestamp))
+    os.utime(tmp_path / "prices_NVDA_1d.csv", (stale_timestamp, stale_timestamp))
 
     class FakeYF:
         def download(self, *args, **kwargs):
@@ -256,6 +256,35 @@ def test_yfinance_price_provider_uses_stale_cache_when_batch_fails(tmp_path, mon
     assert result.statuses["NVDA"].source == "cache_stale"
     assert "RuntimeError" in (result.statuses["NVDA"].note or "")
     pd.testing.assert_frame_equal(result.histories["NVDA"], stale_frame)
+
+
+def test_yfinance_price_provider_migrates_legacy_period_cache_key(tmp_path, monkeypatch) -> None:
+    cache = CacheLayer(tmp_path)
+    cached_index = pd.to_datetime(["2026-03-27"])
+    cached_frame = _normalized_history(300.0, cached_index)
+    cache.save_csv("prices_NVDA_3y_1d", cached_frame)
+
+    class FakeYF:
+        def download(self, *args, **kwargs):
+            raise AssertionError("fresh legacy cache should avoid live download")
+
+    monkeypatch.setattr("src.data.providers.yf", FakeYF())
+
+    provider = YFinancePriceDataProvider(
+        cache,
+        technical_ttl_hours=12,
+        allow_stale_cache_on_failure=True,
+        batch_size=2,
+        max_retries=1,
+        request_sleep_seconds=0.0,
+        retry_backoff_multiplier=1.0,
+        incremental_period="5d",
+    )
+    result = provider.get_price_history(["NVDA"], period="3y")
+
+    assert result.statuses["NVDA"].source == "cache_fresh"
+    assert (tmp_path / "prices_NVDA_1d.csv").exists()
+    pd.testing.assert_frame_equal(result.histories["NVDA"], cached_frame)
 
 
 def test_yfinance_price_provider_suppresses_download_console_noise(tmp_path, monkeypatch, capsys) -> None:

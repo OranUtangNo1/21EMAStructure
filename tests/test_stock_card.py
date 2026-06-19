@@ -6,9 +6,10 @@ from decimal import Decimal, ROUND_HALF_UP
 import pandas as pd
 
 from app.main import _stock_card_metadata_lookup, export_stock_cards_for_symbols
-from src.dashboard.stock_card import StockCardGenerator, StockCardMetadata
-from src.data.results import FetchStatus, PriceHistoryBatch
+from src.dashboard.stock_card import StockCardGenerator, StockCardMetadata, _CardContext
 from src.pipeline import PlatformArtifacts
+from src.services.stock_card_service import StockCardService
+from src.services.price_store import PriceStore
 
 
 def _history(dates: pd.DatetimeIndex) -> pd.DataFrame:
@@ -130,6 +131,21 @@ def test_stock_card_generator_outputs_fixed_sections_and_embeds_tape() -> None:
     assert "## TAPE (tape-v1.0.1)" in document.text
     assert "## EVENTS_50D" in document.text
     assert "RV20=+" not in document.text
+    assert document.json_filename == "card_AAA_20260313.json"
+    assert document.payload["document_type"] == "stock_card"
+    assert document.payload["schema_version"] == "stock_card_json.v1"
+    assert document.payload["decision_core"]["setup_candidates"]
+    assert "risk_plan" in document.payload
+    assert "momo_vol" in document.payload
+    assert "volume" in document.payload
+    assert "compressed_tape" in document.payload
+    assert document.payload["compressed_tape"]["rows"]
+    assert "swlo10" in document.payload["levels"]
+    assert "depths" in document.payload["setup"]
+    assert document.payload["setup"]["vcp_definition"] == "vcp_tightening"
+    assert document.payload["risk_plan"]["struct_stop_source"]["kind"] == "swing_low_65d"
+    assert "p_vs_150sma" in document.payload["trend"]
+    assert "slope150_pct_per_day" in document.payload["trend"]
 
 
 def test_stock_card_marks_current_day_pivot_and_uses_display_buy_rounding() -> None:
@@ -206,6 +222,29 @@ def test_stock_card_struct_stop_ignores_noise_inside_distance_floor() -> None:
     assert "SL_CAND: struct=NA" in document.text
 
 
+def test_stock_card_struct_stop_uses_surviving_swing_low_not_nearest_bar() -> None:
+    dates = pd.bdate_range("2026-03-16", periods=70)
+    history = _history(dates)
+    history.iloc[-65:, history.columns.get_loc("low")] = 16.20
+    history.iloc[-7:, history.columns.get_loc("low")] = [16.10, 13.31, 16.00, 15.20, 15.57, 15.40, 15.77]
+    indicators = pd.DataFrame({"atr": [0.66] * len(history)}, index=history.index)
+    ctx = _CardContext(
+        ticker="AAL",
+        source=history,
+        metrics=pd.DataFrame(index=history.index),
+        indicators=indicators,
+        adjusted=False,
+        metadata=StockCardMetadata(),
+        tape_text="",
+    )
+
+    stop, stop_date, source_low = StockCardGenerator()._struct_stop(ctx, 16.21)
+
+    assert stop == 15.38
+    assert stop_date == history.index[-2]
+    assert source_low == 15.40
+
+
 def test_stock_card_prioritizes_current_day_pivot_breakout_over_pullback(monkeypatch) -> None:
     dates = pd.bdate_range("2025-06-02", periods=270)
     history = _breakout_pullback_history(dates)
@@ -252,12 +291,43 @@ def test_stock_card_metadata_falls_back_to_profile_industry(tmp_path) -> None:
     assert lookup["BBB"].industry_rs_rank == 1
 
 
-def test_export_stock_cards_for_symbols_writes_manifest(tmp_path, monkeypatch) -> None:
+def test_stock_card_service_maps_industry_from_radar_major_stocks(tmp_path) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "app:",
+                "  benchmark_symbol: SPY",
+                "data:",
+                f"  price_cache_dir: {str(tmp_path / 'price_cache').replace(chr(92), '/')}",
+                "radar:",
+                "  industry_etfs:",
+                "  - ticker: JETS",
+                "    name: Global Jets",
+                "    major_stocks: [DAL, UAL, AAL]",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    dates = pd.bdate_range("2025-03-03", periods=270)
+    store = PriceStore(tmp_path / "price_cache")
+    store.save("AAL", _history(dates))
+    store.save("SPY", _history(dates))
+    service = StockCardService.from_config(str(config_path))
+
+    document = service.build("AAL")
+
+    assert document.payload["meta"]["industry_etf"] == "JETS"
+
+
+def test_export_stock_cards_for_symbols_writes_manifest(tmp_path) -> None:
     config_path = tmp_path / "config.yaml"
     output_dir = tmp_path / "stock_cards"
     config_path.write_text(
         "\n".join(
             [
+                "data:",
+                f"  price_cache_dir: {str(tmp_path / 'price_cache').replace(chr(92), '/')}",
                 "stock_card:",
                 f"  output_dir: {str(output_dir).replace(chr(92), '/')}",
                 "radar:",
@@ -270,24 +340,46 @@ def test_export_stock_cards_for_symbols_writes_manifest(tmp_path, monkeypatch) -
         encoding="utf-8",
     )
     dates = pd.bdate_range("2025-03-03", periods=270)
-
-    class FakePlatform:
-        def __init__(self, config_path: str) -> None:
-            self.config_path = config_path
-
-        def load_price_histories(self, symbols: list[str], *, period: str | None = None, force_refresh: bool = False) -> PriceHistoryBatch:
-            return PriceHistoryBatch(
-                histories={"AAA": _history(dates)},
-                statuses={"AAA": FetchStatus(symbol="AAA", dataset="price", source="cache_fresh", has_data=True)},
-            )
-
-    monkeypatch.setattr("app.main.ResearchPlatform", FakePlatform)
+    PriceStore(tmp_path / "price_cache").save("AAA", _history(dates))
 
     result = export_stock_cards_for_symbols(str(config_path), _artifacts(), ["AAA"], source="manual_symbols")
 
     assert len(result.documents) == 1
     assert (output_dir / "20260313" / "card_AAA_20260313.md").exists()
+    assert (output_dir / "20260313" / "card_AAA_20260313.json").exists()
     manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
     assert manifest["schema_version"] == "stock_card_manifest_v1"
     assert manifest["documents"][0]["ticker"] == "AAA"
+    assert manifest["documents"][0]["json_filename"] == "card_AAA_20260313.json"
     assert manifest["missing"] == {}
+
+
+def test_export_stock_cards_for_symbols_supports_as_of_date(tmp_path) -> None:
+    config_path = tmp_path / "config.yaml"
+    output_dir = tmp_path / "stock_cards"
+    config_path.write_text(
+        "\n".join(
+            [
+                "data:",
+                f"  price_cache_dir: {str(tmp_path / 'price_cache').replace(chr(92), '/')}",
+                "stock_card:",
+                f"  output_dir: {str(output_dir).replace(chr(92), '/')}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    dates = pd.bdate_range("2025-03-03", periods=270)
+    PriceStore(tmp_path / "price_cache").save("AAA", _history(dates))
+
+    result = export_stock_cards_for_symbols(
+        str(config_path),
+        _artifacts(),
+        ["AAA"],
+        source="manual_symbols",
+        as_of_date="2026-03-14",
+    )
+
+    assert len(result.documents) == 1
+    assert result.documents[0].end_date == pd.Timestamp("2026-03-13")
+    assert (output_dir / "20260313" / "card_AAA_20260313.md").exists()
+    assert not (output_dir / "20260314").exists()

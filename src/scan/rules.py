@@ -10,6 +10,31 @@ from src.utils import percent_rank
 
 RuleEvaluator = Callable[[pd.Series, "ScanConfig"], bool]
 
+
+@dataclass(frozen=True, slots=True)
+class ScanIssueDefinition:
+    """Single boolean issue used to compose a scan."""
+
+    issue_name: str
+    evaluator: RuleEvaluator
+
+    def evaluate(self, row: pd.Series, config: "ScanConfig") -> bool:
+        return bool(self.evaluator(row, config))
+
+
+@dataclass(frozen=True, slots=True)
+class ScanRuleDefinition:
+    """A scan definition composed from issue booleans."""
+
+    scan_name: str
+    issues: tuple[ScanIssueDefinition, ...]
+
+    def evaluate_issues(self, row: pd.Series, config: "ScanConfig") -> dict[str, bool]:
+        return {issue.issue_name: issue.evaluate(row, config) for issue in self.issues}
+
+    def evaluate(self, row: pd.Series, config: "ScanConfig") -> bool:
+        return all(self.evaluate_issues(row, config).values())
+
 DEFAULT_SCAN_RULE_NAMES = (
     "21EMA Pattern H",
     "21EMA Pattern L",
@@ -332,7 +357,7 @@ class WatchlistPresetCsvExportConfig:
     """Config for preset CSV exports."""
 
     enabled: bool = False
-    output_dir: str = "data_runs/preset_exports"
+    output_dir: str = "data_runs/service_outputs/preset_exports"
     write_details: bool = True
     top_ticker_limit: int = 5
 
@@ -347,7 +372,8 @@ class WatchlistPresetCsvExportConfig:
             raise ValueError("preset_csv_export top_ticker_limit must be >= 1")
         return cls(
             enabled=bool(data.get("enabled", False)),
-            output_dir=str(data.get("output_dir", "data_runs/preset_exports")).strip() or "data_runs/preset_exports",
+            output_dir=str(data.get("output_dir", "data_runs/service_outputs/preset_exports")).strip()
+            or "data_runs/service_outputs/preset_exports",
             write_details=bool(data.get("write_details", True)),
             top_ticker_limit=top_ticker_limit,
         )
@@ -530,7 +556,19 @@ def enrich_with_scan_context(snapshot: pd.DataFrame) -> pd.DataFrame:
 
 def evaluate_scan_rules(row: pd.Series, config: ScanConfig) -> dict[str, bool]:
     """Evaluate the configured scan families on a single latest snapshot row."""
-    return _evaluate_rule_set(row, config.enabled_scan_rules, config, SCAN_RULE_REGISTRY, "scan")
+    return {
+        scan_name: all(issue_results.values())
+        for scan_name, issue_results in evaluate_scan_issues(row, config).items()
+    }
+
+
+def evaluate_scan_issues(row: pd.Series, config: ScanConfig) -> dict[str, dict[str, bool]]:
+    """Evaluate issue booleans for each configured scan without persisting ticker-level issue rows."""
+    _validate_rule_names(config.enabled_scan_rules, SCAN_RULE_REGISTRY, "scan")
+    return {
+        scan_name: SCAN_RULE_DEFINITIONS[scan_name].evaluate_issues(row, config)
+        for scan_name in config.enabled_scan_rules
+    }
 
 
 def evaluate_annotation_filters(row: pd.Series, config: ScanConfig) -> dict[str, bool]:
@@ -781,205 +819,6 @@ def _normalize_watchlist_preset_status(raw_status: object) -> str:
     return normalized
 
 
-def _scan_21ema(row: pd.Series, config: ScanConfig) -> bool:
-    weekly_return = row.get("weekly_return", float("nan"))
-    return bool(
-        weekly_return >= 0.0
-        and weekly_return <= 15.0
-        and row.get("dcr_percent", 0.0) > 20.0
-        and -0.5 <= row.get("atr_21ema_zone", float("nan")) <= 1.0
-        and 0.0 <= row.get("atr_50sma_zone", float("nan")) <= 3.0
-    )
-
-
-def _scan_21ema_pattern_h(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(
-        0.0 <= row.get("atr_50sma_zone", float("nan")) <= 3.0
-        and 0.3 <= row.get("atr_21ema_zone", float("nan")) <= 1.0
-        and row.get("atr_low_to_ema21_high", float("nan")) >= -0.2
-        and row.get("high", 0.0) > row.get("prev_high", float("inf"))
-    )
-
-
-def _scan_21ema_pattern_l(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(
-        0.0 <= row.get("atr_50sma_zone", float("nan")) <= 3.0
-        and -0.5 <= row.get("atr_21ema_zone", float("nan")) <= -0.1
-        and row.get("atr_low_to_ema21_low", float("nan")) < 0.0
-        and row.get("atr_21emaL_zone", float("nan")) > 0.0
-        and row.get("high", 0.0) > row.get("prev_high", float("inf"))
-    )
-
-
-def _scan_pullback_quality(row: pd.Series, config: ScanConfig) -> bool:
-    weekly_return = row.get("weekly_return", float("nan"))
-    return bool(
-        row.get("ema21_slope_5d_pct", float("nan")) > 0.0
-        and row.get("sma50_slope_10d_pct", float("nan")) > 0.0
-        and -1.25 <= row.get("atr_21ema_zone", float("nan")) <= 0.25
-        and 0.75 <= row.get("atr_50sma_zone", float("nan")) <= 3.5
-        and -8.0 <= weekly_return <= 3.0
-        and row.get("dcr_percent", 0.0) >= 50.0
-        and 3.0 <= row.get("drawdown_from_20d_high_pct", float("nan")) <= 15.0
-        and row.get("volume_ma5_to_ma20_ratio", float("nan")) <= 0.85
-    )
-
-
-def _scan_reclaim(row: pd.Series, config: ScanConfig) -> bool:
-    weekly_return = row.get("weekly_return", float("nan"))
-    return bool(
-        row.get("ema21_slope_5d_pct", float("nan")) > 0.0
-        and row.get("sma50_slope_10d_pct", float("nan")) > 0.0
-        and 0.0 <= row.get("atr_21ema_zone", float("nan")) <= 1.0
-        and 0.75 <= row.get("atr_50sma_zone", float("nan")) <= 4.0
-        and -3.0 <= weekly_return <= 10.0
-        and row.get("dcr_percent", 0.0) >= 60.0
-        and 2.0 <= row.get("drawdown_from_20d_high_pct", float("nan")) <= 12.0
-        and row.get("volume_ratio_20d", float("nan")) >= 1.10
-        and row.get("close_crossed_above_ema21", False)
-        and row.get("min_atr_21ema_zone_5d", float("nan")) <= -0.25
-    )
-
-
-def _scan_50sma_reclaim(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(
-        row.get("sma50_slope_10d_pct", float("nan")) > 0.0
-        and 0.0 <= row.get("atr_50sma_zone", float("nan")) <= 1.0
-        and row.get("close_crossed_above_sma50", False)
-        and row.get("min_atr_50sma_zone_5d", float("nan")) <= -0.25
-        and row.get("dcr_percent", 0.0) >= 60.0
-        and row.get("volume_ratio_20d", float("nan")) >= 1.10
-        and 3.0 <= row.get("drawdown_from_20d_high_pct", float("nan")) <= 20.0
-    )
-
-
-def _scan_bullish_4pct(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(
-        row.get("rel_volume", 0.0) >= config.relative_volume_bullish_threshold
-        and row.get("daily_change_pct", 0.0) >= config.daily_gain_bullish_threshold
-        and row.get("from_open_pct", 0.0) > 0.0
-    )
-
-
-def _scan_volume_accumulation(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(
-        row.get("ud_volume_ratio", 0.0) >= config.vol_accum_ud_ratio_min
-        and row.get("rel_volume", 0.0) >= config.vol_accum_rel_vol_min
-        and row.get("daily_change_pct", 0.0) > 0.0
-    )
-
-
-def _scan_momentum_97(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(
-        row.get("weekly_return_rank", 0.0) >= config.momentum_97_weekly_rank
-        and row.get("quarterly_return_rank", 0.0) >= config.momentum_97_quarterly_rank
-    )
-
-
-def _scan_vcs_52_high(row: pd.Series, config: ScanConfig) -> bool:
-    raw_rs21 = _raw_rs(row, 21)
-    return bool(
-        row.get("vcs", 0.0) >= config.vcs_52_high_vcs_min
-        and raw_rs21 > config.vcs_52_high_rs21_min
-        and row.get("dist_from_52w_high", float("nan")) >= config.vcs_52_high_dist_max
-    )
-
-
-def _scan_pocket_pivot(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(row.get("pp_count_window", 0) >= config.pocket_pivot_pp_count_min)
-
-
-def _scan_pp_count(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(row.get("pp_count_window", 0) >= config.pp_count_scan_min)
-
-
-def _scan_weekly_gainer(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(row.get("weekly_return", 0.0) >= config.weekly_gainer_threshold)
-
-
-def _scan_vcp_3t(row: pd.Series, config: ScanConfig) -> bool:
-    value = row.get("vcp_tightening", False)
-    return bool(pd.notna(value) and value)
-
-
-def _scan_llhl_1st_pivot(row: pd.Series, config: ScanConfig) -> bool:
-    raw_rs21 = _raw_rs(row, 21)
-    return bool(
-        raw_rs21 >= config.llhl_1st_rs21_min
-        and row.get("structure_pivot_1st_break", False)
-    )
-
-
-def _scan_llhl_2nd_pivot(row: pd.Series, config: ScanConfig) -> bool:
-    raw_rs21 = _raw_rs(row, 21)
-    return bool(
-        raw_rs21 >= config.llhl_2nd_rs21_min
-        and row.get("structure_pivot_2nd_break", False)
-    )
-
-
-def _scan_llhl_ct_break(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(row.get("ct_trendline_break", False))
-
-
-def _scan_rs_new_high(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(
-        row.get("rs_ratio_at_52w_high", False)
-        and row.get("dist_from_52w_high", float("nan")) <= config.rs_new_high_price_dist_max
-        and row.get("dist_from_52w_high", float("nan")) >= config.rs_new_high_price_dist_min
-    )
-
-
-def _scan_rs_3y_new_high(row: pd.Series, config: ScanConfig) -> bool:
-    return bool(
-        row.get("rs_ratio_at_3y_high", False)
-        and row.get("dist_from_52w_high", float("nan")) <= config.rs_3y_new_high_price_dist_max
-        and row.get("dist_from_52w_high", float("nan")) >= config.rs_3y_new_high_price_dist_min
-    )
-
-
-def _scan_rs_leads_price_setup(row: pd.Series, config: ScanConfig) -> bool:
-    rs21 = _raw_rs(row, 21)
-    dist_from_52w_high = row.get("dist_from_52w_high", float("nan"))
-    return bool(
-        _stage2_confirmed_pass(row, config)
-        and _mature_stage_risk_pass(row, config)
-        and pd.notna(rs21)
-        and float(rs21) >= config.rs_leads_price_rs_min
-        and _stage2_quality_score(row, config) >= config.rs_leads_price_quality_min
-        and (row.get("rs_ratio_at_52w_high", False) or row.get("rs_ratio_at_3y_high", False))
-        and pd.notna(dist_from_52w_high)
-        and config.rs_leads_price_dist_from_52w_high_min <= float(dist_from_52w_high) <= config.rs_leads_price_dist_from_52w_high_max
-    )
-
-
-def _scan_trend_template(row: pd.Series, config: ScanConfig) -> bool:
-    return _trend_template_pass(row, config)
-
-
-def _scan_fresh_stage2_breakout(row: pd.Series, config: ScanConfig) -> bool:
-    rs21 = _raw_rs(row, 21)
-    days_since_start = row.get("days_since_stage2_start", float("nan"))
-    base_days = row.get("stage_base_days_3m", 0.0)
-    return bool(
-        _stage2_confirmed_pass(row, config)
-        and _mature_stage_risk_pass(row, config)
-        and pd.notna(days_since_start)
-        and 0.0 <= float(days_since_start) <= config.fresh_stage2_max_days_since_start
-        and float(base_days) >= config.fresh_stage2_min_base_days_3m
-        and pd.notna(rs21)
-        and float(rs21) >= config.fresh_stage2_rs_min
-        and row.get("close", 0.0) > row.get("sma50", float("inf"))
-        and (
-            row.get("vcp_pivot_breakout", False)
-            or row.get("structure_pivot_long_breakout_first_day", False)
-            or row.get("dist_from_52w_high", float("nan")) >= -5.0
-        )
-        and row.get("volume_ratio_20d", 0.0) >= config.fresh_stage2_volume_ratio_min
-        and row.get("dcr_percent", 0.0) >= config.fresh_stage2_dcr_min
-    )
-
-
 def _annotation_rs21_gte_63(row: pd.Series, config: ScanConfig) -> bool:
     rs21 = _raw_rs(row, 21)
     return bool(pd.notna(rs21) and float(rs21) >= 63.0)
@@ -1044,29 +883,210 @@ def _annotation_recent_power_gap(row: pd.Series, config: ScanConfig) -> bool:
     )
 
 
+def _issue(issue_name: str, evaluator: RuleEvaluator) -> ScanIssueDefinition:
+    return ScanIssueDefinition(issue_name=issue_name, evaluator=evaluator)
+
+
+def _scan(scan_name: str, issues: tuple[ScanIssueDefinition, ...]) -> ScanRuleDefinition:
+    return ScanRuleDefinition(scan_name=scan_name, issues=issues)
+
+
+SCAN_RULE_DEFINITIONS: dict[str, ScanRuleDefinition] = {
+    "21EMA scan": _scan(
+        "21EMA scan",
+        (
+            _issue("weekly_return_between_0_15", lambda row, config: _between(row.get("weekly_return", float("nan")), 0.0, 15.0)),
+            _issue("dcr_percent_gt_20", lambda row, config: _gt(row.get("dcr_percent", 0.0), 20.0)),
+            _issue("atr_21ema_zone_between_minus_0_5_1", lambda row, config: _between(row.get("atr_21ema_zone", float("nan")), -0.5, 1.0)),
+            _issue("atr_50sma_zone_between_0_3", lambda row, config: _between(row.get("atr_50sma_zone", float("nan")), 0.0, 3.0)),
+        ),
+    ),
+    "21EMA Pattern H": _scan(
+        "21EMA Pattern H",
+        (
+            _issue("atr_50sma_zone_between_0_3", lambda row, config: _between(row.get("atr_50sma_zone", float("nan")), 0.0, 3.0)),
+            _issue("atr_21ema_zone_between_0_3_1", lambda row, config: _between(row.get("atr_21ema_zone", float("nan")), 0.3, 1.0)),
+            _issue("atr_low_to_ema21_high_gte_minus_0_2", lambda row, config: _gte(row.get("atr_low_to_ema21_high", float("nan")), -0.2)),
+            _issue("high_gt_prev_high", lambda row, config: _gt(row.get("high", 0.0), row.get("prev_high", float("inf")))),
+        ),
+    ),
+    "21EMA Pattern L": _scan(
+        "21EMA Pattern L",
+        (
+            _issue("atr_50sma_zone_between_0_3", lambda row, config: _between(row.get("atr_50sma_zone", float("nan")), 0.0, 3.0)),
+            _issue("atr_21ema_zone_between_minus_0_5_minus_0_1", lambda row, config: _between(row.get("atr_21ema_zone", float("nan")), -0.5, -0.1)),
+            _issue("atr_low_to_ema21_low_lt_0", lambda row, config: _lt(row.get("atr_low_to_ema21_low", float("nan")), 0.0)),
+            _issue("atr_21emaL_zone_gt_0", lambda row, config: _gt(row.get("atr_21emaL_zone", float("nan")), 0.0)),
+            _issue("high_gt_prev_high", lambda row, config: _gt(row.get("high", 0.0), row.get("prev_high", float("inf")))),
+        ),
+    ),
+    "Pullback Quality scan": _scan(
+        "Pullback Quality scan",
+        (
+            _issue("ema21_slope_5d_pct_gt_0", lambda row, config: _gt(row.get("ema21_slope_5d_pct", float("nan")), 0.0)),
+            _issue("sma50_slope_10d_pct_gt_0", lambda row, config: _gt(row.get("sma50_slope_10d_pct", float("nan")), 0.0)),
+            _issue("atr_21ema_zone_between_minus_1_25_0_25", lambda row, config: _between(row.get("atr_21ema_zone", float("nan")), -1.25, 0.25)),
+            _issue("atr_50sma_zone_between_0_75_3_5", lambda row, config: _between(row.get("atr_50sma_zone", float("nan")), 0.75, 3.5)),
+            _issue("weekly_return_between_minus_8_3", lambda row, config: _between(row.get("weekly_return", float("nan")), -8.0, 3.0)),
+            _issue("dcr_percent_gte_50", lambda row, config: _gte(row.get("dcr_percent", 0.0), 50.0)),
+            _issue("drawdown_from_20d_high_pct_between_3_15", lambda row, config: _between(row.get("drawdown_from_20d_high_pct", float("nan")), 3.0, 15.0)),
+            _issue("volume_ma5_to_ma20_ratio_lte_0_85", lambda row, config: _lte(row.get("volume_ma5_to_ma20_ratio", float("nan")), 0.85)),
+        ),
+    ),
+    "Reclaim scan": _scan(
+        "Reclaim scan",
+        (
+            _issue("ema21_slope_5d_pct_gt_0", lambda row, config: _gt(row.get("ema21_slope_5d_pct", float("nan")), 0.0)),
+            _issue("sma50_slope_10d_pct_gt_0", lambda row, config: _gt(row.get("sma50_slope_10d_pct", float("nan")), 0.0)),
+            _issue("atr_21ema_zone_between_0_1", lambda row, config: _between(row.get("atr_21ema_zone", float("nan")), 0.0, 1.0)),
+            _issue("atr_50sma_zone_between_0_75_4", lambda row, config: _between(row.get("atr_50sma_zone", float("nan")), 0.75, 4.0)),
+            _issue("weekly_return_between_minus_3_10", lambda row, config: _between(row.get("weekly_return", float("nan")), -3.0, 10.0)),
+            _issue("dcr_percent_gte_60", lambda row, config: _gte(row.get("dcr_percent", 0.0), 60.0)),
+            _issue("drawdown_from_20d_high_pct_between_2_12", lambda row, config: _between(row.get("drawdown_from_20d_high_pct", float("nan")), 2.0, 12.0)),
+            _issue("volume_ratio_20d_gte_1_10", lambda row, config: _gte(row.get("volume_ratio_20d", float("nan")), 1.10)),
+            _issue("close_crossed_above_ema21", lambda row, config: _truthy(row.get("close_crossed_above_ema21", False))),
+            _issue("min_atr_21ema_zone_5d_lte_minus_0_25", lambda row, config: _lte(row.get("min_atr_21ema_zone_5d", float("nan")), -0.25)),
+        ),
+    ),
+    "4% bullish": _scan(
+        "4% bullish",
+        (
+            _issue("rel_volume_gte_threshold", lambda row, config: _gte(row.get("rel_volume", 0.0), config.relative_volume_bullish_threshold)),
+            _issue("daily_change_pct_gte_threshold", lambda row, config: _gte(row.get("daily_change_pct", 0.0), config.daily_gain_bullish_threshold)),
+            _issue("from_open_pct_gt_0", lambda row, config: _gt(row.get("from_open_pct", 0.0), 0.0)),
+        ),
+    ),
+    "Volume Accumulation": _scan(
+        "Volume Accumulation",
+        (
+            _issue("ud_volume_ratio_gte_threshold", lambda row, config: _gte(row.get("ud_volume_ratio", 0.0), config.vol_accum_ud_ratio_min)),
+            _issue("rel_volume_gte_threshold", lambda row, config: _gte(row.get("rel_volume", 0.0), config.vol_accum_rel_vol_min)),
+            _issue("daily_change_pct_gt_0", lambda row, config: _gt(row.get("daily_change_pct", 0.0), 0.0)),
+        ),
+    ),
+    "Momentum 97": _scan(
+        "Momentum 97",
+        (
+            _issue("weekly_return_rank_gte_threshold", lambda row, config: _gte(row.get("weekly_return_rank", 0.0), config.momentum_97_weekly_rank)),
+            _issue("quarterly_return_rank_gte_threshold", lambda row, config: _gte(row.get("quarterly_return_rank", 0.0), config.momentum_97_quarterly_rank)),
+        ),
+    ),
+    "VCS 52 High": _scan(
+        "VCS 52 High",
+        (
+            _issue("vcs_gte_threshold", lambda row, config: _gte(row.get("vcs", 0.0), config.vcs_52_high_vcs_min)),
+            _issue("raw_rs21_gt_threshold", lambda row, config: _gt(_raw_rs(row, 21), config.vcs_52_high_rs21_min)),
+            _issue("dist_from_52w_high_gte_threshold", lambda row, config: _gte(row.get("dist_from_52w_high", float("nan")), config.vcs_52_high_dist_max)),
+        ),
+    ),
+    "Pocket Pivot": _scan(
+        "Pocket Pivot",
+        (
+            _issue("pp_count_window_gte_pocket_pivot_min", lambda row, config: _gte(row.get("pp_count_window", 0), config.pocket_pivot_pp_count_min)),
+        ),
+    ),
+    "PP Count": _scan(
+        "PP Count",
+        (
+            _issue("pp_count_window_gte_scan_min", lambda row, config: _gte(row.get("pp_count_window", 0), config.pp_count_scan_min)),
+        ),
+    ),
+    "Weekly 20% plus gainers": _scan(
+        "Weekly 20% plus gainers",
+        (
+            _issue("weekly_return_gte_threshold", lambda row, config: _gte(row.get("weekly_return", 0.0), config.weekly_gainer_threshold)),
+        ),
+    ),
+    "VCP 3T": _scan(
+        "VCP 3T",
+        (
+            _issue("vcp_tightening", lambda row, config: _truthy(row.get("vcp_tightening", False))),
+        ),
+    ),
+    "LL-HL Structure 1st Pivot": _scan(
+        "LL-HL Structure 1st Pivot",
+        (
+            _issue("raw_rs21_gte_threshold", lambda row, config: _gte(_raw_rs(row, 21), config.llhl_1st_rs21_min)),
+            _issue("structure_pivot_1st_break", lambda row, config: _truthy(row.get("structure_pivot_1st_break", False))),
+        ),
+    ),
+    "LL-HL Structure 2nd Pivot": _scan(
+        "LL-HL Structure 2nd Pivot",
+        (
+            _issue("raw_rs21_gte_threshold", lambda row, config: _gte(_raw_rs(row, 21), config.llhl_2nd_rs21_min)),
+            _issue("structure_pivot_2nd_break", lambda row, config: _truthy(row.get("structure_pivot_2nd_break", False))),
+        ),
+    ),
+    "LL-HL Structure Trend Line Break": _scan(
+        "LL-HL Structure Trend Line Break",
+        (
+            _issue("ct_trendline_break", lambda row, config: _truthy(row.get("ct_trendline_break", False))),
+        ),
+    ),
+    "50SMA Reclaim": _scan(
+        "50SMA Reclaim",
+        (
+            _issue("sma50_slope_10d_pct_gt_0", lambda row, config: _gt(row.get("sma50_slope_10d_pct", float("nan")), 0.0)),
+            _issue("atr_50sma_zone_between_0_1", lambda row, config: _between(row.get("atr_50sma_zone", float("nan")), 0.0, 1.0)),
+            _issue("close_crossed_above_sma50", lambda row, config: _truthy(row.get("close_crossed_above_sma50", False))),
+            _issue("min_atr_50sma_zone_5d_lte_minus_0_25", lambda row, config: _lte(row.get("min_atr_50sma_zone_5d", float("nan")), -0.25)),
+            _issue("dcr_percent_gte_60", lambda row, config: _gte(row.get("dcr_percent", 0.0), 60.0)),
+            _issue("volume_ratio_20d_gte_1_10", lambda row, config: _gte(row.get("volume_ratio_20d", float("nan")), 1.10)),
+            _issue("drawdown_from_20d_high_pct_between_3_20", lambda row, config: _between(row.get("drawdown_from_20d_high_pct", float("nan")), 3.0, 20.0)),
+        ),
+    ),
+    "RS New High": _scan(
+        "RS New High",
+        (
+            _issue("rs_ratio_at_52w_high", lambda row, config: _truthy(row.get("rs_ratio_at_52w_high", False))),
+            _issue("dist_from_52w_high_lte_threshold", lambda row, config: _lte(row.get("dist_from_52w_high", float("nan")), config.rs_new_high_price_dist_max)),
+            _issue("dist_from_52w_high_gte_threshold", lambda row, config: _gte(row.get("dist_from_52w_high", float("nan")), config.rs_new_high_price_dist_min)),
+        ),
+    ),
+    "RS 3Y New High": _scan(
+        "RS 3Y New High",
+        (
+            _issue("rs_ratio_at_3y_high", lambda row, config: _truthy(row.get("rs_ratio_at_3y_high", False))),
+            _issue("dist_from_52w_high_lte_threshold", lambda row, config: _lte(row.get("dist_from_52w_high", float("nan")), config.rs_3y_new_high_price_dist_max)),
+            _issue("dist_from_52w_high_gte_threshold", lambda row, config: _gte(row.get("dist_from_52w_high", float("nan")), config.rs_3y_new_high_price_dist_min)),
+        ),
+    ),
+    "RS Leads Price Setup": _scan(
+        "RS Leads Price Setup",
+        (
+            _issue("stage2_confirmed", lambda row, config: _stage2_confirmed_pass(row, config)),
+            _issue("mature_stage_risk_pass", lambda row, config: _mature_stage_risk_pass(row, config)),
+            _issue("raw_rs21_gte_threshold", lambda row, config: _gte(_raw_rs(row, 21), config.rs_leads_price_rs_min)),
+            _issue("stage2_quality_score_gte_threshold", lambda row, config: _gte(_stage2_quality_score(row, config), config.rs_leads_price_quality_min)),
+            _issue("rs_ratio_at_52w_or_3y_high", lambda row, config: _truthy(row.get("rs_ratio_at_52w_high", False)) or _truthy(row.get("rs_ratio_at_3y_high", False))),
+            _issue("dist_from_52w_high_between_thresholds", lambda row, config: _between(row.get("dist_from_52w_high", float("nan")), config.rs_leads_price_dist_from_52w_high_min, config.rs_leads_price_dist_from_52w_high_max)),
+        ),
+    ),
+    "Trend Template": _scan(
+        "Trend Template",
+        (
+            _issue("trend_template_price_score_gte_threshold", lambda row, config: _gte(row.get("trend_template_price_score", 0), config.trend_template_price_score_min)),
+            _issue("raw_rs21_gte_threshold", lambda row, config: _gte(_raw_rs(row, 21), config.trend_template_rs_min)),
+        ),
+    ),
+    "Fresh Stage 2 Breakout": _scan(
+        "Fresh Stage 2 Breakout",
+        (
+            _issue("stage2_confirmed", lambda row, config: _stage2_confirmed_pass(row, config)),
+            _issue("mature_stage_risk_pass", lambda row, config: _mature_stage_risk_pass(row, config)),
+            _issue("days_since_stage2_start_between_0_threshold", lambda row, config: _between(row.get("days_since_stage2_start", float("nan")), 0.0, config.fresh_stage2_max_days_since_start)),
+            _issue("stage_base_days_3m_gte_threshold", lambda row, config: _gte(row.get("stage_base_days_3m", 0.0), config.fresh_stage2_min_base_days_3m)),
+            _issue("raw_rs21_gte_threshold", lambda row, config: _gte(_raw_rs(row, 21), config.fresh_stage2_rs_min)),
+            _issue("close_gt_sma50", lambda row, config: _gt(row.get("close", 0.0), row.get("sma50", float("inf")))),
+            _issue("breakout_evidence", lambda row, config: _truthy(row.get("vcp_pivot_breakout", False)) or _truthy(row.get("structure_pivot_long_breakout_first_day", False)) or _gte(row.get("dist_from_52w_high", float("nan")), -5.0)),
+            _issue("volume_ratio_20d_gte_threshold", lambda row, config: _gte(row.get("volume_ratio_20d", 0.0), config.fresh_stage2_volume_ratio_min)),
+            _issue("dcr_percent_gte_threshold", lambda row, config: _gte(row.get("dcr_percent", 0.0), config.fresh_stage2_dcr_min)),
+        ),
+    ),
+}
+
 SCAN_RULE_REGISTRY: dict[str, RuleEvaluator] = {
-    "21EMA scan": _scan_21ema,
-    "21EMA Pattern H": _scan_21ema_pattern_h,
-    "21EMA Pattern L": _scan_21ema_pattern_l,
-    "Pullback Quality scan": _scan_pullback_quality,
-    "Reclaim scan": _scan_reclaim,
-    "4% bullish": _scan_bullish_4pct,
-    "Volume Accumulation": _scan_volume_accumulation,
-    "Momentum 97": _scan_momentum_97,
-    "VCS 52 High": _scan_vcs_52_high,
-    "Pocket Pivot": _scan_pocket_pivot,
-    "PP Count": _scan_pp_count,
-    "Weekly 20% plus gainers": _scan_weekly_gainer,
-    "VCP 3T": _scan_vcp_3t,
-    "LL-HL Structure 1st Pivot": _scan_llhl_1st_pivot,
-    "LL-HL Structure 2nd Pivot": _scan_llhl_2nd_pivot,
-    "LL-HL Structure Trend Line Break": _scan_llhl_ct_break,
-    "50SMA Reclaim": _scan_50sma_reclaim,
-    "RS New High": _scan_rs_new_high,
-    "RS 3Y New High": _scan_rs_3y_new_high,
-    "RS Leads Price Setup": _scan_rs_leads_price_setup,
-    "Trend Template": _scan_trend_template,
-    "Fresh Stage 2 Breakout": _scan_fresh_stage2_breakout,
+    name: definition.evaluate for name, definition in SCAN_RULE_DEFINITIONS.items()
 }
 
 ANNOTATION_FILTER_REGISTRY: dict[str, RuleEvaluator] = {
@@ -1085,6 +1105,50 @@ ANNOTATION_FILTER_REGISTRY: dict[str, RuleEvaluator] = {
     "Resistance Tests >= 2": _annotation_resistance_tests_gte_2,
     "Recent Power Gap": _annotation_recent_power_gap,
 }
+
+
+def _numeric(value: object) -> float:
+    if pd.isna(value):
+        return float("nan")
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float("nan")
+
+
+def _between(value: object, low: object, high: object) -> bool:
+    numeric = _numeric(value)
+    lower = _numeric(low)
+    upper = _numeric(high)
+    return bool(pd.notna(numeric) and pd.notna(lower) and pd.notna(upper) and lower <= numeric <= upper)
+
+
+def _gt(value: object, threshold: object) -> bool:
+    numeric = _numeric(value)
+    bound = _numeric(threshold)
+    return bool(pd.notna(numeric) and pd.notna(bound) and numeric > bound)
+
+
+def _gte(value: object, threshold: object) -> bool:
+    numeric = _numeric(value)
+    bound = _numeric(threshold)
+    return bool(pd.notna(numeric) and pd.notna(bound) and numeric >= bound)
+
+
+def _lt(value: object, threshold: object) -> bool:
+    numeric = _numeric(value)
+    bound = _numeric(threshold)
+    return bool(pd.notna(numeric) and pd.notna(bound) and numeric < bound)
+
+
+def _lte(value: object, threshold: object) -> bool:
+    numeric = _numeric(value)
+    bound = _numeric(threshold)
+    return bool(pd.notna(numeric) and pd.notna(bound) and numeric <= bound)
+
+
+def _truthy(value: object) -> bool:
+    return bool(pd.notna(value) and value)
 
 
 def _raw_rs(row: pd.Series, lookback: int) -> float:

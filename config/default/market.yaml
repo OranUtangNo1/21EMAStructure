@@ -51,7 +51,7 @@ market:
     output:
       mode: latest_only
       write_json: true
-      write_markdown: true
+      write_markdown: false
     horizons:
       short_days: 5
       medium_days: 21

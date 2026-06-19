@@ -140,6 +140,8 @@ Key active behavior:
 - retry backoff multiplier: `2.0`
 - stale-cache fallback allowed
 - stale cached price series are refreshed with an incremental download period of `5d`
+- price cache filenames are keyed by provider symbol and interval, for example `prices_AAPL_1d.csv`; initial download periods such as `3y` are not part of the active filename
+- legacy period-keyed cache files such as `prices_AAPL_3y_1d.csv` can be read and migrated to the active filename
 - `force_refresh=True` bypasses fresh-cache reuse, loads any existing cached price series as the merge/fallback base, and requests live yfinance data for the affected symbols
 
 `FredSeriesProvider` fetches configured FRED series through `fredgraph.csv`, normalizes each series into OHLC-like history with the FRED value in `close`, `adjusted_close`, `open`, `high`, and `low`, and stores `volume=0.0`. It currently feeds the high-yield OAS series (`BAMLH0A0HYM2`) into Market Dashboard credit diagnostics. FRED fetch status uses dataset `market_external` and the same cache/stale fallback model as other provider outputs.
@@ -173,15 +175,18 @@ The current default config sets this to `false`, so sample fallback is inactive 
 
 ### 4.1 Active persistence locations
 
-- price cache under `data_cache/`
+- price cache under `C:/reository/shared_market_cache/` using `prices_<provider_symbol>_<interval>.csv`
 - profile cache under `data_cache/`
 - fundamental cache under `data_cache/`
 - user preferences under `data_cache/user_preferences.yaml`
-- weekly universe snapshots under `data_runs/universe_snapshots/`
-- run artifacts under file-type folders keyed by trade-date date key or output policy, such as `data_runs/run_metadata/YYYYMMDD.json`, `data_runs/eligible_snapshot/YYYYMMDD.csv`, `data_runs/market_summary/YYYYMMDD.json`, `data_runs/radar_summary/YYYYMMDD.json`, `data_runs/market_documents/latest.json`, `data_runs/market_documents/latest.md`, `data_runs/market_context/latest.json`, `data_runs/market_context/latest.md`, and `data_runs/market_reports/YYYYMMDD.md`
+- weekly universe snapshots under `data_runs/legacy_pipeline/universe_snapshots/`
+- legacy pipeline run artifacts under file-type folders keyed by trade-date date key or output policy, such as `data_runs/legacy_pipeline/run_metadata/YYYYMMDD.json`, `data_runs/legacy_pipeline/eligible_snapshot/YYYYMMDD.csv`, `data_runs/legacy_pipeline/market_summary/YYYYMMDD.json`, `data_runs/legacy_pipeline/radar_summary/YYYYMMDD.json`, `data_runs/legacy_pipeline/market_documents/latest.json`, and `data_runs/legacy_pipeline/market_reports/YYYYMMDD.md`
+- modular service outputs under `data_runs/service_outputs/`
+- CLI market-report input artifacts under `data_runs/service_outputs/market_report_input/`
+- CLI market-context artifacts under the configured `market_context.output.dir` when the unified market environment command is used
 - scan-hit history and preset-hit tracking under `data_runs/tracking.db`
-- EntrySignal startup exports under `data_runs/entry_signals/`
-- latest-only preset diagnostics under `data_runs/preset_diagnostics/`
+- EntrySignal artifact-load exports under `data_runs/legacy_pipeline/entry_signals/`
+- latest-only preset diagnostics under `data_runs/legacy_pipeline/preset_diagnostics/`
 
 ### 4.2 Current TTLs
 
@@ -203,7 +208,7 @@ When persistence is enabled, `ResearchPlatform.load_latest_run_artifacts()` can 
 - the saved run metadata `manual_symbols_input` matches the current symbol input, which is empty in the active UI
 - the saved run `trade_date` matches the current expected trade date
 
-The current expected trade date is derived from US/Eastern calendar date with a daily close cutoff and a weekday-only fallback. The Streamlit app uses this helper on startup and artifact-key changes when neither refresh control is forced. Explicit `Refresh data`, `Force weekly universe refresh`, `Force price data refresh`, or `Recompute from cache` bypass saved-run restore and recompute through `ResearchPlatform.run()`. `Recompute from cache` does not bypass price-cache TTL by itself; it is intended to rebuild local run artifacts and tracking rows from the current cache state.
+The current expected trade date is derived from US/Eastern calendar date with a daily close cutoff and a weekday-only fallback. The Streamlit app uses this helper only after the user presses `Load data` and neither force control nor `Recompute from cache` is selected. Normal startup does not restore saved runs or recompute artifacts. `Force weekly universe refresh`, `Force price data refresh`, or `Recompute from cache` bypass saved-run restore and recompute through `ResearchPlatform.run()`. `Recompute from cache` does not bypass price-cache TTL by itself; it is intended to rebuild local run artifacts and tracking rows from the current cache state.
 
 ### 4.4 Fetch-status states
 
@@ -304,16 +309,16 @@ Analysis views:
 
 When `data.persist_research_snapshots` is true, the pipeline saves:
 
-- `eligible_snapshot/YYYYMMDD.csv`
-- `run_metadata/YYYYMMDD.json`
-- `market_summary/YYYYMMDD.json`
-- `market_documents/latest.json` and `market_documents/latest.md` by default; date-keyed files are used when `market_report.output.mode=daily_history`
-- `market_context/latest.json` and `market_context/latest.md` by default; date-keyed files are used when `market_context.output.mode=daily_history`
-- `radar_summary/YYYYMMDD.json`
+- `data_runs/legacy_pipeline/eligible_snapshot/YYYYMMDD.csv`
+- `data_runs/legacy_pipeline/run_metadata/YYYYMMDD.json`
+- `data_runs/legacy_pipeline/market_summary/YYYYMMDD.json`
+- `data_runs/service_outputs/market_report_input/latest.json` by default; date-keyed files are used when `market_report.output.mode=daily_history`
+- `data_runs/service_outputs/market_context/latest.json` by default; date-keyed files are used when `market_context.output.mode=daily_history`
+- `data_runs/legacy_pipeline/radar_summary/YYYYMMDD.json`
 - date-level scan hits into `tracking.db`
-- machine-oriented preset diagnostics into `preset_diagnostics/latest_manifest.json`, `latest_scan_counts.csv`, `latest_annotation_counts.csv`, `latest_preset_steps.csv`, `latest_preset_ticker_steps.csv`, and `latest_preset_hits.csv`
+- machine-oriented preset diagnostics into `data_runs/legacy_pipeline/preset_diagnostics/latest_manifest.json`, `latest_scan_counts.csv`, `latest_annotation_counts.csv`, `latest_preset_steps.csv`, `latest_preset_ticker_steps.csv`, and `latest_preset_hits.csv`
 
-`eligible_snapshot` is retained as the inspectable scan universe and saved-run restore base. The raw watchlist CSV is optional and controlled by `data.persist_watchlist_snapshot`; the default is false. When the watchlist CSV is absent, same-day saved-run restore rebuilds the watchlist from `eligible_snapshot` and stored scan hits. Preset-hit CSVs remain separate under `data_runs/preset_exports/`.
+`eligible_snapshot` is retained as the inspectable scan universe and saved-run restore base. The raw watchlist CSV is optional and controlled by `data.persist_watchlist_snapshot`; the default is false. When the watchlist CSV is absent, same-day saved-run restore rebuilds the watchlist from `eligible_snapshot` and stored scan hits. Preset-hit CSVs remain separate under `data_runs/service_outputs/preset_exports/`.
 
 Preset diagnostics are latest-only machine analysis artifacts written on full pipeline recompute. They are normalized CSVs plus a manifest and are intended for scan/preset design validation rather than human-readable reporting. The artifact set records scan hit counts, annotation pass counts, preset funnel steps, per-ticker step outcomes, and final preset hits.
 
@@ -321,20 +326,22 @@ Saved-run restore reads only the latest run metadata and the matching `eligible_
 
 `market_documents/latest.json` is generated deterministically from the saved market summary, RS Radar industry leadership rows, and recent same-folder market summaries when the default `latest_only` mode is active. It is an AI-input market document, not the final human-facing report. The document stores `schema_version=market_document.v1`, executive context, section facts, evidence source fields, trajectory summaries, significance flags, recent transitions, watchpoint candidates, analysis boundaries, missing inputs, and a data appendix. When `industry_leaders` are available, the document includes an `industry_leadership` section for industry-level RS leadership, 52W HIGH, acceleration, sustained leadership, and weak-industry context. The market summary and document include `volatility_term_structure`, `credit_risk_proxy`, and `index_state_summary` diagnostics when the configured auxiliary/index symbols are available. The saved market summary also includes `breadth_momentum_summary`, `breadth_internal_summary`, `drawdown_summary`, `index_context_summary`, `sector_leaders`, and `industry_leaders`.
 
-`market_context/latest.json` and `market_context/latest.md` are separate fixed-schema AI-input artifacts generated from the saved market summary plus recent market summaries when the default `latest_only` mode is active. They are not the market document and do not replace final market reports. The Markdown output uses the `MARKET_CONTEXT` v1.0.1 section order: `M_GATE`, `INDEX`, `BREADTH`, `SENTIMENT`, `STYLE`, `SECTOR_RS`, `INDUSTRY_RS`, and `CHANGES_1W`. `INDUSTRY_RS` rows render `tactRS|structRS63|dRank1W|majors`; `dRank1W` uses comparable full-universe `STRUCT RS` rank history and is `NA` when that history is unavailable.
+`market_context/latest.json` is a separate fixed-schema AI-input artifact generated from the saved market summary plus recent market summaries when the default `latest_only` mode is active. It is not the market document and does not replace final market reports. Markdown compatibility output is disabled by default. `INDUSTRY_RS` rows expose `tactRS|structRS63|dRank1W|majors`; `dRank1W` uses comparable full-universe `STRUCT RS` rank history and is `NA` when that history is unavailable.
 
-`market_documents/latest.md` renders the same market document for AI/skill input in default mode. The final human-facing report is owned by a report-writing skill and is written to `market_reports/YYYYMMDD.md`.
+The final human-facing report is owned by a report-writing skill and is written as Markdown.
 
-Standalone compressed tape exports are user-triggered and write under `data_runs/compressed_tape/YYYYMMDD/` as one `tape_{TICKER}_{YYYYMMDD}.md` file per symbol plus `manifest.json`.
+The CLI `market-env` command is the interactive market-environment entrypoint. It runs the shared `MarketService` once and writes market module outputs, RS Radar module outputs, the modular market-report input set, and `market_context` outputs. The compatibility CLI `market-report-input` command writes only the modular market-report input set under `data_runs/service_outputs/market_report_input/` as `market_summary_YYYYMMDD.json` plus `YYYYMMDD.json` or `latest.json`, depending on `market.market_report.output.mode`.
 
-Standalone stock-card exports are user-triggered and write under `data_runs/stock_cards/YYYYMMDD/` as one `card_{TICKER}_{YYYYMMDD}.md` file per symbol plus `manifest.json`. A stock card uses schema `card-v1.0.2` and embeds the compressed tape section generated from the same adjusted OHLCV pipeline.
+Standalone compressed tape exports are user-triggered and write under `data_runs/documents/compressed_tape/YYYYMMDD/` as one `tape_{TICKER}_{YYYYMMDD}.md` file per symbol plus `manifest.json`.
 
-After the Streamlit artifact load syncs EntrySignal pools, the app evaluates the startup-selected entry signals and writes inspectable exports under `data_runs/entry_signals/` according to `entry_signals.output.mode`:
+Standalone stock-card exports are user-triggered and write under `data_runs/documents/stock_cards/YYYYMMDD/`. By default they write one compatibility Markdown file `card_{TICKER}_{YYYYMMDD}.md`, one canonical AI/system JSON file `card_{TICKER}_{YYYYMMDD}.json`, and `manifest.json` per output folder. The Markdown stock card uses schema `card-v1.0.2` and embeds the compressed tape section generated from the same adjusted OHLCV pipeline. The JSON stock card uses schema `stock_card_json.v1` and is the forward contract for chart-analysis consumers. It must carry enough data to stand alone for chart analysis, including momentum/volatility, volume, levels, trend-derived fields, setup details, risk-plan provenance, and compressed tape rows/events. Structural-stop provenance is based on a surviving 65-day swing-low candidate, not on the nearest raw bar low or a distance-floor clamp. Standalone stock-card metadata can use `radar.industry_etfs[].major_stocks` for industry ETF mapping; sector ETF mapping requires profile or snapshot sector data. `stock_card.write_markdown` and `stock_card.write_json` control which renderings are written.
+
+After the Streamlit artifact load syncs EntrySignal pools, the app evaluates the startup-selected entry signals and writes inspectable exports under `data_runs/legacy_pipeline/entry_signals/` according to `entry_signals.output.mode`:
 
 - `latest_evaluations.csv` by default when `mode=latest_only`
 - `YYYYMMDD_evaluations.csv` when `mode=daily_history`
 
-This CSV export mirrors the current Entry Signal evaluation output for review and diagnostics. `mode=on_demand` and `mode=disabled` suppress startup file writes. Bucket-specific CSV and summary JSON write paths remain available in the runner but are disabled by default for startup exports. The authoritative pool, evaluation, and entry-event history remains `data_runs/tracking.db`.
+This CSV export mirrors the current Entry Signal evaluation output for review and diagnostics. `mode=on_demand` and `mode=disabled` suppress artifact-load file writes. Bucket-specific CSV and summary JSON write paths remain available in the runner but are disabled by default for automatic artifact-load exports. The authoritative pool, evaluation, and entry-event history remains `data_runs/tracking.db`.
 
 Run metadata currently includes:
 

@@ -1,4 +1,5 @@
 data:
+  price_cache_dir: C:/reository/shared_market_cache
   technical_cache_ttl_hours: 12
   profile_cache_ttl_hours: 168
   fundamental_cache_ttl_hours: 24

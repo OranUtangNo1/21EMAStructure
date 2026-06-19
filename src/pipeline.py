@@ -46,6 +46,10 @@ from src.scoring.hybrid import HybridScoreCalculator, HybridScoreConfig
 from src.scoring.industry import IndustryScoreConfig, IndustryScorer
 from src.scoring.rs import RSConfig, RSScorer
 from src.scoring.vcs import VCSCalculator, VCSConfig
+from src.services.market_service import MarketService
+from src.services.price_data_service import PriceDataService
+from src.services.price_store import PriceStore
+from src.services.scan_service import ScanService
 from src.utils import StartupTimer
 from src.watchlist_presets import load_watchlist_preset_configs
 
@@ -134,7 +138,11 @@ class ResearchPlatform:
         discovery_settings = self.settings.get("universe_discovery", {})
 
         cache_dir = self.root / app_settings.get("cache_dir", "data_cache")
+        price_cache_dir = Path(str(data_settings.get("price_cache_dir", app_settings.get("cache_dir", "data_cache")))).expanduser()
+        if not price_cache_dir.is_absolute():
+            price_cache_dir = self.root / price_cache_dir
         self.cache = CacheLayer(cache_dir)
+        self.price_cache = CacheLayer(price_cache_dir)
         self.sample_factory = SampleDataFactory()
         market_context_settings = self._market_context_settings_with_radar_majors()
         self.snapshot_store = DataSnapshotStore(
@@ -171,13 +179,19 @@ class ResearchPlatform:
         self.scan_runner = ScanRunner(self.scan_config)
         self.market_scorer = MarketConditionScorer(MarketConditionConfig.from_dict(self.settings.get("market", {})))
         self.watchlist_builder = WatchlistViewModelBuilder(self.scan_config)
+        self.scan_service = ScanService(
+            indicator_service=None,
+            scan_config=self.scan_config,
+            scan_runner=self.scan_runner,
+            preset_builder=self.watchlist_builder,
+        )
         self.radar_builder = RadarViewModelBuilder(RadarConfig.from_dict(self.settings.get("radar", {})))
 
         allow_stale = bool(data_settings.get("allow_stale_cache_on_failure", True))
         self.persist_research_snapshots = bool(data_settings.get("persist_research_snapshots", True))
         self.persist_watchlist_snapshot = bool(data_settings.get("persist_watchlist_snapshot", False))
         self.price_provider = YFinancePriceDataProvider(
-            self.cache,
+            self.price_cache,
             technical_ttl_hours=int(data_settings.get("technical_cache_ttl_hours", 12)),
             allow_stale_cache_on_failure=allow_stale,
             batch_size=int(data_settings.get("price_batch_size", 80)),
@@ -187,9 +201,21 @@ class ResearchPlatform:
             incremental_period=data_settings.get("price_incremental_period", "5d"),
         )
         self.fred_provider = FredSeriesProvider(
-            self.cache,
+            self.price_cache,
             series_ttl_hours=int(data_settings.get("fred_series_cache_ttl_hours", 24)),
             allow_stale_cache_on_failure=allow_stale,
+        )
+        self.market_service = MarketService(
+            price_service=PriceDataService(
+                store=PriceStore(price_cache_dir),
+                provider=self.price_provider,
+                default_period=str(app_settings.get("price_period", "18mo")),
+            ),
+            indicator_calculator=self.indicator_calculator,
+            market_scorer=self.market_scorer,
+            radar_builder=self.radar_builder,
+            benchmark_symbol=str(app_settings.get("benchmark_symbol", "SPY")).strip().upper() or "SPY",
+            fred_provider=self.fred_provider,
         )
         self.profile_provider = YFinanceProfileDataProvider(
             self.cache,
@@ -301,8 +327,11 @@ class ResearchPlatform:
             eligible_snapshot = snapshot.sort_values(["data_quality_score", "hybrid_score"], ascending=[False, False]).copy()
         self._mark_timing("pipeline.universe_filter.ready", snapshot=len(snapshot), eligible=len(eligible_snapshot))
 
-        with self._timed("pipeline.scan_runner", eligible=len(eligible_snapshot)):
-            scan_result = self.scan_runner.run(eligible_snapshot)
+        with self._timed("pipeline.scan_service.run_from_snapshot", eligible=len(eligible_snapshot)):
+            scan_service_result = self.scan_service.run_from_snapshot(eligible_snapshot)
+            scan_result = scan_service_result.scan_run_result
+            if scan_result is None:
+                raise RuntimeError("Scan service did not return a scan result.")
         with self._timed("pipeline.watchlist.build", scan_watchlist=len(scan_result.watchlist), scan_hits=len(scan_result.hits)):
             watchlist = self.watchlist_builder.build(scan_result.watchlist)
             duplicate_tickers = self.watchlist_builder.build_duplicate_tickers(scan_result.watchlist, scan_result.hits, self.scan_config.duplicate_min_count)
@@ -312,19 +341,17 @@ class ResearchPlatform:
         with self._timed("pipeline.preset_diagnostics.build", watchlist=len(watchlist), scan_hits=len(scan_result.hits)):
             preset_diagnostics = self._build_preset_diagnostics_artifact(watchlist, scan_result.hits, snapshot)
 
-        with self._timed("pipeline.radar.build"):
-            radar_histories = self._build_indicator_histories(price_batch.histories, self.radar_builder.required_symbols())
-            radar_result = self.radar_builder.build(radar_histories, benchmark_history)
-        with self._timed("pipeline.market.prepare_histories"):
-            market_symbols = list(dict.fromkeys(self.market_scorer.required_symbols() + self.market_scorer.required_fred_series()))
-            market_histories = self._build_indicator_histories(price_batch.histories, market_symbols)
-
         fetch_status = self._build_fetch_status_frame(price_batch.statuses, profile_batch.statuses, fundamental_batch.statuses)
         data_health_summary = summarize_data_health(fetch_status)
         data_source_label = summarize_data_source_label(fetch_status)
         used_sample_data = bool((fetch_status["source"] == "sample").any()) if not fetch_status.empty else False
-        with self._timed("pipeline.market.score", live_histories=len(live_symbol_histories), market_histories=len(market_histories)):
-            market_result = self.market_scorer.score(live_symbol_histories, market_histories, benchmark_history)
+        with self._timed("pipeline.market_service.run", histories=len(price_batch.histories)):
+            market_service_result = self.market_service.run_from_price_histories(
+                price_batch.histories,
+                stock_symbols=active_symbols,
+            )
+            market_result = market_service_result.market_result
+            radar_result = market_service_result.radar_result
         with self._timed("pipeline.persist_run", snapshot=len(snapshot), eligible=len(eligible_snapshot), watchlist=len(watchlist)):
             run_directory = self._persist_run(
                 snapshot,
@@ -549,7 +576,10 @@ class ResearchPlatform:
             return saved_watchlist, saved_scan_hits, saved_watchlist
         if eligible_snapshot is None or eligible_snapshot.empty:
             return None, None, None
-        scan_result = self.scan_runner.run(eligible_snapshot)
+        scan_service_result = self.scan_service.run_from_snapshot(eligible_snapshot)
+        scan_result = scan_service_result.scan_run_result
+        if scan_result is None:
+            return None, None, None
         if scan_result.watchlist.empty:
             return None, None, None
         return self.watchlist_builder.build(scan_result.watchlist), scan_result.hits, scan_result.watchlist

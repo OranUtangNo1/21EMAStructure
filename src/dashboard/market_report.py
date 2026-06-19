@@ -10,7 +10,7 @@ class MarketReportConfig:
     """Configurable thresholds for AI-input market document generation."""
 
     write_json: bool = True
-    write_markdown: bool = True
+    write_markdown: bool = False
     output_mode: str = "daily_history"
     score_improving_1w: float = 3.0
     score_deteriorating_1w: float = -3.0
@@ -44,7 +44,7 @@ class MarketReportConfig:
         confidence = _mapping(payload.get("confidence"))
         return cls(
             write_json=bool(output.get("write_json", True)),
-            write_markdown=bool(output.get("write_markdown", True)),
+            write_markdown=bool(output.get("write_markdown", False)),
             output_mode=_output_mode(output.get("mode", payload.get("output_mode")), "daily_history"),
             score_improving_1w=_float(regime.get("score_improving_1w"), 3.0),
             score_deteriorating_1w=_float(regime.get("score_deteriorating_1w"), -3.0),

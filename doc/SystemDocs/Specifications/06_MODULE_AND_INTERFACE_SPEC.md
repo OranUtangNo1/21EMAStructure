@@ -115,6 +115,7 @@ This keeps settings, reusable calculations, and display-ready outputs separate.
     - compressed tape Markdown generation from adjusted OHLCV histories
 - `src/dashboard/stock_card.py`
     - stock-card Markdown generation from adjusted OHLCV histories
+    - stock-card canonical JSON payload generation for AI/system chart-analysis consumers
     - embeds compressed tape output from the same preprocessing path
     - applies stock-card v1.0.2 setup expiry, pivot-date marker, current-day pivot-breakout priority, display-value risk-plan rounding, and structural-stop distance floor rules
 - `src/dashboard/effectiveness.py`
@@ -141,11 +142,18 @@ This keeps settings, reusable calculations, and display-ready outputs separate.
   - named collection persistence for watchlist preset records
 - `src/utils/run_tracking_refresh.py`
   - command-line refresh of tracking target closes and returns
+- `src/cli/oratek.py`
+  - explicit service CLI entrypoint
+  - interactive Japanese menu when launched without arguments
+  - direct commands for price fetch, stockcard, scan, and unified market environment output
+  - compatibility direct commands for market, radar, and market-report input remain available, but the interactive CLI resolves market/radar/report/context requests to the unified market environment action
+  - no automatic execution before the user selects or invokes a command
 - `app/main.py`
   - Streamlit entrypoint
   - page rendering
-  - artifact reload by run-option cache key and `Refresh data`
-  - same-day saved-run reuse before full recompute when refresh controls are not forced
+  - explicit artifact load by `Load data`
+  - no automatic artifact load or recompute on normal startup
+  - same-day saved-run reuse before full recompute when force controls are not selected
   - cache-based recompute control that bypasses saved-run restore without forcing live price refresh
   - watchlist control state
   - watchlist preset save/load/update/delete UI with a 10-preset cap
@@ -241,7 +249,7 @@ The scan layer contract is:
 
 The active app uses raw `watchlist` plus `scan_hits` to rebuild cards and duplicate output from current watchlist selections.
 The persisted watchlist table keeps backward-compatible columns such as `duplicate_ticker`, `hit_scans`, and `annotation_hits`, and also exposes clearer aliases such as `backend_duplicate_ticker`, `backend_duplicate_rule`, `matched_scan_rules`, and `matched_annotation_filters`.
-The active app can build preset-hit exports from built-in and saved custom preset definitions, then write `preset_summary.csv`, `preset_hits.csv`, and `preset_details.csv` under `data_runs/preset_exports/<trade_date>/`. This is manual by default through the Watchlist page; startup automatic export runs only when `scan.preset_csv_export.enabled=true`.
+The active app can build preset-hit exports from built-in and saved custom preset definitions, then write `preset_summary.csv`, `preset_hits.csv`, and `preset_details.csv` under `data_runs/service_outputs/preset_exports/<trade_date>/`. This is manual by default through the Watchlist page; artifact-load automatic export runs only when `scan.preset_csv_export.enabled=true`.
 `earnings_today` remains part of `PlatformArtifacts`, but the active Watchlist UI currently hides the same-day earnings card.
 
 ### 3.6 Radar Interface
@@ -319,9 +327,19 @@ The scorer supports these calculation modes:
 
 `MarketContextBuilder.build(summary, history_summaries=None)` returns `MarketContextResult`. It consumes the saved market summary shape and emits the separate fixed-schema `MARKET_CONTEXT` v1.0.1 artifact for AI input. It does not replace `MarketReportBuilder` and does not write human-facing report prose.
 
+`MarketContextResult.to_dict()` includes both the fixed text `sections` and machine-oriented `structured_sections`. The structured section contract exposes market score history, component scores, metric deltas, index-state fields, market inputs, leadership rows, detected regime transitions, and distribution-pressure diagnostics for downstream AI/system analysis.
+
+`MarketContextBuilder` detects recent transitions from current plus recent historical summaries instead of passing through arbitrary `recent_transitions` rows. The transition axes are market gate, SPY/QQQ regime, breadth, volatility, credit, and leadership. It also computes per-index distribution pressure when enough history is available: raw 25-session distribution-day count, exponentially decayed distribution pressure, absorption flag, absorption inputs, and per-event audit weights.
+
 `MarketContextMarkdownRenderer.render(context)` renders the fixed eight-section `MARKET_CONTEXT` Markdown artifact. `MarketContextMarkdownRenderer.render_json(context)` renders the corresponding JSON artifact.
 
 `CompressedTapeGenerator.build_t0(ticker, history, last_close=None)` and `CompressedTapeGenerator.build_t1(ticker, history, last_close=None)` return standalone `CompressedTapeDocument` payloads. The app-level export functions write one Markdown file per symbol plus a manifest.
+
+`StockCardGenerator.build(ticker, history, metadata=None, last_close=None)` returns `StockCardDocument`. In addition to the compatibility Markdown text, the document contains `payload`, a canonical JSON object using `schema_version=stock_card_json.v1`. App and CLI exports write `card_<TICKER>_<YYYYMMDD>.md` when `stock_card.write_markdown=true` and `card_<TICKER>_<YYYYMMDD>.json` when `stock_card.write_json=true`; manifests include both configured paths. The JSON payload is the forward contract for chart-analysis systems and includes decision core fields, extended ATR context, structural anchors, setup evidence, MOMO/VOLUME/LEVELS/SETUP/TAPE fields, RS/VCS fields when available, Stage 2 context, risk-plan validity, and machine check fields. The JSON trend block includes the Markdown trend-derived values `p_vs_150sma` and `slope150_pct_per_day`.
+
+`StockCardService` enriches standalone stock-card metadata from available local inputs. `radar.industry_etfs[].major_stocks` can populate `meta.industry_etf` without a full pipeline run. `meta.sector_etf` requires profile or snapshot sector data; when that source is unavailable, it remains null rather than inferred from an industry ETF.
+
+The JSON `setup.vcp` field uses the strict indicator `vcp_tightening`. The looser depth sequence is exposed separately as `setup.vcp_depth_contraction` and `setup.depths` so downstream analysis can override or audit the boolean from continuous values. The JSON `risk_plan.struct_stop` field is selected from surviving swing lows only: the candidate must be a confirmed local low over the 65-day low window, or a right-edge reversal low with available future bars, must not be undercut after formation, and must fall within the `basis - max(ATR14, 2.5%)` to `basis - 8%` risk band after the stop buffer. The nearest valid surviving swing low to the basis is selected. If no valid structural swing low exists, `struct_stop` is `null`; the generator must not clamp a missing structure to the distance floor. `risk_plan.struct_stop` must include `struct_stop_date` and `struct_stop_source` with the source low, distance floor, ATR floor, and percent floor when present. If no valid structural stop exists and the ATR stop is deeper than the 8% cap, `risk_plan.sl_valid` is false and target fields are null.
 
 ## 4. Result Objects
 

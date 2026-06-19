@@ -7,8 +7,8 @@ import pytest
 
 from app.main import export_compressed_tapes_for_symbols, export_preset_hit_compressed_tapes
 from src.dashboard.compressed_tape import CompressedTapeConfig, CompressedTapeError, CompressedTapeGenerator
-from src.data.results import FetchStatus, PriceHistoryBatch
 from src.pipeline import PlatformArtifacts
+from src.services.price_store import PriceStore
 
 
 def _history(dates: pd.DatetimeIndex) -> pd.DataFrame:
@@ -90,12 +90,14 @@ def test_compressed_tape_rejects_invalid_ohlc() -> None:
         CompressedTapeGenerator().build_t0("AAA", history)
 
 
-def test_export_compressed_tapes_for_symbols_writes_manifest(tmp_path, monkeypatch) -> None:
+def test_export_compressed_tapes_for_symbols_writes_manifest(tmp_path) -> None:
     config_path = tmp_path / "config.yaml"
     output_dir = tmp_path / "tapes"
     config_path.write_text(
         "\n".join(
             [
+                "data:",
+                f"  price_cache_dir: {str(tmp_path / 'price_cache').replace(chr(92), '/')}",
                 "compressed_tape:",
                 f"  output_dir: {str(output_dir).replace(chr(92), '/')}",
                 "  t0_days: 15",
@@ -104,18 +106,7 @@ def test_export_compressed_tapes_for_symbols_writes_manifest(tmp_path, monkeypat
         encoding="utf-8",
     )
     dates = pd.bdate_range("2026-03-01", periods=60)
-
-    class FakePlatform:
-        def __init__(self, config_path: str) -> None:
-            self.config_path = config_path
-
-        def load_price_histories(self, symbols: list[str], *, period: str | None = None, force_refresh: bool = False) -> PriceHistoryBatch:
-            return PriceHistoryBatch(
-                histories={"AAA": _history(dates)},
-                statuses={"AAA": FetchStatus(symbol="AAA", dataset="price", source="cache_fresh", has_data=True)},
-            )
-
-    monkeypatch.setattr("app.main.ResearchPlatform", FakePlatform)
+    PriceStore(tmp_path / "price_cache").save("AAA", _history(dates))
     artifacts = PlatformArtifacts(
         snapshot=pd.DataFrame({"trade_date": [pd.Timestamp("2026-05-22")], "close": [25.9]}, index=["AAA"]),
         eligible_snapshot=pd.DataFrame(),
@@ -148,12 +139,67 @@ def test_export_compressed_tapes_for_symbols_writes_manifest(tmp_path, monkeypat
     assert manifest["missing"] == {}
 
 
-def test_export_preset_hit_compressed_tapes_uses_preset_duplicate_hits(tmp_path, monkeypatch) -> None:
+def test_export_compressed_tapes_for_symbols_uses_effective_trade_date_for_as_of(tmp_path) -> None:
+    config_path = tmp_path / "config.yaml"
+    output_dir = tmp_path / "tapes"
+    config_path.write_text(
+        "\n".join(
+            [
+                "data:",
+                f"  price_cache_dir: {str(tmp_path / 'price_cache').replace(chr(92), '/')}",
+                "compressed_tape:",
+                f"  output_dir: {str(output_dir).replace(chr(92), '/')}",
+                "  t0_days: 15",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    dates = pd.bdate_range("2026-03-01", periods=60)
+    PriceStore(tmp_path / "price_cache").save("AAA", _history(dates))
+    artifacts = PlatformArtifacts(
+        snapshot=pd.DataFrame({"trade_date": [pd.Timestamp("2026-05-22")], "close": [25.9]}, index=["AAA"]),
+        eligible_snapshot=pd.DataFrame(),
+        watchlist=pd.DataFrame(),
+        duplicate_tickers=pd.DataFrame(),
+        watchlist_cards=[],
+        earnings_today=pd.DataFrame(),
+        scan_hits=pd.DataFrame(),
+        benchmark_history=pd.DataFrame(),
+        vix_history=pd.DataFrame(),
+        market_result=None,
+        radar_result=None,
+        used_sample_data=False,
+        data_source_label="test",
+        fetch_status=pd.DataFrame(),
+        data_health_summary={},
+        run_directory=None,
+        universe_mode="manual",
+        resolved_symbols=["AAA"],
+        universe_snapshot_path=None,
+        artifact_origin="test",
+    )
+
+    result = export_compressed_tapes_for_symbols(
+        str(config_path),
+        artifacts,
+        ["AAA"],
+        source="manual_symbols",
+        as_of_date="2026-05-23",
+    )
+
+    assert result.documents[0].end_date == pd.Timestamp("2026-05-22")
+    assert (output_dir / "20260522" / "tape_AAA_20260522.md").exists()
+    assert not (output_dir / "20260523").exists()
+
+
+def test_export_preset_hit_compressed_tapes_uses_preset_duplicate_hits(tmp_path) -> None:
     config_path = tmp_path / "config.yaml"
     output_dir = tmp_path / "preset_tapes"
     config_path.write_text(
         "\n".join(
             [
+                "data:",
+                f"  price_cache_dir: {str(tmp_path / 'price_cache').replace(chr(92), '/')}",
                 "compressed_tape:",
                 f"  output_dir: {str(output_dir).replace(chr(92), '/')}",
                 "scan:",
@@ -176,18 +222,9 @@ def test_export_preset_hit_compressed_tapes_uses_preset_duplicate_hits(tmp_path,
         encoding="utf-8",
     )
     dates = pd.bdate_range("2026-03-01", periods=60)
-
-    class FakePlatform:
-        def __init__(self, config_path: str) -> None:
-            self.config_path = config_path
-
-        def load_price_histories(self, symbols: list[str], *, period: str | None = None, force_refresh: bool = False) -> PriceHistoryBatch:
-            return PriceHistoryBatch(
-                histories={symbol: _history(dates) for symbol in symbols},
-                statuses={symbol: FetchStatus(symbol=symbol, dataset="price", source="cache_fresh", has_data=True) for symbol in symbols},
-            )
-
-    monkeypatch.setattr("app.main.ResearchPlatform", FakePlatform)
+    price_store = PriceStore(tmp_path / "price_cache")
+    price_store.save("AAA", _history(dates))
+    price_store.save("BBB", _history(dates))
     watchlist = pd.DataFrame(
         {
             "hybrid_score": [90.0, 85.0],

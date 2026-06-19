@@ -28,6 +28,11 @@ class DataSnapshotStore:
     ) -> None:
         self.root_dir = Path(root_dir)
         self.root_dir.mkdir(parents=True, exist_ok=True)
+        self.tracking_db_path = (
+            self.root_dir.parent / "tracking.db"
+            if self.root_dir.name == "legacy_pipeline"
+            else self.root_dir / "tracking.db"
+        )
         self.eligible_snapshot_dir = self.root_dir / "eligible_snapshot"
         self.watchlist_dir = self.root_dir / "watchlist"
         self.market_summary_dir = self.root_dir / "market_summary"
@@ -313,7 +318,7 @@ class DataSnapshotStore:
             records.append((hit_date, ticker, scan_name, str(row.get("kind", "")).strip() or None))
         if not records:
             return
-        conn = connect_tracking_db(self.root_dir / "tracking.db")
+        conn = connect_tracking_db(self.tracking_db_path)
         try:
             conn.executemany(
                 "INSERT OR IGNORE INTO scan_hits (hit_date, ticker, scan_name, kind) VALUES (?, ?, ?, ?)",
@@ -325,7 +330,7 @@ class DataSnapshotStore:
 
     def _load_scan_hits(self, date_key: str) -> pd.DataFrame | None:
         hit_date = self._hit_date_from_key(date_key, None)
-        frame = read_scan_hits_for_watchlist(hit_date, db_path=self.root_dir / "tracking.db")
+        frame = read_scan_hits_for_watchlist(hit_date, db_path=self.tracking_db_path)
         return frame if not frame.empty else None
 
     def _hit_date_from_key(self, date_key: str, trade_date_iso: str | None) -> str:

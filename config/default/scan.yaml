@@ -127,7 +127,7 @@
     display_name: Trend Template
   preset_csv_export:
     enabled: false
-    output_dir: data_runs/preset_exports
+    output_dir: data_runs/service_outputs/preset_exports
     write_details: true
     top_ticker_limit: 5
   watchlist_presets:

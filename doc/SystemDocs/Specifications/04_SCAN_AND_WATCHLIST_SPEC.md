@@ -49,6 +49,8 @@ The raw watchlist candidate set is determined only by enabled scan rules.
 
 Current implemented rule:
 
+- each scan is composed from named issue booleans in `SCAN_RULE_DEFINITIONS`
+- a scan passes only when all issues in that scan pass
 - evaluate all enabled scan rules on the eligible snapshot
 - create one `scan_hits` row per matched scan per ticker
 - compute `scan_hit_count` per ticker
@@ -58,6 +60,8 @@ This means:
 
 - scan hits create watchlist candidates
 - annotation hits do not create watchlist candidates by themselves
+- issue-level ticker rows are not persisted as public outputs
+- issue-level diagnostics are stored only as aggregate counts by date, scan, and issue when `ScanService` writes diagnostics
 
 ### 2.4 Annotation evaluation
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 
 import pandas as pd
@@ -12,8 +13,8 @@ SECTOR_TICKERS = frozenset({"XLB", "XLC", "XLE", "XLF", "XLI", "XLK", "XLP", "XL
 
 @dataclass(frozen=True, slots=True)
 class MarketContextConfig:
-    output_dir: str = "data_runs/market_context"
-    write_markdown: bool = True
+    output_dir: str = "data_runs/service_outputs/market_context"
+    write_markdown: bool = False
     write_json: bool = True
     output_mode: str = "daily_history"
     industry_top_n: int = 8
@@ -25,8 +26,8 @@ class MarketContextConfig:
         output = data.get("output", {})
         output_map = output if isinstance(output, dict) else {}
         return cls(
-            output_dir=str(output_map.get("dir", data.get("output_dir", "data_runs/market_context"))),
-            write_markdown=bool(output_map.get("write_markdown", data.get("write_markdown", True))),
+            output_dir=str(output_map.get("dir", data.get("output_dir", "data_runs/service_outputs/market_context"))),
+            write_markdown=bool(output_map.get("write_markdown", data.get("write_markdown", False))),
             write_json=bool(output_map.get("write_json", data.get("write_json", True))),
             output_mode=cls._output_mode(output_map.get("mode", data.get("output_mode")), "daily_history"),
             industry_top_n=max(1, int(data.get("industry_top_n", 8))),
@@ -62,6 +63,7 @@ class MarketContextResult:
     weekday: str
     schema_version: str
     sections: dict[str, list[str]] = field(default_factory=dict)
+    structured_sections: dict[str, object] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -70,6 +72,7 @@ class MarketContextResult:
             "trade_date": self.trade_date,
             "weekday": self.weekday,
             "sections": self.sections,
+            "structured_sections": self.structured_sections,
         }
 
 
@@ -84,7 +87,7 @@ class MarketContextBuilder:
         trade_date = self._trade_date(summary)
         previous = self._previous_summary(summary, history)
         sections = {
-            "M_GATE": self._m_gate(summary),
+            "M_GATE": self._m_gate(summary, history),
             "INDEX": self._index(summary),
             "BREADTH": self._breadth(summary, previous),
             "SENTIMENT": self._sentiment(summary),
@@ -98,18 +101,241 @@ class MarketContextBuilder:
             weekday=pd.Timestamp(trade_date).strftime("%a") if trade_date != "NA" else "NA",
             schema_version=SCHEMA_VERSION,
             sections=sections,
+            structured_sections=self._structured_sections(summary, previous, history, sections),
         )
 
-    def _m_gate(self, summary: dict[str, object]) -> list[str]:
+    def _structured_sections(
+        self,
+        summary: dict[str, object],
+        previous: dict[str, object] | None,
+        history: list[dict[str, object]],
+        sections: dict[str, list[str]],
+    ) -> dict[str, object]:
+        index_context = self._map(summary.get("index_context_summary"))
+        index_state = self._map(summary.get("index_state_summary"))
+        component_scores = self._map(summary.get("component_scores"))
+        timeline = self._timeline(summary, history)
+        metric_deltas = self._metric_deltas_from_timeline(timeline, self._map(summary.get("metric_deltas")))
+        distribution_pressure = self._distribution_pressure(summary, timeline)
+        payload = {
+            "m_gate": {
+                "verdict": self._verdict_from_lines(sections.get("M_GATE", [])),
+                "market_score": self._json_number(summary.get("score")),
+                "market_label": self._text(summary.get("label")),
+                "market_score_history": self._market_score_history(timeline),
+                "market_label_history": self._market_label_history(timeline),
+                "component_scores": self._json_map(component_scores),
+                "component_groups": self._component_groups(component_scores, summary),
+                "distribution_pressure": distribution_pressure,
+                "source_fields": [
+                    "score",
+                    "label",
+                    "history_summaries.score",
+                    "history_summaries.label",
+                    "component_scores",
+                ],
+            },
+            "deltas": {
+                "metric_deltas": self._json_map(metric_deltas),
+                "reference_audit": {"source": "history_summaries", "status": "PASS"},
+                "source_fields": ["history_summaries", "metric_deltas(keys)"],
+            },
+            "regime": {
+                "index_state": {
+                    "SPY": self._index_state_for_symbol("SPY", index_context, index_state),
+                    "QQQ": self._index_state_for_symbol("QQQ", index_context, index_state),
+                },
+                "transitions": self._detect_transitions(summary, history),
+                "source_fields": ["score", "index_context_summary", "index_state_summary", "breadth_*", "volatility_term_structure", "credit_risk_proxy", "risk_on_ratio_summary", "industry_leaders", "style_pair_summary"],
+            },
+            "market_inputs": {
+                "breadth_summary": self._json_map(self._map(summary.get("breadth_summary"))),
+                "breadth_momentum_summary": self._json_map(self._map(summary.get("breadth_momentum_summary"))),
+                "breadth_internal_summary": self._json_map(self._map(summary.get("breadth_internal_summary"))),
+                "volatility_term_structure": self._json_map(self._map(summary.get("volatility_term_structure"))),
+                "credit_risk_proxy": self._json_map(self._map(summary.get("credit_risk_proxy"))),
+                "risk_on_ratio_summary": self._json_map(self._map(summary.get("risk_on_ratio_summary"))),
+            },
+            "leadership": {
+                "sector_leaders": self._records(summary.get("sector_leaders")),
+                "sector_relative_strength": self._records(summary.get("sector_relative_strength")),
+                "industry_leaders": self._records(summary.get("industry_leaders")),
+                "previous_trade_date": self._trade_date(previous) if previous else None,
+            },
+        }
+        self._assert_reference_consistency(payload, timeline)
+        return payload
+
+    def _market_score_history(self, timeline: list[dict[str, object]]) -> dict[str, float | None]:
+        return {
+            "1d": self._score_at_timeline_offset(timeline, 1),
+            "1w": self._score_at_timeline_offset(timeline, 5),
+            "1m": self._score_at_timeline_offset(timeline, 21),
+            "3m": self._score_at_timeline_offset(timeline, 63),
+        }
+
+    def _score_at_timeline_offset(self, timeline: list[dict[str, object]], offset: int) -> float | None:
+        if len(timeline) <= offset:
+            return None
+        return self._json_number(timeline[-1 - offset].get("score"))
+
+    def _market_label_history(self, timeline: list[dict[str, object]]) -> dict[str, str | None]:
+        return {
+            "1d": self._label_at_timeline_offset(timeline, 1),
+            "1w": self._label_at_timeline_offset(timeline, 5),
+            "1m": self._label_at_timeline_offset(timeline, 21),
+            "3m": self._label_at_timeline_offset(timeline, 63),
+        }
+
+    def _label_at_timeline_offset(self, timeline: list[dict[str, object]], offset: int) -> str | None:
+        if len(timeline) <= offset:
+            return None
+        label = self._text(timeline[-1 - offset].get("label"))
+        return None if label == "NA" else label
+
+    def _metric_deltas_from_timeline(
+        self,
+        timeline: list[dict[str, object]],
+        source_metric_deltas: dict[str, object],
+    ) -> dict[str, dict[str, float]]:
+        if not timeline:
+            return {}
+        offsets = {"1D": 1, "1W": 5, "2W": 10, "1M": 21}
+        keys = list(source_metric_deltas.keys())
+        output: dict[str, dict[str, float]] = {}
+        current = timeline[-1]
+        for key in keys:
+            current_value = self._metric_current_value(current, str(key))
+            if not self._is_num(current_value):
+                continue
+            for label, offset in offsets.items():
+                if len(timeline) <= offset:
+                    continue
+                previous_value = self._metric_current_value(timeline[-1 - offset], str(key))
+                if not self._is_num(previous_value):
+                    continue
+                output.setdefault(str(key), {})[label] = round(float(current_value) - float(previous_value), 3)
+        return output
+
+    def _metric_current_value(self, summary: dict[str, object], key: str) -> object | None:
+        direct_sources = (
+            "breadth_summary",
+            "participation_summary",
+            "breadth_momentum_summary",
+            "breadth_internal_summary",
+            "high_vix_summary",
+            "component_scores",
+        )
+        for source in direct_sources:
+            values = self._map(summary.get(source))
+            if key in values:
+                return values.get(key)
+        if key == "VIX":
+            high_vix = self._map(summary.get("high_vix_summary"))
+            return high_vix.get("VIX", summary.get("vix_close"))
+        prefixed_sources = {
+            "risk_on:": "risk_on_ratio_summary",
+            "vix_term:": "volatility_term_structure",
+            "credit:": "credit_risk_proxy",
+        }
+        for prefix, source in prefixed_sources.items():
+            if key.startswith(prefix):
+                return self._map(summary.get(source)).get(key.removeprefix(prefix))
+        return None
+
+    def _assert_reference_consistency(self, payload: dict[str, object], timeline: list[dict[str, object]]) -> None:
+        m_gate = self._map(payload.get("m_gate"))
+        assert m_gate.get("market_score_history") == self._market_score_history(timeline)
+        assert m_gate.get("market_label_history") == self._market_label_history(timeline)
+        deltas = self._map(payload.get("deltas"))
+        expected = self._json_map(self._metric_deltas_from_timeline(timeline, self._map(timeline[-1].get("metric_deltas")) if timeline else {}))
+        assert deltas.get("metric_deltas") == expected
+
+    def _verdict_from_lines(self, lines: list[str]) -> str:
+        for line in lines:
+            if line.startswith("VERDICT:"):
+                return line.split(":", 1)[1].strip()
+        return "NA"
+
+    def _component_groups(self, components: dict[str, object], summary: dict[str, object]) -> dict[str, object]:
+        groups: dict[str, dict[str, object]] = {"trend": {}, "breadth": {}, "volatility": {}, "credit": {}, "lead": {}}
+        for key, value in components.items():
+            lowered = str(key).lower()
+            if "vix" in lowered or "vol" in lowered:
+                groups["volatility"][key] = value
+            elif "credit" in lowered or "oas" in lowered or "hyg" in lowered or "lqd" in lowered:
+                groups["credit"][key] = value
+            elif "leader" in lowered or "lead" in lowered or "rs" in lowered or "safe_haven" in lowered or "risk" in lowered:
+                groups["lead"][key] = value
+            elif "breadth" in lowered or "pct_above" in lowered or "pct_positive" in lowered or "pct_2w" in lowered:
+                groups["breadth"][key] = value
+            elif "sma" in lowered or "trend" in lowered:
+                groups["trend"][key] = value
+            else:
+                groups["breadth"][key] = value
+        credit = self._map(summary.get("credit_risk_proxy"))
+        for key in ("HY OAS", "HY OAS DELTA 5D BPS", "HY OAS DELTA 21D BPS", "HY OAS WIDENING 5D FLAG", "HYG/LQD REL 1W %", "CREDIT RISK-OFF FLAG"):
+            if key in credit:
+                groups["credit"][key] = credit[key]
+        groups["lead"].update(self._lead_component_payload(summary))
+        return {
+            "trend": self._json_map(groups["trend"]),
+            "breadth": self._json_map(groups["breadth"]),
+            "volatility": self._json_map(groups["volatility"]),
+            "credit": self._json_map(groups["credit"]),
+            "lead": self._json_map(groups["lead"]),
+        }
+
+    def _lead_component_payload(self, summary: dict[str, object]) -> dict[str, object]:
+        industry_rows = self._records(summary.get("industry_leaders"))
+        sector_rows = self._records(summary.get("sector_leaders"))
+        return {
+            "industry_top8": [row.get("TICKER") for row in industry_rows[:8]],
+            "sector_top5": [row.get("TICKER") for row in sector_rows[:5]],
+            "lead_state": self._lead_axis_state(summary)["state"],
+        }
+
+    def _index_state_for_symbol(
+        self,
+        symbol: str,
+        index_context: dict[str, object],
+        index_state: dict[str, object],
+    ) -> dict[str, object]:
+        prefix = f"{symbol} "
+        keys = {
+            "close": "CLOSE",
+            "day_pct": "DAY %",
+            "ema21_position": "21EMA POSITION",
+            "sma50_pct": "50SMA %",
+            "rally_attempt_day": "RALLY ATTEMPT DAY",
+            "ftd_flag": "FTD FLAG",
+            "ftd_valid_flag": "FTD VALID FLAG",
+            "ftd_date": "FTD DATE",
+            "ftd_age_days": "FTD AGE DAYS",
+            "distribution_day_count": "DISTRIBUTION DAY COUNT",
+            "below_50sma_flag": "BELOW 50SMA FLAG",
+            "under_pressure_flag": "UNDER PRESSURE FLAG",
+        }
+        result: dict[str, object] = {}
+        for output_key, source_key in keys.items():
+            value = index_context.get(prefix + source_key, index_state.get(prefix + source_key))
+            result[output_key] = self._json_value(value)
+        return result
+
+    def _m_gate(self, summary: dict[str, object], history: list[dict[str, object]] | None = None) -> list[str]:
         score = self._num(summary.get("score"))
         index = self._map(summary.get("index_context_summary"))
         state = self._map(summary.get("index_state_summary"))
         breadth = self._map(summary.get("breadth_momentum_summary"))
         vol = self._map(summary.get("volatility_term_structure"))
         credit = self._map(summary.get("credit_risk_proxy"))
+        distribution_pressure = self._distribution_pressure(summary, self._timeline(summary, history or []))
 
         spy_dd = self._num(index.get("SPY DISTRIBUTION DAY COUNT", state.get("SPY DISTRIBUTION DAY COUNT")))
         qqq_dd = self._num(index.get("QQQ DISTRIBUTION DAY COUNT", state.get("QQQ DISTRIBUTION DAY COUNT")))
+        spy_dd_decayed = self._num(distribution_pressure.get("SPY", {}).get("dd_decayed"))
+        qqq_dd_decayed = self._num(distribution_pressure.get("QQQ", {}).get("dd_decayed"))
+        heavy_decayed_dd = any(self._is_num(value) and value >= 4.0 for value in (spy_dd_decayed, qqq_dd_decayed))
         valid_ftd = any(self._flag(index.get(f"{symbol} FTD VALID FLAG")) for symbol in ("SPY", "QQQ"))
         min_ftd_age = self._min_valid([index.get("SPY FTD AGE DAYS"), index.get("QQQ FTD AGE DAYS")])
         both_below_50 = all(self._flag(index.get(f"{symbol} BELOW 50SMA FLAG")) for symbol in ("SPY", "QQQ"))
@@ -120,8 +346,7 @@ class MarketContextBuilder:
         breadth_mom = self._num(breadth.get("A20 MOMENTUM FLAG"))
 
         no_go = (
-            (self._is_num(spy_dd) and spy_dd >= 6.0)
-            or (self._is_num(qqq_dd) and qqq_dd >= 6.0)
+            heavy_decayed_dd
             or full_backwardation
             or (credit_riskoff and oas_widening)
             or (self._is_num(score) and score < 40.0 and self._is_num(breadth_mom) and breadth_mom <= -1.0)
@@ -140,8 +365,12 @@ class MarketContextBuilder:
         )
         verdict = "NO_GO" if no_go else "GO" if go else "CAUTION"
         reasons = [
-            f"DD_COUNT_SPY={self._int_or_na(spy_dd)}/25D",
-            f"DD_COUNT_QQQ={self._int_or_na(qqq_dd)}/25D",
+            f"SPY_DD_RAW={self._int_or_na(distribution_pressure.get('SPY', {}).get('dd_raw'))}/25D",
+            f"SPY_DD_DECAYED={self._one(distribution_pressure.get('SPY', {}).get('dd_decayed'))}",
+            f"SPY_DD_ABSORB={self._yn_text(distribution_pressure.get('SPY', {}).get('dd_absorb'))}",
+            f"QQQ_DD_RAW={self._int_or_na(distribution_pressure.get('QQQ', {}).get('dd_raw'))}/25D",
+            f"QQQ_DD_DECAYED={self._one(distribution_pressure.get('QQQ', {}).get('dd_decayed'))}",
+            f"QQQ_DD_ABSORB={self._yn_text(distribution_pressure.get('QQQ', {}).get('dd_absorb'))}",
             f"FTD_AGE={self._days_or_na(min_ftd_age)}({'valid' if valid_ftd else 'invalid_or_none'})",
             f"VIX_TERM={'INV' if term_inversion else 'NORMAL'}",
             f"BREADTH_MOM={self._int_or_na(breadth_mom)}",
@@ -325,6 +554,297 @@ class MarketContextBuilder:
             "- " + ("; ".join(item[1] for item in negatives) if negatives else "NA"),
         ]
 
+    def _detect_transitions(self, summary: dict[str, object], history: list[dict[str, object]]) -> list[dict[str, object]]:
+        timeline = self._timeline(summary, history)
+        if len(timeline) < 2:
+            return []
+        transitions: list[dict[str, object]] = []
+        axes = ["GATE", "BREADTH", "VOL", "CREDIT", "LEAD"]
+        for axis in axes:
+            self._append_axis_transitions(transitions, timeline, axis, None)
+        for symbol in ("SPY", "QQQ"):
+            self._append_axis_transitions(transitions, timeline, "REGIME", symbol)
+        current_date = self._trade_date(summary)
+        transitions = [
+            item
+            for item in transitions
+            if item["date"] <= current_date and self._is_num(item.get("age_days")) and float(item.get("age_days", 0)) <= 10.0
+        ]
+        return sorted(transitions, key=lambda item: (item["date"], str(item["axis"])), reverse=True)[:6]
+
+    def _append_axis_transitions(
+        self,
+        transitions: list[dict[str, object]],
+        timeline: list[dict[str, object]],
+        axis: str,
+        symbol: str | None,
+    ) -> None:
+        previous_state = self._axis_state(timeline[0], axis, symbol)
+        for index, item in enumerate(timeline[1:], start=1):
+            current_state = self._axis_state(item, axis, symbol)
+            if previous_state["state"] is None or current_state["state"] is None:
+                previous_state = current_state
+                continue
+            if current_state["state"] == previous_state["state"]:
+                previous_state = current_state
+                continue
+            next_state = self._axis_state(timeline[index + 1], axis, symbol)["state"] if index + 1 < len(timeline) else None
+            event: dict[str, object] = {
+                "date": self._trade_date(item),
+                "axis": axis if symbol is None else f"{symbol}_{axis}",
+                "from": previous_state["state"],
+                "to": current_state["state"],
+                "trigger": current_state["trigger"],
+                "confirmed": bool(next_state == current_state["state"]),
+                "age_days": max(0, len(timeline) - 1 - index),
+            }
+            if symbol is not None:
+                event["symbol"] = symbol
+            transitions.append(event)
+            previous_state = current_state
+
+    def _axis_state(self, summary: dict[str, object], axis: str, symbol: str | None) -> dict[str, object]:
+        if axis == "GATE":
+            score = self._num(summary.get("score"))
+            if not self._is_num(score):
+                return {"state": None, "trigger": {"metric": "score", "value": None, "threshold": "GO>=60;NO_GO<40"}}
+            state = "GO" if score >= 60.0 else "NO_GO" if score < 40.0 else "CAUTION"
+            return {"state": state, "trigger": {"metric": "score", "value": score, "threshold": "GO>=60;NO_GO<40"}}
+        if axis == "REGIME":
+            return self._regime_axis_state(summary, symbol or "SPY")
+        if axis == "BREADTH":
+            return self._breadth_axis_state(summary)
+        if axis == "VOL":
+            return self._vol_axis_state(summary)
+        if axis == "CREDIT":
+            credit = self._map(summary.get("credit_risk_proxy"))
+            riskoff = self._flag(credit.get("CREDIT RISK-OFF FLAG"))
+            return {"state": "RISKOFF" if riskoff else "OK", "trigger": {"metric": "CREDIT RISK-OFF FLAG", "value": float(riskoff), "threshold": ">=1"}}
+        if axis == "LEAD":
+            return self._lead_axis_state(summary)
+        return {"state": None, "trigger": {"metric": axis, "value": None, "threshold": None}}
+
+    def _regime_axis_state(self, summary: dict[str, object], symbol: str) -> dict[str, object]:
+        index = self._map(summary.get("index_context_summary"))
+        state = self._map(summary.get("index_state_summary"))
+        prefix = f"{symbol} "
+        below_50 = self._flag(index.get(prefix + "BELOW 50SMA FLAG", state.get(prefix + "BELOW 50SMA FLAG")))
+        sma50_pct = self._num(index.get(prefix + "50SMA %", state.get(prefix + "50SMA %")))
+        ema21 = self._text(index.get(prefix + "21EMA POSITION", state.get(prefix + "21EMA POSITION"))).lower()
+        rally = self._num(index.get(prefix + "RALLY ATTEMPT DAY", state.get(prefix + "RALLY ATTEMPT DAY")))
+        ftd_valid = self._flag(index.get(prefix + "FTD VALID FLAG", state.get(prefix + "FTD VALID FLAG")))
+        ftd_age = self._num(index.get(prefix + "FTD AGE DAYS", state.get(prefix + "FTD AGE DAYS")))
+        under_pressure = self._flag(index.get(prefix + "UNDER PRESSURE FLAG", state.get(prefix + "UNDER PRESSURE FLAG")))
+        dd_count = self._num(index.get(prefix + "DISTRIBUTION DAY COUNT", state.get(prefix + "DISTRIBUTION DAY COUNT")))
+        if ftd_valid and self._is_num(ftd_age) and ftd_age <= 1.0:
+            regime = "FTD_CONFIRMED"
+        elif below_50 or (self._is_num(sma50_pct) and sma50_pct < 0.0):
+            regime = "DOWNTREND"
+        elif under_pressure or "below" in ema21 or (self._is_num(dd_count) and dd_count >= 5.0):
+            regime = "UNDER_PRESSURE"
+        elif self._is_num(rally) and rally > 0.0 and not ftd_valid:
+            regime = "RALLY_ATTEMPT"
+        elif ftd_valid or (self._is_num(sma50_pct) and sma50_pct >= 0.0):
+            regime = "UPTREND"
+        else:
+            regime = None
+        return {"state": regime, "trigger": {"metric": f"{symbol} regime inputs", "value": regime, "threshold": "FSM"}}
+
+    def _breadth_axis_state(self, summary: dict[str, object]) -> dict[str, object]:
+        breadth = self._map(summary.get("breadth_summary"))
+        momentum = self._map(summary.get("breadth_momentum_summary"))
+        internal = self._map(summary.get("breadth_internal_summary"))
+        a20_delta10 = self._num(momentum.get("A20 DELTA 10D"))
+        a50 = self._num(breadth.get("pct_above_sma50"))
+        a200 = self._num(breadth.get("pct_above_sma200"))
+        nhnl = self._num(internal.get("NET NEW HIGH LOW"))
+        zweig = self._flag(internal.get("ZWEIG THRUST FLAG"))
+        if zweig or (self._is_num(a20_delta10) and a20_delta10 >= 10.0):
+            state = "THRUST_ON"
+        elif (self._is_num(a20_delta10) and a20_delta10 <= -10.0) or (self._is_num(a50) and a50 < 40.0) or (self._is_num(a200) and a200 < 40.0) or (self._is_num(nhnl) and nhnl < 0.0):
+            state = "DETERIORATING"
+        else:
+            state = "NEUTRAL"
+        return {"state": state, "trigger": {"metric": "A20 DELTA 10D", "value": self._json_number(a20_delta10), "threshold": "THRUST>=10;DETERIORATING<=-10"}}
+
+    def _vol_axis_state(self, summary: dict[str, object]) -> dict[str, object]:
+        high_vix = self._map(summary.get("high_vix_summary"))
+        vol = self._map(summary.get("volatility_term_structure"))
+        vix_pctl = self._num(high_vix.get("VIX 252D PCTL"))
+        inversion = self._flag(vol.get("INVERSION FLAG"))
+        backwardation = self._flag(vol.get("FULL BACKWARDATION FLAG"))
+        peak_off = self._num(high_vix.get("VIX PEAK RATIO %"))
+        if inversion or backwardation or (self._is_num(vix_pctl) and vix_pctl >= 80.0):
+            state = "STRESS_ON"
+        elif self._is_num(peak_off) and peak_off <= -30.0:
+            state = "STRESS_OFF"
+        else:
+            state = "NORMAL"
+        return {"state": state, "trigger": {"metric": "VIX/term", "value": self._json_number(vix_pctl), "threshold": "stress pctl>=80 or term inversion"}}
+
+    def _lead_axis_state(self, summary: dict[str, object]) -> dict[str, object]:
+        risk_on = {"SMH", "QQQ", "XLK", "XLY", "IWM", "RSP"}
+        defensive = {"XLP", "XLU", "XLV"}
+        top = [str(row.get("TICKER", "")).upper() for row in self._records(summary.get("industry_leaders"))[:8]]
+        sectors = [str(row.get("TICKER", "")).upper() for row in self._records(summary.get("sector_leaders"))[:5]]
+        style_lookup = {str(row.get("PAIR", "")): row for row in self._records(summary.get("style_pair_summary"))}
+        rsp_spy = self._num(style_lookup.get("RSP/SPY", {}).get("REL 1M %"))
+        if any(ticker in risk_on for ticker in [*top, *sectors]) or (self._is_num(rsp_spy) and rsp_spy > 0.0):
+            state = "RISKON_LED"
+        elif any(ticker in defensive for ticker in sectors):
+            state = "DEFENSIVE_LED"
+        else:
+            state = "MIXED"
+        return {"state": state, "trigger": {"metric": "leadership", "value": ",".join(top[:3]), "threshold": "risk-on top8 or RSP/SPY>0"}}
+
+    def _distribution_pressure(self, summary: dict[str, object], timeline: list[dict[str, object]]) -> dict[str, object]:
+        return {symbol: self._distribution_pressure_for_symbol(symbol, summary, timeline) for symbol in ("SPY", "QQQ")}
+
+    def _distribution_pressure_for_symbol(self, symbol: str, summary: dict[str, object], timeline: list[dict[str, object]]) -> dict[str, object]:
+        events = self._distribution_events_for_symbol(symbol, timeline)
+        decayed = sum(float(event["weight"]) for event in events) if events else None
+        absorb_inputs = self._distribution_absorb_inputs(symbol, summary)
+        absorb = self._distribution_absorb_flag(absorb_inputs)
+        has_event_coverage = self._has_distribution_event_coverage(symbol, timeline)
+        return {
+            "dd_raw": float(len(events)) if events or has_event_coverage else None,
+            "dd_decayed": round(decayed, 3) if decayed is not None else None,
+            "dd_absorb": absorb,
+            "absorb_inputs": absorb_inputs,
+            "events": events,
+        }
+
+    def _has_distribution_event_coverage(self, symbol: str, timeline: list[dict[str, object]]) -> bool:
+        recent = timeline[-25:]
+        return bool(recent) and all(self._distribution_event_flag(symbol, item) is not None for item in recent)
+
+    def _distribution_events_for_symbol(self, symbol: str, timeline: list[dict[str, object]]) -> list[dict[str, object]]:
+        recent = timeline[-25:]
+        flags = [self._distribution_event_flag(symbol, item) for item in recent]
+        has_full_flag_coverage = bool(recent) and all(flag is not None for flag in flags)
+        events: list[dict[str, object]] = []
+        if has_full_flag_coverage:
+            seen_event_dates: set[str] = set()
+            for index, (item, flag) in enumerate(zip(recent, flags, strict=False)):
+                if not flag:
+                    continue
+                event_date = self._distribution_event_date(symbol, item)
+                if event_date in seen_event_dates:
+                    continue
+                seen_event_dates.add(event_date)
+                age = len(recent) - 1 - index
+                if age > 24:
+                    continue
+                credit = self._distribution_absorb_credit(symbol, recent, index)
+                weight = math.exp(-math.log(2.0) * age / 10.0) * (1.0 - credit)
+                events.append(self._distribution_event_record(item, age, credit, weight, event_date))
+            return events
+        if len(recent) < 2:
+            return events
+        previous_count = self._dd_count(symbol, recent[0])
+        for index, item in enumerate(recent[1:], start=1):
+            current_count = self._dd_count(symbol, item)
+            if self._is_num(previous_count) and self._is_num(current_count) and current_count > previous_count:
+                increment = max(1, int(round(current_count - previous_count)))
+                for _ in range(increment):
+                    age = len(recent) - 1 - index
+                    if age <= 24:
+                        credit = self._distribution_absorb_credit(symbol, recent, index)
+                        weight = math.exp(-math.log(2.0) * age / 10.0) * (1.0 - credit)
+                        events.append(self._distribution_event_record(item, age, credit, weight, self._distribution_event_date(symbol, item)))
+            previous_count = current_count
+        return events
+
+    def _distribution_event_date(self, symbol: str, item: dict[str, object]) -> str:
+        values = self._index_values(symbol, item)
+        price_date = self._text(values.get("price_date"))
+        return price_date if price_date != "NA" else self._trade_date(item)
+
+    def _distribution_event_record(self, item: dict[str, object], age: int, credit: float, weight: float, event_date: str | None = None) -> dict[str, object]:
+        return {
+            "date": event_date or self._trade_date(item),
+            "age_days": age,
+            "severity": 1.0,
+            "absorb_credit": round(credit, 3),
+            "weight": round(weight, 3),
+        }
+
+    def _distribution_event_flag(self, symbol: str, summary: dict[str, object]) -> bool | None:
+        values = self._index_values(symbol, summary)
+        explicit = self._json_bool(values.get("distribution_day_flag"))
+        if explicit is not None:
+            return explicit
+        day_pct = self._num(values.get("day_pct"))
+        volume = self._num(values.get("volume"))
+        previous_volume = self._num(values.get("previous_volume"))
+        if not self._is_num(day_pct) or not self._is_num(volume) or not self._is_num(previous_volume):
+            return None
+        return bool(day_pct <= -0.2 and volume > previous_volume)
+
+    def _distribution_absorb_credit(self, symbol: str, timeline: list[dict[str, object]], event_index: int) -> float:
+        event_values = self._index_values(symbol, timeline[event_index])
+        event_high = self._num(event_values.get("high"))
+        event_volume = self._num(event_values.get("volume"))
+        best_partial = 0.0
+        for future in timeline[event_index + 1 : min(len(timeline), event_index + 4)]:
+            values = self._index_values(symbol, future)
+            close = self._num(values.get("close"))
+            volume = self._num(values.get("volume"))
+            if self._is_num(close) and self._is_num(event_high) and close >= event_high:
+                if self._is_num(volume) and self._is_num(event_volume) and volume >= event_volume:
+                    return 0.9
+                best_partial = max(best_partial, 0.4)
+        return best_partial
+
+    def _distribution_absorb_inputs(self, symbol: str, summary: dict[str, object]) -> dict[str, object]:
+        values = self._index_values(symbol, summary)
+        return {
+            "acc_days_10d": self._json_number(values.get("acc_days_10d")),
+            "dist_days_10d": self._json_number(values.get("dist_days_10d")),
+            "close_above_21ema": self._json_bool(values.get("close_above_21ema")),
+            "higher_high_after_last_dd": self._json_bool(values.get("higher_high_after_last_dd")),
+        }
+
+    def _distribution_absorb_flag(self, inputs: dict[str, object]) -> bool | None:
+        acc = self._num(inputs.get("acc_days_10d"))
+        dist = self._num(inputs.get("dist_days_10d"))
+        above = inputs.get("close_above_21ema")
+        higher_high = inputs.get("higher_high_after_last_dd")
+        if not self._is_num(acc) or not self._is_num(dist) or above is None or higher_high is None:
+            return None
+        return bool(acc >= dist and above and higher_high)
+
+    def _dd_count(self, symbol: str, summary: dict[str, object]) -> float:
+        context = self._map(summary.get("index_context_summary"))
+        state = self._map(summary.get("index_state_summary"))
+        return self._num(context.get(f"{symbol} DISTRIBUTION DAY COUNT", state.get(f"{symbol} DISTRIBUTION DAY COUNT")))
+
+    def _index_values(self, symbol: str, summary: dict[str, object]) -> dict[str, object]:
+        context = self._map(summary.get("index_context_summary"))
+        state = self._map(summary.get("index_state_summary"))
+        prefix = f"{symbol} "
+        ema_position = self._text(context.get(prefix + "21EMA POSITION", state.get(prefix + "21EMA POSITION"))).lower()
+        return {
+            "price_date": context.get(prefix + "PRICE DATE", state.get(prefix + "PRICE DATE")),
+            "close": context.get(prefix + "CLOSE", state.get(prefix + "CLOSE")),
+            "day_pct": context.get(prefix + "DAY %", state.get(prefix + "DAY %")),
+            "high": context.get(prefix + "HIGH", state.get(prefix + "HIGH")),
+            "volume": context.get(prefix + "VOLUME", state.get(prefix + "VOLUME")),
+            "previous_volume": context.get(prefix + "PREVIOUS VOLUME", state.get(prefix + "PREVIOUS VOLUME")),
+            "distribution_day_flag": context.get(prefix + "DISTRIBUTION DAY FLAG", state.get(prefix + "DISTRIBUTION DAY FLAG")),
+            "acc_days_10d": context.get(prefix + "ACC DAYS 10D", state.get(prefix + "ACC DAYS 10D")),
+            "dist_days_10d": context.get(prefix + "DIST DAYS 10D", state.get(prefix + "DIST DAYS 10D")),
+            "close_above_21ema": context.get(prefix + "CLOSE ABOVE 21EMA FLAG", 1.0 if "above" in ema_position else 0.0 if "below" in ema_position else None),
+            "higher_high_after_last_dd": context.get(prefix + "HIGHER HIGH AFTER LAST DD FLAG", state.get(prefix + "HIGHER HIGH AFTER LAST DD FLAG")),
+        }
+
+    def _timeline(self, summary: dict[str, object], history: list[dict[str, object]]) -> list[dict[str, object]]:
+        items = [item for item in history if self._trade_date(item) != "NA"]
+        current_date = self._trade_date(summary)
+        items = [item for item in items if self._trade_date(item) < current_date]
+        items.append(summary)
+        return sorted(items, key=self._trade_date)[-26:]
+
     def _add_change(self, positives: list[tuple[float, str]], negatives: list[tuple[float, str]], value: object, label: str) -> None:
         number = self._num(value)
         if not self._is_num(number) or number == 0.0:
@@ -349,6 +869,43 @@ class MarketContextBuilder:
 
     def _map(self, value: object) -> dict[str, object]:
         return value if isinstance(value, dict) else {}
+
+    def _json_map(self, value: dict[str, object]) -> dict[str, object]:
+        return {str(key): self._json_value(item) for key, item in value.items()}
+
+    def _json_value(self, value: object) -> object:
+        if isinstance(value, dict):
+            return self._json_map(value)
+        if isinstance(value, list):
+            return [self._json_value(item) for item in value]
+        if isinstance(value, pd.Timestamp):
+            return value.strftime("%Y-%m-%d")
+        number = pd.to_numeric(value, errors="coerce")
+        if pd.notna(number):
+            return float(number)
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text or text.lower() in {"nan", "none", "nat"}:
+            return None
+        return text
+
+    def _json_number(self, value: object) -> float | None:
+        number = pd.to_numeric(value, errors="coerce")
+        return float(number) if pd.notna(number) else None
+
+    def _json_bool(self, value: object) -> bool | None:
+        if value is None:
+            return None
+        text = str(value).strip().lower()
+        if text in {"", "nan", "none", "na", "null"}:
+            return None
+        if text in {"y", "yes", "true"}:
+            return True
+        if text in {"n", "no", "false"}:
+            return False
+        number = pd.to_numeric(value, errors="coerce")
+        return bool(number >= 0.5) if pd.notna(number) else None
 
     def _num(self, value: object) -> float:
         number = pd.to_numeric(value, errors="coerce")
@@ -426,6 +983,10 @@ class MarketContextBuilder:
 
     def _yn(self, value: object) -> str:
         return "Y" if self._flag(value) else "N"
+
+    def _yn_text(self, value: object) -> str:
+        parsed = self._json_bool(value)
+        return "NA" if parsed is None else "Y" if parsed else "N"
 
 
 class MarketContextMarkdownRenderer:

@@ -6,9 +6,12 @@ from src.dashboard.watchlist import WatchlistViewModelBuilder
 from src.scan.rules import (
     AnnotationFilterConfig,
     DuplicateRuleConfig,
+    DEFAULT_SCAN_RULE_NAMES,
+    SCAN_RULE_DEFINITIONS,
     ScanCardConfig,
     ScanConfig,
     evaluate_annotation_filters,
+    evaluate_scan_issues,
     evaluate_scan_rules,
     mature_late_stage_risk,
     stage2_quality_score,
@@ -58,6 +61,34 @@ def test_trend_template_scan_requires_price_template_and_rs_confirmation() -> No
     result = evaluate_scan_rules(row, config)
 
     assert result["Trend Template"] is True
+
+
+def test_default_scans_are_composed_from_named_issues() -> None:
+    assert set(DEFAULT_SCAN_RULE_NAMES).issubset(SCAN_RULE_DEFINITIONS)
+    assert all(SCAN_RULE_DEFINITIONS[name].issues for name in DEFAULT_SCAN_RULE_NAMES)
+
+
+def test_evaluate_scan_issues_exposes_issue_level_results() -> None:
+    row = pd.Series(
+        {
+            "atr_50sma_zone": 1.0,
+            "atr_21ema_zone": 0.5,
+            "atr_low_to_ema21_high": 0.0,
+            "high": 100.0,
+            "prev_high": 100.0,
+        }
+    )
+    config = ScanConfig(enabled_scan_rules=("21EMA Pattern H",))
+
+    result = evaluate_scan_issues(row, config)
+
+    assert result["21EMA Pattern H"] == {
+        "atr_50sma_zone_between_0_3": True,
+        "atr_21ema_zone_between_0_3_1": True,
+        "atr_low_to_ema21_high_gte_minus_0_2": True,
+        "high_gt_prev_high": False,
+    }
+    assert evaluate_scan_rules(row, config)["21EMA Pattern H"] is False
 
 
 def test_stage_annotations_use_template_context_and_rs_confirmation() -> None:

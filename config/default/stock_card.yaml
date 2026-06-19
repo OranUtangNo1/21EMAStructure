@@ -1,6 +1,8 @@
 stock_card:
   enabled: true
-  output_dir: data_runs/stock_cards
+  output_dir: data_runs/documents/stock_cards
+  write_markdown: true
+  write_json: true
   validate_snapshot_last_close: false
   compressed_tape:
     t0_days: 15

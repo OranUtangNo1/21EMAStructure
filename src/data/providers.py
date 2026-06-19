@@ -259,22 +259,33 @@ class YFinancePriceDataProvider(PriceDataProvider):
         histories: dict[str, pd.DataFrame] = {}
         statuses: dict[str, FetchStatus] = {}
         stale_histories: dict[str, pd.DataFrame] = {}
+        stale_cache_keys: dict[str, str] = {}
         full_refresh_symbols: list[str] = []
         incremental_symbols: list[str] = []
 
         normalized_symbols = list(dict.fromkeys(str(symbol).strip().upper() for symbol in symbols if str(symbol).strip()))
         for symbol in normalized_symbols:
-            cache_key = self._cache_key(symbol, period, interval)
+            cache_key = self._cache_key(symbol, interval)
             if not force_refresh:
                 cached = self.cache.load_csv(cache_key, ttl_hours=self.technical_ttl_hours)
+                if cached is None or cached.empty:
+                    cached = self.cache.load_csv(self._legacy_cache_key(symbol, period, interval), ttl_hours=self.technical_ttl_hours)
+                    if cached is not None and not cached.empty:
+                        self.cache.save_csv(cache_key, cached)
                 if cached is not None and not cached.empty:
                     histories[symbol] = cached
                     statuses[symbol] = self._status(symbol, "cache_fresh", True, self.cache.get_modified_at(cache_key, "csv"))
                     continue
 
             stale = self.cache.load_csv(cache_key, ttl_hours=self.technical_ttl_hours, allow_stale=True)
+            stale_cache_key = cache_key
+            if stale is None or stale.empty:
+                legacy_cache_key = self._legacy_cache_key(symbol, period, interval)
+                stale = self.cache.load_csv(legacy_cache_key, ttl_hours=self.technical_ttl_hours, allow_stale=True)
+                stale_cache_key = legacy_cache_key
             if stale is not None and not stale.empty:
                 stale_histories[symbol] = stale
+                stale_cache_keys[symbol] = stale_cache_key
                 incremental_symbols.append(symbol)
                 continue
 
@@ -283,22 +294,22 @@ class YFinancePriceDataProvider(PriceDataProvider):
         self._fetch_symbol_group(
             symbols=full_refresh_symbols,
             download_period=period,
-            cache_period=period,
             interval=interval,
             histories=histories,
             statuses=statuses,
             fallback_histories={},
+            fallback_cache_keys={},
         )
 
         update_period = self.incremental_period or period
         self._fetch_symbol_group(
             symbols=incremental_symbols,
             download_period=update_period,
-            cache_period=period,
             interval=interval,
             histories=histories,
             statuses=statuses,
             fallback_histories=stale_histories,
+            fallback_cache_keys=stale_cache_keys,
         )
         return PriceHistoryBatch(histories=histories, statuses=statuses)
 
@@ -306,18 +317,18 @@ class YFinancePriceDataProvider(PriceDataProvider):
         self,
         symbols: list[str],
         download_period: str,
-        cache_period: str,
         interval: str,
         histories: dict[str, pd.DataFrame],
         statuses: dict[str, FetchStatus],
         fallback_histories: dict[str, pd.DataFrame],
+        fallback_cache_keys: dict[str, str],
     ) -> None:
         batches = self._chunk_symbols(symbols)
         for batch_index, batch in enumerate(batches):
             downloaded, error_note = self._download_batch(batch, download_period, interval)
             fetched_at = datetime.now()
             for symbol in batch:
-                cache_key = self._cache_key(symbol, cache_period, interval)
+                cache_key = self._cache_key(symbol, interval)
                 history = downloaded.get(symbol, pd.DataFrame())
                 if not history.empty:
                     merged = self._merge_histories(fallback_histories.get(symbol), history)
@@ -333,7 +344,7 @@ class YFinancePriceDataProvider(PriceDataProvider):
                         symbol,
                         "cache_stale",
                         True,
-                        self.cache.get_modified_at(cache_key, "csv"),
+                        self.cache.get_modified_at(fallback_cache_keys.get(symbol, cache_key), "csv"),
                         error_note,
                     )
                     continue
@@ -425,7 +436,10 @@ class YFinancePriceDataProvider(PriceDataProvider):
     def _chunk_symbols(self, symbols: list[str]) -> list[list[str]]:
         return [symbols[index : index + self.batch_size] for index in range(0, len(symbols), self.batch_size)]
 
-    def _cache_key(self, symbol: str, period: str, interval: str) -> str:
+    def _cache_key(self, symbol: str, interval: str) -> str:
+        return f"prices_{symbol}_{interval}"
+
+    def _legacy_cache_key(self, symbol: str, period: str, interval: str) -> str:
         return f"prices_{symbol}_{period}_{interval}"
 
     def _normalize_download(self, frame: pd.DataFrame) -> pd.DataFrame:

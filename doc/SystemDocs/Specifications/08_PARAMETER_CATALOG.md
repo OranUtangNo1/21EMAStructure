@@ -26,7 +26,7 @@ Archived final discretionary execution, sizing, and trade-management parameters 
 - current default: `data_cache`
 
 ### app.snapshot_dir
-- current default: `data_runs`
+- current default: `data_runs/legacy_pipeline`
 
 ### app.user_preferences_path
 - current default: `data_cache/user_preferences.yaml`
@@ -37,6 +37,11 @@ Archived final discretionary execution, sizing, and trade-management parameters 
 - when true, the pipeline can synthesize sample price, profile, and fundamental data for missing symbols
 
 ## 3. Data and cache
+
+### data.price_cache_dir
+- current default: `C:/reository/shared_market_cache`
+- stores shared price and market time-series cache files such as `prices_AAPL_1d.csv`
+- is separate from `app.cache_dir`, which remains project-local for non-price cache and user preference defaults
 
 ### data.technical_cache_ttl_hours
 - current default: `12`
@@ -389,8 +394,8 @@ RS scoring also emits `rs_ratio_52w_high`, `rs_ratio_at_52w_high`, `rs_ratio_3y_
 The `entry_signals` section controls the Entry Signals tab.
 
 - `output.mode`: current default `latest_only`; supported values are `daily_history`, `latest_only`, `on_demand`, and `disabled`
-  - `latest_only`: startup export writes `data_runs/entry_signals/latest_evaluations.csv`
-  - `daily_history`: startup export writes `data_runs/entry_signals/YYYYMMDD_evaluations.csv`
+  - `latest_only`: artifact-load export writes `data_runs/legacy_pipeline/entry_signals/latest_evaluations.csv`
+  - `daily_history`: artifact-load export writes `data_runs/legacy_pipeline/entry_signals/YYYYMMDD_evaluations.csv`
   - `on_demand` or `disabled`: startup export evaluates signals but suppresses review CSV writes
 - `context_guard`: optional cross-signal safety layer applied after the signal-specific evaluator
   - `enabled`: turn the shared guard on or off
@@ -488,7 +493,7 @@ Market Dashboard does not fetch or compute the former leadership ETF snapshot by
 ### Market document
 - `market_report.output.mode`: current default `latest_only`; supported values are `daily_history`, `latest_only`, `on_demand`, and `disabled`
 - `market_report.output.write_json`: current default `true`; writes the AI-input market document JSON using the configured output mode
-- `market_report.output.write_markdown`: current default `true`; writes a Markdown rendering of the same market document using the configured output mode
+- `market_report.output.write_markdown`: current default `false`; Markdown compatibility input is not written by default
 - `market_report.horizons.short_days`: current default `5`
 - `market_report.horizons.medium_days`: current default `21`
 - `market_report.horizons.long_days`: current default `63`
@@ -513,9 +518,9 @@ Market Dashboard does not fetch or compute the former leadership ETF snapshot by
 - `market_report.confidence.disagreement_penalty`: current default `0.2`
 
 ### Market context
-- `market_context.output.dir`: current default `data_runs/market_context`
+- `market_context.output.dir`: current default `data_runs/service_outputs/market_context`
 - `market_context.output.mode`: current default `latest_only`; supported values are `daily_history`, `latest_only`, `on_demand`, and `disabled`
-- `market_context.output.write_markdown`: current default `true`; writes Markdown using the configured output mode
+- `market_context.output.write_markdown`: current default `false`; Markdown compatibility input is not written by default
 - `market_context.output.write_json`: current default `true`; writes JSON using the configured output mode
 - `market_context.industry_top_n`: current default `8`; controls the fixed top industry count rendered in `INDUSTRY_RS`
 - emitted schema: `v1.0.1`
@@ -524,7 +529,7 @@ Market Dashboard does not fetch or compute the former leadership ETF snapshot by
 
 ### Compressed tape
 - `compressed_tape.enabled`: current default `true`
-- `compressed_tape.output_dir`: current default `data_runs/compressed_tape`
+- `compressed_tape.output_dir`: current default `data_runs/documents/compressed_tape`
 - `compressed_tape.t0_days`: current default `15`
 - `compressed_tape.t1_days`: current default `50`
 - `compressed_tape.events_lookback_days`: current default `50`
@@ -534,7 +539,9 @@ Market Dashboard does not fetch or compute the former leadership ETF snapshot by
 
 ### Stock card
 - `stock_card.enabled`: current default `true`
-- `stock_card.output_dir`: current default `data_runs/stock_cards`
+- `stock_card.output_dir`: current default `data_runs/documents/stock_cards`
+- `stock_card.write_markdown`: current default `true`; writes the compatibility Markdown stock-card rendering
+- `stock_card.write_json`: current default `true`; writes the canonical AI/system stock-card JSON payload
 - `stock_card.validate_snapshot_last_close`: current default `false`; standalone stock-card export does not require snapshot close matching unless this is enabled
 - `stock_card.compressed_tape.*`: nested compressed-tape settings used for the embedded `TAPE` section
 - emitted schema: `card-v1.0.2`

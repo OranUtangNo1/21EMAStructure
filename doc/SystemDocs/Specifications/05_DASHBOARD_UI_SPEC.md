@@ -24,7 +24,7 @@ The main content area exposes a collapsed `Run options` expander with:
 - `Force weekly universe refresh`
 - `Force price data refresh`
 - `Recompute from cache`
-- `Refresh data` button
+- `Load data` button
 
 The default config path is resolved internally to `config/default.yaml` and is not currently exposed in the run controls.
 Manual symbol entry is not exposed in the active UI.
@@ -45,13 +45,14 @@ Current navigation behavior:
 - the app resolves the active page from a page-definition registry so additional tabs can be added without reshaping the main flow
 - page-specific controls render in the main content area
 
-The app reloads artifacts when the user presses `Refresh data` or when the tuple `(config_path, symbols, force_universe_refresh, force_price_refresh, force_recompute_from_cache)` changes.
+The app loads artifacts only when the user presses `Load data`.
 
 Current load behavior:
 
-- explicit `Refresh` always recomputes the pipeline
-- otherwise the app reuses the current in-session artifacts until the artifact key changes
-- when the artifact key changes without explicit refresh or force-refresh controls, the app first attempts same-day saved-run restore through `ResearchPlatform.load_latest_run_artifacts()`
+- normal startup does not initialize `ResearchPlatform`, restore saved runs, recompute artifacts, sync tracking, or export EntrySignal files
+- the app reuses current in-session artifacts until `Load data` is pressed again
+- when run options change, the app warns that `Load data` is required before those options apply
+- when `Load data` is pressed without force controls, the app first attempts same-day saved-run restore through `ResearchPlatform.load_latest_run_artifacts()`
 - if same-day restore succeeds, the app skips full pipeline recomputation
 - if same-day restore fails, the app recomputes through `ResearchPlatform.run()`
 - `Force weekly universe refresh` bypasses weekly universe snapshot reuse for symbol resolution
@@ -160,8 +161,8 @@ Preset-hit panel behavior:
 - the summary table groups by ticker and shows hit presets, preset count, built-in/custom split, matched scans, and rule modes
 - `Download preset hits CSV` downloads the long one-row-per-`preset_name x ticker` hit table
 - `Write preset CSV files` writes `preset_summary.csv`, `preset_hits.csv`, and, when enabled, `preset_details.csv` to the configured preset export folder
-- `Write preset tapes` writes compressed tape Markdown files for the current preset-hit tickers under `data_runs/compressed_tape/YYYYMMDD/`
-- `Write preset stock cards` writes stock-card Markdown files for the current preset-hit tickers under `data_runs/stock_cards/YYYYMMDD/`
+- `Write preset tapes` writes compressed tape Markdown files for the current preset-hit tickers under `data_runs/documents/compressed_tape/YYYYMMDD/`
+- `Write preset stock cards` writes stock-card Markdown files for the current preset-hit tickers under `data_runs/documents/stock_cards/YYYYMMDD/`
 - the collapsed `Compressed tape manual symbols` control accepts comma-separated symbols and writes compressed tape Markdown files for those explicit symbols through the same export path
 - the collapsed `Stock card manual symbols` control accepts comma-separated symbols and writes stock-card Markdown files for those explicit symbols through the same export path
 
@@ -291,7 +292,7 @@ Entry plans are generated as EntrySignal outputs for user review only; automated
 
 Valid `Ready Now` plans are persisted to `signal_entry_event` for outcome review. Tracking refresh updates those event rows with fixed-horizon returns, TP1/SL hit flags, first outcome, result R, and 20D / 21D maximum gain/drawdown. These event outcomes are diagnostics for EntrySignal calibration and do not represent broker orders or realized P&L.
 
-On app artifact load, the startup-selected EntrySignal set is also evaluated and exported to `data_runs/entry_signals/latest_evaluations.csv` by default. `entry_signals.output.mode=daily_history` keeps the older date-keyed `YYYYMMDD_evaluations.csv` behavior, while `on_demand` and `disabled` suppress startup file writes. Bucket-specific CSV and summary JSON write paths remain available in the runner but are disabled by default. `data_runs/tracking.db` remains the durable source for pool state, evaluations, and entry events.
+On app artifact load, the default-selected EntrySignal set is also evaluated and exported to `data_runs/legacy_pipeline/entry_signals/latest_evaluations.csv` by default. `entry_signals.output.mode=daily_history` keeps the older date-keyed `YYYYMMDD_evaluations.csv` behavior, while `on_demand` and `disabled` suppress artifact-load file writes. Bucket-specific CSV and summary JSON write paths remain available in the runner but are disabled by default. `data_runs/tracking.db` remains the durable source for pool state, evaluations, and entry events.
 
 ## 5. RS Radar
 
@@ -588,7 +589,7 @@ The underlying result object may still carry `result.s5th_series`, but the activ
 
 ### 7.8 Daily market document
 
-The pipeline may persist a deterministic AI-input market document under `data_runs/market_documents/` according to `market_report.output.mode`. The default mode writes `latest.md` and `latest.json`. The final report-writing skill may later write the human-facing report under `data_runs/market_reports/`.
+The market environment flow may persist a deterministic AI-input market document under `data_runs/service_outputs/market_report_input/` according to `market_report.output.mode`. The default mode writes `latest.json`; Markdown compatibility input is disabled by default. The final report-writing skill may later write the human-facing report as Markdown.
 
 The active Market Dashboard does not render this document or the final report yet. The current UI continues to render the Market Conditions hero, metric panels, Core / External snapshots, and Factors vs SP500 sections described above.
 

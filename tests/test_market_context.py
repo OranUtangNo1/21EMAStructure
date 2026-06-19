@@ -101,12 +101,14 @@ def test_market_context_renderer_outputs_fixed_sections_and_gate() -> None:
     previous = {
         **_summary(),
         "trade_date": "2026-06-03T00:00:00",
+        "high_vix_summary": {**_summary()["high_vix_summary"], "VIX": 20.0},
         "breadth_internal_summary": {"MCCLELLAN SUMMATION": 1000.0, "AD LINE": 90.0},
         "industry_leaders": [{"TICKER": "SMH", "RS": 92.0, "STRUCT RS": 87.0, "MAJOR STOCKS": "NVDA,AVGO,AMD"}],
         "index_state_summary": {"SPY DISTRIBUTION DAY COUNT": 3.0, "QQQ DISTRIBUTION DAY COUNT": 4.0},
     }
     context = MarketContextBuilder().build(_summary(), history_summaries=[previous])
     markdown = MarketContextMarkdownRenderer().render(context)
+    payload = context.to_dict()
 
     assert markdown.startswith("# MARKET_CONTEXT | 2026-06-10 (Wed) | schema v1.0.1")
     for section in ["M_GATE", "INDEX", "BREADTH", "SENTIMENT", "STYLE", "SECTOR_RS", "INDUSTRY_RS", "CHANGES_1W"]:
@@ -120,6 +122,11 @@ def test_market_context_renderer_outputs_fixed_sections_and_gate() -> None:
     assert "1.SMH 95|90|+0|NVDA,AVGO,AMD" in markdown
     assert "NEW_IN_TOP8: XHB" in markdown
     assert "+ OAS -8bps; A20 +6pt; XLI rank +3" in markdown
+    assert payload["structured_sections"]["m_gate"]["market_score"] == 68.0
+    assert payload["structured_sections"]["m_gate"]["market_score_history"]["1w"] is None
+    assert payload["structured_sections"]["regime"]["index_state"]["SPY"]["ftd_valid_flag"] == 1.0
+    assert payload["structured_sections"]["deltas"]["metric_deltas"]["VIX"]["1D"] == -1.6
+    assert "1W" not in payload["structured_sections"]["deltas"]["metric_deltas"]["VIX"]
 
 
 def test_market_context_converts_oas_percent_level_to_bps() -> None:
@@ -204,3 +211,135 @@ def test_market_context_industry_majors_fall_back_to_config() -> None:
     markdown = MarketContextMarkdownRenderer().render(MarketContextBuilder(config).build(summary))
 
     assert "1.SMH 95|90|NA|NVDA,AVGO,AMD" in markdown
+
+
+def test_market_context_detects_transitions_from_history_not_passthrough() -> None:
+    first = {**_summary(), "trade_date": "2026-06-08T00:00:00", "score": 55.0, "recent_transitions": [{"axis": "FAKE"}]}
+    second = {**_summary(), "trade_date": "2026-06-09T00:00:00", "score": 65.0}
+    current = {**_summary(), "trade_date": "2026-06-10T00:00:00", "score": 66.0}
+    first["credit_risk_proxy"] = {**first["credit_risk_proxy"], "CREDIT RISK-OFF FLAG": 0.0}
+    second["credit_risk_proxy"] = {**second["credit_risk_proxy"], "CREDIT RISK-OFF FLAG": 1.0}
+    current["credit_risk_proxy"] = {**current["credit_risk_proxy"], "CREDIT RISK-OFF FLAG": 1.0}
+
+    context = MarketContextBuilder().build(current, history_summaries=[first, second])
+    transitions = context.structured_sections["regime"]["transitions"]
+
+    assert {"axis": "FAKE"} not in transitions
+    gate_transition = next(item for item in transitions if item["axis"] == "GATE")
+    assert gate_transition["date"] == "2026-06-09"
+    assert gate_transition["from"] == "CAUTION"
+    assert gate_transition["to"] == "GO"
+    assert gate_transition["confirmed"] is True
+    credit_transition = next(item for item in transitions if item["axis"] == "CREDIT")
+    assert credit_transition["from"] == "OK"
+    assert credit_transition["to"] == "RISKOFF"
+    assert all(item["age_days"] <= 10 for item in transitions)
+    assert transitions == sorted(transitions, key=lambda item: (item["date"], str(item["axis"])), reverse=True)[:6]
+
+
+def test_market_context_adds_distribution_decay_and_absorb_audit() -> None:
+    first = {**_summary(), "trade_date": "2026-06-08T00:00:00"}
+    first["index_context_summary"] = {
+        **first["index_context_summary"],
+        "SPY DISTRIBUTION DAY COUNT": 1.0,
+        "SPY DISTRIBUTION DAY FLAG": 1.0,
+        "SPY HIGH": 100.0,
+        "SPY VOLUME": 1000.0,
+    }
+    second = {**_summary(), "trade_date": "2026-06-09T00:00:00"}
+    second["index_context_summary"] = {
+        **second["index_context_summary"],
+        "SPY DISTRIBUTION DAY COUNT": 2.0,
+        "SPY DISTRIBUTION DAY FLAG": 1.0,
+        "SPY HIGH": 100.0,
+        "SPY VOLUME": 1000.0,
+    }
+    current = {**_summary(), "trade_date": "2026-06-10T00:00:00"}
+    current["index_context_summary"] = {
+        **current["index_context_summary"],
+        "SPY DISTRIBUTION DAY COUNT": 2.0,
+        "SPY DISTRIBUTION DAY FLAG": 0.0,
+        "SPY CLOSE": 101.0,
+        "SPY VOLUME": 1100.0,
+        "SPY ACC DAYS 10D": 3.0,
+        "SPY DIST DAYS 10D": 1.0,
+        "SPY CLOSE ABOVE 21EMA FLAG": 1.0,
+        "SPY HIGHER HIGH AFTER LAST DD FLAG": 1.0,
+    }
+
+    context = MarketContextBuilder().build(current, history_summaries=[first, second])
+    markdown = MarketContextMarkdownRenderer().render(context)
+    pressure = context.structured_sections["m_gate"]["distribution_pressure"]["SPY"]
+
+    assert "SPY_DD_RAW=2/25D" in markdown
+    assert "SPY_DD_ABSORB=Y" in markdown
+    assert "DD_COUNT_SPY" not in markdown
+    assert pressure["dd_raw"] == 2.0
+    assert pressure["dd_absorb"] is True
+    assert 0.0 <= pressure["dd_decayed"] <= pressure["dd_raw"]
+    assert pressure["events"][0]["absorb_credit"] == 0.9
+    assert len(pressure["events"]) == pressure["dd_raw"]
+
+
+def test_market_context_raw_distribution_count_is_not_hard_no_go_without_decay_history() -> None:
+    summary = _summary()
+    summary["index_context_summary"] = {
+        **summary["index_context_summary"],
+        "SPY DISTRIBUTION DAY COUNT": 6.0,
+        "QQQ DISTRIBUTION DAY COUNT": 6.0,
+    }
+
+    markdown = MarketContextMarkdownRenderer().render(MarketContextBuilder().build(summary))
+
+    assert "VERDICT: NO_GO" not in markdown
+    assert "SPY_DD_RAW=NA/25D" in markdown
+    assert "SPY_DD_DECAYED=NA" in markdown
+
+
+def test_market_context_component_groups_are_exclusive_five_axis_payloads() -> None:
+    context = MarketContextBuilder().build(_summary())
+    groups = context.structured_sections["m_gate"]["component_groups"]
+
+    assert set(groups) == {"trend", "breadth", "volatility", "credit", "lead"}
+    assert groups["credit"]["HY OAS"] == 315.0
+    assert groups["lead"]["lead_state"] == "RISKON_LED"
+    assigned_component_keys = [
+        key
+        for group_name in ("trend", "breadth", "volatility", "credit", "lead")
+        for key in groups[group_name]
+        if key in _summary()["component_scores"]
+    ]
+    assert len(assigned_component_keys) == len(set(assigned_component_keys))
+
+
+def test_market_context_score_history_uses_same_timeline_as_transitions() -> None:
+    previous = {**_summary(), "trade_date": "2026-06-09T00:00:00", "score": 54.0}
+    current = {**_summary(), "trade_date": "2026-06-10T00:00:00", "score": 68.0, "score_1d_ago": 62.0}
+
+    context = MarketContextBuilder().build(current, history_summaries=[previous])
+
+    history = context.structured_sections["m_gate"]["market_score_history"]
+    assert history["1d"] == 54.0
+
+
+def test_market_context_metric_deltas_use_same_timeline_as_score_history() -> None:
+    previous = {
+        **_summary(),
+        "trade_date": "2026-06-09T00:00:00",
+        "breadth_summary": {**_summary()["breadth_summary"], "pct_above_sma20": 70.0},
+        "high_vix_summary": {**_summary()["high_vix_summary"], "VIX": 20.0},
+    }
+    current = {
+        **_summary(),
+        "trade_date": "2026-06-10T00:00:00",
+        "breadth_summary": {**_summary()["breadth_summary"], "pct_above_sma20": 58.0},
+        "high_vix_summary": {**_summary()["high_vix_summary"], "VIX": 18.4},
+        "metric_deltas": {"pct_above_sma20": {"1D": 99.0}, "VIX": {"1D": 99.0}},
+    }
+
+    context = MarketContextBuilder().build(current, history_summaries=[previous])
+    deltas = context.structured_sections["deltas"]["metric_deltas"]
+
+    assert deltas["pct_above_sma20"]["1D"] == -12.0
+    assert deltas["VIX"]["1D"] == -1.6
+    assert context.structured_sections["deltas"]["reference_audit"] == {"source": "history_summaries", "status": "PASS"}

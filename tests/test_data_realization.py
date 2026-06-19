@@ -33,13 +33,13 @@ def test_cache_layer_allows_stale_reads() -> None:
             },
             index=pd.to_datetime(["2024-01-01", "2024-01-02"]),
         )
-        cache.save_csv("prices_TEST_18mo_1d", frame)
-        path = Path(tmp_dir) / "prices_TEST_18mo_1d.csv"
+        cache.save_csv("prices_TEST_1d", frame)
+        path = Path(tmp_dir) / "prices_TEST_1d.csv"
         old_timestamp = time.time() - 3 * 3600
         os.utime(path, (old_timestamp, old_timestamp))
 
-        assert cache.load_csv("prices_TEST_18mo_1d", ttl_hours=1) is None
-        stale = cache.load_csv("prices_TEST_18mo_1d", ttl_hours=1, allow_stale=True)
+        assert cache.load_csv("prices_TEST_1d", ttl_hours=1) is None
+        stale = cache.load_csv("prices_TEST_1d", ttl_hours=1, allow_stale=True)
         assert stale is not None
         assert list(stale.columns) == ["open", "high", "low", "close", "adjusted_close", "volume"]
 
@@ -272,9 +272,10 @@ def test_snapshot_store_loads_latest_run_with_dashboard_payloads() -> None:
         assert loaded.market_report_metadata["analysis_boundary"]["prohibited_sources"]
         assert "industry_leaders" in loaded.market_metadata
         assert any(section["key"] == "industry_leadership" for section in loaded.market_report_metadata["sections"])
-        assert (Path(tmp_dir) / "market_documents" / "20260408.md").exists()
-        assert (Path(tmp_dir) / "market_context" / "20260408.md").exists()
+        assert (Path(tmp_dir) / "market_documents" / "20260408.json").exists()
+        assert not (Path(tmp_dir) / "market_documents" / "20260408.md").exists()
         assert (Path(tmp_dir) / "market_context" / "20260408.json").exists()
+        assert not (Path(tmp_dir) / "market_context" / "20260408.md").exists()
         assert not (Path(tmp_dir) / "market_reports" / "20260408.json").exists()
         assert "market_snapshot" in loaded.market_metadata
         assert "sector_leaders" in loaded.radar_metadata
@@ -309,10 +310,10 @@ def test_snapshot_store_latest_only_market_ai_inputs_restore_from_latest() -> No
 
         loaded = store.load_latest_run()
 
-        assert (Path(tmp_dir) / "market_documents" / "latest.md").exists()
         assert (Path(tmp_dir) / "market_documents" / "latest.json").exists()
-        assert (Path(tmp_dir) / "market_context" / "latest.md").exists()
+        assert not (Path(tmp_dir) / "market_documents" / "latest.md").exists()
         assert (Path(tmp_dir) / "market_context" / "latest.json").exists()
+        assert not (Path(tmp_dir) / "market_context" / "latest.md").exists()
         assert not (Path(tmp_dir) / "market_documents" / "20260408.md").exists()
         assert not (Path(tmp_dir) / "market_context" / "20260408.md").exists()
         assert loaded.market_report_metadata is not None

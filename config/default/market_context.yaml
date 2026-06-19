@@ -1,7 +1,7 @@
 market_context:
   output:
-    dir: data_runs/market_context
+    dir: data_runs/service_outputs/market_context
     mode: latest_only
-    write_markdown: true
+    write_markdown: false
     write_json: true
   industry_top_n: 8

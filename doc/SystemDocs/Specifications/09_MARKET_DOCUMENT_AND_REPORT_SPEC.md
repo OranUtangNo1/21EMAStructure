@@ -10,11 +10,9 @@ The system does not attempt to write the final human-facing market report direct
 
 | Artifact | Owner | Purpose | Path |
 | --- | --- | --- | --- |
-| Market summary JSON | System | Persisted `MarketConditionResult` payload. | `data_runs/market_summary/YYYYMMDD.json` |
-| Market document JSON | System | Canonical AI-input structured document. | `data_runs/market_documents/latest.json` by default; `YYYYMMDD.json` when `market_report.output.mode=daily_history` |
-| Market document Markdown | System | Skill-friendly rendering of the same market document. | `data_runs/market_documents/latest.md` by default; `YYYYMMDD.md` when `market_report.output.mode=daily_history` |
-| Market context JSON | System | Fixed-schema compact market and RS context artifact. | `data_runs/market_context/latest.json` by default; `YYYYMMDD.json` when `market_context.output.mode=daily_history` |
-| Market context Markdown | System | Fixed-schema compact Markdown rendering of the same context. | `data_runs/market_context/latest.md` by default; `YYYYMMDD.md` when `market_context.output.mode=daily_history` |
+| Market summary JSON | System | Persisted `MarketConditionResult` payload. | `data_runs/legacy_pipeline/market_summary/YYYYMMDD.json` |
+| Market document JSON | System | Canonical AI-input structured document. | `data_runs/service_outputs/market_report_input/latest.json` by default; `YYYYMMDD.json` when `market_report.output.mode=daily_history` |
+| Market context JSON | System | Fixed-schema compact market and RS context artifact. | `data_runs/service_outputs/market_context/latest.json` by default; `YYYYMMDD.json` when `market_context.output.mode=daily_history` |
 | Final market report Markdown | Skill | Human-facing daily market report. | `data_runs/market_reports/YYYYMMDD.md` |
 
 The system does not write final-report JSON metadata. The final report is a Markdown artifact only.
@@ -25,11 +23,30 @@ The system does not write final-report JSON metadata. The final report is a Mark
 2. `DataSnapshotStore` persists `market_summary/YYYYMMDD.json`.
 3. The market-document builder reads the current summary, RS Radar industry leadership rows, and recent same-folder summaries.
 4. The market-context builder reads the current summary and recent same-folder summaries.
-5. The system writes market document and market context artifacts according to each `output.mode`. The default is `latest_only`, which writes `latest.json` and `latest.md`.
-6. The report-writing skill reads the market document, preferably the Markdown rendering with the JSON treated as canonical data.
+5. The system writes market document and market context JSON artifacts according to each `output.mode`. The default is `latest_only`, which writes `latest.json`.
+6. The report-writing skill reads the market document JSON as canonical input.
 7. The skill writes `market_reports/YYYYMMDD.md`.
 
 `market_context` is a separate compact AI-input artifact. It uses the same market and RS data family as the market document, but it has its own fixed `MARKET_CONTEXT` v1.0.1 schema and does not replace the market document or final report.
+
+The JSON artifact contains two layers:
+
+- `sections`: the fixed legacy text sections used by existing prompt flows
+- `structured_sections`: machine-oriented fields for downstream AI/system consumers
+
+`structured_sections` includes:
+
+- `m_gate`: verdict, market score, score history, component scores, grouped component buckets, and distribution-pressure diagnostics
+- `deltas`: metric-delta payloads
+- `regime`: SPY/QQQ index-state fields and detected transition rows
+- `market_inputs`: breadth, volatility, credit, and risk-on source maps
+- `leadership`: sector, sector-relative-strength, and industry leadership rows
+
+`structured_sections.regime.transitions` is detected inside `market_context` from the current summary and available recent summary history. It does not pass through arbitrary `recent_transitions` rows. Detected axes include `GATE`, `SPY_REGIME`, `QQQ_REGIME`, `BREADTH`, `VOL`, `CREDIT`, and `LEAD`. Transition rows expose `date`, `axis`, `from`, `to`, `trigger`, `confirmed`, and `age_days`; per-index regime events also expose `symbol`.
+
+`structured_sections.m_gate.distribution_pressure` exposes per-index `dd_raw`, `dd_decayed`, `dd_absorb`, `absorb_inputs`, and per-distribution-day audit events when enough history exists. `DD_DECAYED` is an exponentially decayed 25-session distribution-day pressure score with a 10-session half-life and absorption credit. If there is not enough history to locate individual count increments, `dd_decayed` is null rather than inferred from the raw count. `M_GATE` reason text includes `DD_RAW`, `DD_DECAYED`, and `DD_ABSORB` values for SPY and QQQ. The CLI `market-env` path enriches its saved market summary with SPY/QQQ high, volume, 10-session accumulation/distribution counts, close-above-21EMA flag, and higher-high-after-last-distribution flag from the shared price cache so `DD_ABSORB` can be evaluated for the latest context.
+
+`structured_sections.m_gate.market_score_history`, `market_label_history`, and `structured_sections.deltas.metric_deltas` are derived from the same saved `history_summaries` timeline used for transition detection. They must not copy alternate offset fields from the current market summary when a corresponding saved historical summary exists. `structured_sections.deltas.reference_audit` records the timeline source and must be `PASS` for generated artifacts.
 
 `market_context` renders `INDUSTRY_RS` rows as `tactRS|structRS63|dRank1W|majors`. `tactRS` is RS Radar tactical `RS`, `structRS63` is RS Radar structural `STRUCT RS`, and `dRank1W` is the prior comparable structural-rank position minus the current structural-rank position across the full configured industry ETF universe. Positive `dRank1W` means the ETF moved up in structural rank. When no previous summary exists, the row delta is `NA` and `NEW_IN_TOP8` / `OUT` are `NA(no_history)`. When previous industry rows exist but lack `STRUCT RS`, the row delta is `NA` and `NEW_IN_TOP8` / `OUT` are `NA(no_struct_history)`.
 
@@ -57,7 +74,7 @@ Top-level fields:
 `executive_context` includes the system-derived `market_action_mode`, `market_action_mode_key`, `market_action_mode_reason`, `swing_market_posture`, and `confirmation_order` when the required market inputs are available.
 These fields are report-level guidance for current swing-investing market recognition and candidate review intensity; they do not change EntrySignal, WatchList, scan logic, position sizing, execution, or exit management.
 
-The Markdown market document is not the final report. It is the AI/skill input form.
+The market document is not the final report. JSON is the AI/skill input form.
 
 ## 5. Required Market Document Features
 
@@ -110,7 +127,7 @@ The final report is Japanese Markdown and uses this structure:
 
 - 対象日: YYYY-MM-DD
 - 生成時刻: YYYY-MM-DDTHH:MM:SS
-- 入力 Market Document: data_runs/market_documents/latest.md
+- 入力 Market Document: data_runs/service_outputs/market_report_input/latest.json
 
 
 #### 1. 今日の結論（必読）
@@ -213,4 +230,4 @@ The standard report-writing skill is ReportSkill-1 and is located at:
 ReportSkill-1 keeps the market-document-only evidence boundary, then adds in-report confirmation order, industry-level priority groups, and EntrySignal interpretation.
 It does not directly integrate with or modify EntrySignal or WatchList systems.
 
-The skill's input should be whichever form is easiest for the AI to write from. Operationally, Markdown is the primary prompt input and JSON remains the canonical persisted data.
+The skill's input should be the canonical JSON market document. Markdown compatibility inputs are not written by default; the human-facing final report remains Markdown.

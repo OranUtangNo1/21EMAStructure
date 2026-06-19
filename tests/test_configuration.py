@@ -74,6 +74,17 @@ def test_default_settings_include_builtin_watchlist_presets() -> None:
     settings = load_settings()
 
     assert settings["scan"]["preset_csv_export"]["enabled"] is False
+    assert settings["scan"]["preset_csv_export"]["output_dir"] == "data_runs/service_outputs/preset_exports"
+    assert settings["app"]["snapshot_dir"] == "data_runs/legacy_pipeline"
+    assert settings["data"]["price_cache_dir"] == "C:/reository/shared_market_cache"
+    assert settings["compressed_tape"]["output_dir"] == "data_runs/documents/compressed_tape"
+    assert settings["stock_card"]["output_dir"] == "data_runs/documents/stock_cards"
+    assert settings["stock_card"]["write_markdown"] is True
+    assert settings["stock_card"]["write_json"] is True
+    assert settings["market"]["market_report"]["output"]["write_markdown"] is False
+    assert settings["market_context"]["output"]["dir"] == "data_runs/service_outputs/market_context"
+    assert settings["market_context"]["output"]["write_markdown"] is False
+    assert settings["market_context"]["output"]["write_json"] is True
     assert settings["data"]["retention"]["eligible_snapshot_runs"] == 5
     assert settings["data"]["retention"]["run_metadata_runs"] == 5
 

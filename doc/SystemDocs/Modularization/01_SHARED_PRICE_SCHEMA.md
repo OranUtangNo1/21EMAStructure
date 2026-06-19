@@ -85,8 +85,24 @@ shared_data/
 
 The storage format may be Parquet or CSV during transition, but service inputs and outputs must normalize to the canonical `PriceHistory` DataFrame.
 
+During the transition, the existing cache-backed CSV format uses one file per provider symbol and interval:
+
+```text
+C:/reository/shared_market_cache/prices_<provider_symbol>_<interval>.csv
+```
+
+Example:
+
+```text
+C:/reository/shared_market_cache/prices_AAPL_1d.csv
+C:/reository/shared_market_cache/prices_7203.T_1d.csv
+```
+
+The filename must not include the initial download period such as `3y` or `5y`. The file represents an extendable ticker history, not a period-specific result.
+
 ## Compatibility Notes
 
 - US tickers can continue using provider symbols such as `AAPL`.
 - Japanese equities may use provider symbols such as `7203.T`; display ticker and provider symbol should remain separable in metadata.
 - Existing stock-card and compressed-tape behavior should remain compatible because the shared schema matches their current OHLCV expectation.
+- Legacy period-keyed cache files such as `prices_AAPL_3y_1d.csv` may be read for compatibility and migrated to the periodless filename.
