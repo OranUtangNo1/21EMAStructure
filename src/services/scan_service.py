@@ -77,9 +77,11 @@ class ScanService:
         refresh_missing: bool = False,
         force_refresh: bool = False,
         write_outputs: bool = False,
+        progress_callback: object | None = None,
     ) -> ScanServiceResult:
         if self.indicator_service is None:
             raise ValueError("ScanService.run requires indicator_service")
+        self._progress(progress_callback, f"Scan: preparing indicators for {len(symbols)} symbols")
         indicator_result = self.indicator_service.build(
             symbols,
             start_date=start_date,
@@ -88,13 +90,16 @@ class ScanService:
             refresh_missing=refresh_missing,
             force_refresh=force_refresh,
             write_outputs=False,
+            progress_callback=progress_callback,
         )
+        self._progress(progress_callback, f"Scan: indicator frame rows={len(indicator_result.frame)}")
         return self.run_from_frame(
             indicator_result.frame,
             scan_names=scan_names,
             preset_names=preset_names,
             missing=indicator_result.missing,
             write_outputs=write_outputs,
+            progress_callback=progress_callback,
         )
 
     def run_from_frame(
@@ -105,6 +110,7 @@ class ScanService:
         preset_names: Iterable[str] | None = None,
         missing: dict[str, str] | None = None,
         write_outputs: bool = False,
+        progress_callback: object | None = None,
     ) -> ScanServiceResult:
         frame = self._normalize_indicator_frame(indicator_frame)
         runtime_config = self._runtime_scan_config(scan_names)
@@ -118,7 +124,11 @@ class ScanService:
         scan_frames: list[pd.DataFrame] = []
         preset_frames: list[pd.DataFrame] = []
         diagnostic_frames: list[pd.DataFrame] = []
-        for date_key, group in frame.groupby("date_key", sort=True):
+        date_groups = list(frame.groupby("date_key", sort=True))
+        self._progress(progress_callback, f"Scan: evaluating {len(date_groups)} date group(s)")
+        for index, (date_key, group) in enumerate(date_groups, start=1):
+            if index == 1 or index == len(date_groups) or index % 5 == 0:
+                self._progress(progress_callback, f"Scan: evaluating date {index}/{len(date_groups)} ({date_key})")
             snapshot = self._snapshot_for_date(group)
             result = runner.run(snapshot)
             scan_frames.append(self._scan_output(str(date_key), result))
@@ -138,6 +148,7 @@ class ScanService:
         scan = self._concat(scan_frames, self._scan_columns())
         preset = self._concat(preset_frames, self._preset_columns())
         diagnostics = self._concat(diagnostic_frames, self._diagnostic_columns())
+        self._progress(progress_callback, f"Scan: completed scan_rows={len(scan)}, preset_rows={len(preset)}")
         output_records = self._write_outputs(scan, preset, diagnostics) if write_outputs else []
         return ScanServiceResult(
             scan=scan,
@@ -396,6 +407,10 @@ class ScanService:
         if not non_empty:
             return pd.DataFrame(columns=columns)
         return pd.concat(non_empty, ignore_index=True)[columns]
+
+    def _progress(self, callback: object | None, message: str) -> None:
+        if callable(callback):
+            callback(message)
 
     def _display_date(self, date_key: str) -> str:
         return f"{date_key[0:4]}-{date_key[4:6]}-{date_key[6:8]}"

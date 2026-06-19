@@ -10,10 +10,14 @@ from typing import Iterable, Sequence
 
 import pandas as pd
 
+from src.cli.messages_ja import CLI_MESSAGES, YES_VALUES
 from src.configuration import load_settings
 from src.dashboard.market_context import MarketContextBuilder, MarketContextConfig, MarketContextMarkdownRenderer
 from src.dashboard.market_report import MarketReportBuilder, MarketReportConfig, MarketReportMarkdownRenderer
 from src.dashboard.stock_card import StockCardConfig, StockCardDocument, StockCardExportResult
+from src.data.finviz_provider import FinvizScreenerConfig, FinvizScreenerProvider
+from src.data.providers import YahooScreenerConfig, YahooScreenerProvider
+from src.data.store import DataSnapshotStore
 from src.services.market_service import MarketService
 from src.services.module_output_store import ModuleOutputRecord, ModuleOutputStore
 from src.services.price_data_service import PriceDataService
@@ -77,6 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
     fetch.add_argument("--end-date", default=None)
     fetch.add_argument("--force-refresh", action="store_true", help="Fetch all requested symbols from provider")
     fetch.add_argument("--cache-only", action="store_true", help="Do not fetch missing symbols")
+    fetch.add_argument("--default-universe", action="store_true", help="Use the configured default universe when no symbols are supplied")
     fetch.set_defaults(func=command_price_fetch)
 
     stockcard = subparsers.add_parser("stockcard", help="Build StockCard markdown files")
@@ -126,141 +131,151 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def run_interactive() -> int:
+    return _run_interactive_loop()
+
+
+def _run_interactive_loop() -> int:
+    context = _context(str(DEFAULT_CONFIG))
+    while True:
+        _print_main_menu()
+        action = _resolve_menu_action(_prompt(CLI_MESSAGES["input_prompt"], default="1"))
+        if action == "exit":
+            print(CLI_MESSAGES["exit_message"])
+            return 0
+        try:
+            _run_interactive_action(action, context)
+        except KeyboardInterrupt:
+            raise
+        except Exception as exc:
+            print(f"ERROR: {exc}")
+        print("")
+
+
+def _print_main_menu() -> None:
     print("OraTek CLI")
     print("")
-    print("実行したい処理を選んでください。番号でも文章でも入力できます。")
-    print("1. 株価データを取得する")
-    print("2. StockCardを出力する")
-    print("3. Scanを実行する")
-    print("4. Market Environment (market + radar + market-report input + market_context)")
-    print("0. 終了")
+    print(CLI_MESSAGES["menu_intro"])
+    print(CLI_MESSAGES["menu_price_fetch"])
+    print(CLI_MESSAGES["menu_stockcard"])
+    print(CLI_MESSAGES["menu_scan"])
+    print(CLI_MESSAGES["menu_market_environment"])
+    print(CLI_MESSAGES["menu_exit"])
     print("")
 
-    action = _resolve_menu_action(_prompt("入力", default="0"))
-    if action == "exit":
-        print("終了します。")
-        return 0
 
-    context = _context(str(DEFAULT_CONFIG))
-    try:
-        if action == "price_fetch":
+def _run_interactive_action(action: str, context: CliContext) -> int:
+    if action == "price_fetch":
+        return _interactive_price_fetch(context)
+    if action == "stockcard":
+        symbols = _prompt_symbols(required=True)
+        as_of = _prompt(CLI_MESSAGES["as_of_prompt"], default="")
+        force_refresh = _prompt_yes_no(CLI_MESSAGES["stockcard_force_refresh_prompt"], default=False)
+        if not _confirm(CLI_MESSAGES["stockcard_confirm"], symbols=symbols, as_of=as_of or "latest"):
+            return 0
+        return command_stockcard(
+            argparse.Namespace(
+                symbols=symbols,
+                symbols_file=None,
+                as_of=as_of or None,
+                start_date=None,
+                refresh_missing=False,
+                force_refresh=force_refresh,
+            ),
+            context,
+        )
+    if action == "scan":
+        symbols = _prompt_symbols(required=True)
+        as_of = _prompt(CLI_MESSAGES["as_of_prompt"], default="")
+        refresh_missing = _prompt_yes_no(CLI_MESSAGES["scan_refresh_missing_prompt"], default=False)
+        if not _confirm(CLI_MESSAGES["scan_confirm"], symbols=symbols, as_of=as_of or "latest"):
+            return 0
+        return command_scan(
+            argparse.Namespace(
+                symbols=symbols,
+                symbols_file=None,
+                as_of=as_of or None,
+                start_date=None,
+                end_date=None,
+                refresh_missing=refresh_missing,
+                force_refresh=False,
+            ),
+            context,
+        )
+    if action == "market_environment":
+        symbols: list[str] = []
+        as_of = _prompt("as_of YYYY-MM-DD / YYYYMMDD", default="")
+        refresh_missing = _prompt_yes_no(CLI_MESSAGES["market_refresh_missing_prompt"], default=False)
+        if not _confirm(CLI_MESSAGES["market_confirm"], symbols=symbols or ["market universe"], as_of=as_of or "latest"):
+            return 0
+        return command_market_environment(
+            argparse.Namespace(
+                symbols=symbols,
+                symbols_file=None,
+                as_of=as_of or None,
+                refresh_missing=refresh_missing,
+                force_refresh=False,
+            ),
+            context,
+        )
+    raise ValueError(f"Unknown action: {action}")
+
+
+def _interactive_price_fetch(context: CliContext) -> int:
+    print("")
+    print(CLI_MESSAGES["price_title"])
+    print(CLI_MESSAGES["price_default_help"])
+    detailed = _prompt_yes_no(CLI_MESSAGES["price_details_prompt"], default=False)
+    symbols: list[str] = []
+    default_universe = True
+    period = str(_app_settings(context).get("price_period", "3y"))
+    force_refresh = False
+    cache_only = False
+    if detailed:
+        target = _prompt(CLI_MESSAGES["price_target_prompt"], default="1")
+        if target.strip() == "2":
             symbols = _prompt_symbols(required=True)
-            period = _prompt("取得期間", default=str(_app_settings(context).get("price_period", "3y")))
-            force_refresh = _prompt_yes_no("全銘柄を強制取得しますか", default=False)
-            return command_price_fetch(
-                argparse.Namespace(
-                    symbols=symbols,
-                    symbols_file=None,
-                    period=period,
-                    start_date=None,
-                    end_date=None,
-                    force_refresh=force_refresh,
-                    cache_only=False,
-                ),
-                context,
-            )
-        if action == "stockcard":
-            symbols = _prompt_symbols(required=True)
-            as_of = _prompt("対象日 YYYY-MM-DD / YYYYMMDD", default="")
-            force_refresh = _prompt_yes_no("指定日まで価格データを強制更新しますか", default=False)
-            if not _confirm("StockCardを出力します", symbols=symbols, as_of=as_of or "latest"):
-                return 0
-            return command_stockcard(
-                argparse.Namespace(
-                    symbols=symbols,
-                    symbols_file=None,
-                    as_of=as_of or None,
-                    start_date=None,
-                    refresh_missing=False,
-                    force_refresh=force_refresh,
-                ),
-                context,
-            )
-        if action == "scan":
-            symbols = _prompt_symbols(required=True)
-            as_of = _prompt("対象日 YYYY-MM-DD / YYYYMMDD", default="")
-            refresh_missing = _prompt_yes_no("キャッシュ不足時に取得しますか", default=False)
-            if not _confirm("Scanを実行します", symbols=symbols, as_of=as_of or "latest"):
-                return 0
-            return command_scan(
-                argparse.Namespace(
-                    symbols=symbols,
-                    symbols_file=None,
-                    as_of=as_of or None,
-                    start_date=None,
-                    end_date=None,
-                    refresh_missing=refresh_missing,
-                    force_refresh=False,
-                ),
-                context,
-            )
-        if action == "market_environment":
-            symbols: list[str] = []
-            as_of = _prompt("as_of YYYY-MM-DD / YYYYMMDD", default="")
-            refresh_missing = _prompt_yes_no("Fetch missing cache data", default=False)
-            if not _confirm("Market Environment output", symbols=symbols or ["market universe"], as_of=as_of or "latest"):
-                return 0
-            return command_market_environment(
-                argparse.Namespace(
-                    symbols=symbols,
-                    symbols_file=None,
-                    as_of=as_of or None,
-                    refresh_missing=refresh_missing,
-                    force_refresh=False,
-                ),
-                context,
-            )
-        if action == "market":
-            symbols = _prompt_symbols(required=False)
-            as_of = _prompt("対象日 YYYY-MM-DD / YYYYMMDD", default="")
-            refresh_missing = _prompt_yes_no("キャッシュ不足時に取得しますか", default=False)
-            if not _confirm("Marketを作成します", symbols=symbols or ["なし"], as_of=as_of or "latest"):
-                return 0
-            return command_market(
-                argparse.Namespace(
-                    symbols=symbols,
-                    symbols_file=None,
-                    as_of=as_of or None,
-                    refresh_missing=refresh_missing,
-                    force_refresh=False,
-                ),
-                context,
-            )
-        if action == "radar":
-            as_of = _prompt("対象日 YYYY-MM-DD / YYYYMMDD", default="")
-            refresh_missing = _prompt_yes_no("キャッシュ不足時に取得しますか", default=False)
-            if not _confirm("Radarを作成します", symbols=["Radar universe"], as_of=as_of or "latest"):
-                return 0
-            return command_radar(
-                argparse.Namespace(as_of=as_of or None, refresh_missing=refresh_missing, force_refresh=False),
-                context,
-            )
-        if action == "market_report_input":
-            symbols = _prompt_symbols(required=False)
-            as_of = _prompt("対象日 YYYY-MM-DD / YYYYMMDD", default="")
-            refresh_missing = _prompt_yes_no("キャッシュ不足時に取得しますか", default=False)
-            if not _confirm("MarketReport用 input を作成します", symbols=symbols or ["なし"], as_of=as_of or "latest"):
-                return 0
-            return command_market_report_input(
-                argparse.Namespace(
-                    symbols=symbols,
-                    symbols_file=None,
-                    as_of=as_of or None,
-                    refresh_missing=refresh_missing,
-                    force_refresh=False,
-                ),
-                context,
-            )
-    except Exception as exc:
-        print(f"ERROR: {exc}")
-        return 1
-    return 0
+            default_universe = False
+        period = _prompt(CLI_MESSAGES["price_period_prompt"], default=period)
+        mode = _prompt(CLI_MESSAGES["price_mode_prompt"], default="1").strip()
+        cache_only = mode == "2"
+        force_refresh = mode == "3"
+    target_text = ["default universe"] if default_universe else symbols
+    if not _confirm(CLI_MESSAGES["price_confirm"], symbols=target_text, as_of="latest"):
+        return 0
+    return command_price_fetch(
+        argparse.Namespace(
+            symbols=symbols,
+            symbols_file=None,
+            default_universe=default_universe,
+            period=period,
+            start_date=None,
+            end_date=None,
+            force_refresh=force_refresh,
+            cache_only=cache_only,
+        ),
+        context,
+    )
+
+
+def _cli_progress(message: str) -> None:
+    print(message, flush=True)
 
 
 def command_price_fetch(args: argparse.Namespace, context: CliContext) -> int:
     symbols = _symbols_from_args(args)
+    universe_mode = "manual"
+    universe_path: str | None = None
+    if getattr(args, "default_universe", False) or not symbols:
+        symbols, universe_mode, universe_path = _resolve_default_universe_symbols(
+            context,
+            force_universe_refresh=bool(args.force_refresh),
+        )
     if not symbols:
-        raise ValueError("At least one symbol is required.")
+        raise ValueError("No symbols resolved. Provide --symbols/--symbols-file or configure the default universe.")
+    if universe_mode != "manual":
+        print(f"Default universe: {len(symbols)} symbols [{universe_mode}]")
+        if universe_path:
+            print(f"Universe snapshot: {universe_path}")
     service = PriceDataService.from_config(context.config_path)
     batch = service.get_histories(
         symbols,
@@ -269,6 +284,7 @@ def command_price_fetch(args: argparse.Namespace, context: CliContext) -> int:
         refresh_missing=not bool(args.cache_only),
         force_refresh=bool(args.force_refresh),
         period=args.period,
+        progress_callback=_cli_progress,
     )
     _print_price_summary(batch.histories, batch.statuses)
     return 0
@@ -293,7 +309,7 @@ def command_stockcard(args: argparse.Namespace, context: CliContext) -> int:
         print("Warnings:")
         for warning in warnings:
             print(f"- {warning}")
-        print("- 指定日まで更新したい場合は --force-refresh を付けて再実行してください。")
+        print(CLI_MESSAGES["stockcard_force_refresh_warning"])
     if result.missing:
         print("Missing:")
         for symbol, reason in result.missing.items():
@@ -315,6 +331,7 @@ def command_scan(args: argparse.Namespace, context: CliContext) -> int:
         refresh_missing=bool(args.refresh_missing),
         force_refresh=bool(args.force_refresh),
         write_outputs=True,
+        progress_callback=_cli_progress,
     )
     _print_records("Scan outputs", result.output_records)
     print(f"Scan hits: {len(result.scan)}")
@@ -573,6 +590,61 @@ def _symbols_from_args(args: argparse.Namespace) -> list[str]:
     return _normalize_symbols(symbols)
 
 
+def _resolve_default_universe_symbols(
+    context: CliContext,
+    *,
+    force_universe_refresh: bool = False,
+) -> tuple[list[str], str, str | None]:
+    app_settings = _app_settings(context)
+    universe_settings = context.settings.get("universe", {}) if isinstance(context.settings.get("universe", {}), dict) else {}
+    discovery_settings = (
+        context.settings.get("universe_discovery", {})
+        if isinstance(context.settings.get("universe_discovery", {}), dict)
+        else {}
+    )
+    snapshot_store = DataSnapshotStore(_resolve_project_path(str(app_settings.get("snapshot_dir", "data_runs/legacy_pipeline"))))
+    discovery_enabled = bool(discovery_settings.get("enabled", True))
+    use_snapshot = bool(discovery_settings.get("use_snapshot_when_no_manual_symbols", True))
+    ttl_days = int(discovery_settings.get("snapshot_ttl_days", 7))
+    if use_snapshot and discovery_enabled:
+        fresh = snapshot_store.load_latest_universe_snapshot(max_age_days=ttl_days)
+        if not force_universe_refresh and fresh.snapshot is not None and not fresh.snapshot.empty:
+            return _symbols_from_universe_snapshot(fresh.snapshot), "weekly_snapshot_cached", fresh.path
+
+        stale = snapshot_store.load_latest_universe_snapshot(max_age_days=None)
+        try:
+            discovery = _build_universe_discovery_provider(universe_settings, discovery_settings).discover()
+            if not discovery.snapshot.empty:
+                path = snapshot_store.save_universe_snapshot(discovery.snapshot, discovery.metadata)
+                return _symbols_from_universe_snapshot(discovery.snapshot), "weekly_snapshot_live", str(path)
+        except Exception:
+            if stale.snapshot is not None and not stale.snapshot.empty:
+                return _symbols_from_universe_snapshot(stale.snapshot), "weekly_snapshot_stale", stale.path
+            raise
+
+        if stale.snapshot is not None and not stale.snapshot.empty:
+            return _symbols_from_universe_snapshot(stale.snapshot), "weekly_snapshot_stale", stale.path
+
+    default_symbols = _normalize_symbols(app_settings.get("default_symbols", []))
+    return default_symbols, "default_symbols", None
+
+
+def _build_universe_discovery_provider(universe_settings: dict[str, object], discovery_settings: dict[str, object]):
+    payload = {**universe_settings, **discovery_settings}
+    provider_name = str(discovery_settings.get("provider", "finviz")).strip().lower()
+    if provider_name == "finviz":
+        return FinvizScreenerProvider(FinvizScreenerConfig.from_dict(payload))
+    if provider_name == "yahoo":
+        return YahooScreenerProvider(YahooScreenerConfig.from_dict(payload))
+    raise ValueError(f"Unsupported universe discovery provider: {provider_name}")
+
+
+def _symbols_from_universe_snapshot(snapshot: pd.DataFrame) -> list[str]:
+    if snapshot.empty or "ticker" not in snapshot.columns:
+        return []
+    return _normalize_symbols(snapshot["ticker"].tolist())
+
+
 def _parse_symbols(value: str | Iterable[str] | None) -> list[str]:
     if value is None:
         return []
@@ -641,14 +713,14 @@ def _prompt(label: str, *, default: str = "") -> str:
 
 def _prompt_symbols(*, required: bool) -> list[str]:
     while True:
-        value = _prompt("ティッカー 例: AAPL, AMD または @C:\\path\\universe.csv", default="")
+        value = _prompt(CLI_MESSAGES["symbol_prompt"], default="")
         if value.startswith("@"):
             symbols = _read_symbol_file(Path(value[1:]))
         else:
             symbols = _parse_symbols(value)
         if symbols or not required:
             return symbols
-        print("少なくとも1銘柄を入力してください。")
+        print(CLI_MESSAGES["symbol_required"])
 
 
 def _prompt_yes_no(label: str, *, default: bool) -> bool:
@@ -656,7 +728,7 @@ def _prompt_yes_no(label: str, *, default: bool) -> bool:
     value = input(f"{label} [{default_text}]: ").strip().lower()
     if not value:
         return default
-    return value in {"y", "yes", "1", "true", "はい"}
+    return value in YES_VALUES
 
 
 def _confirm(title: str, *, symbols: list[str], as_of: str) -> bool:
@@ -664,8 +736,7 @@ def _confirm(title: str, *, symbols: list[str], as_of: str) -> bool:
     print(title)
     print(f"- symbols: {', '.join(symbols)}")
     print(f"- as_of: {as_of}")
-    return _prompt_yes_no("実行しますか", default=True)
-
+    return _prompt_yes_no(CLI_MESSAGES["confirm_prompt"], default=True)
 
 def _resolve_project_path(value: str) -> Path:
     path = Path(value).expanduser()
@@ -880,6 +951,14 @@ def _jsonable(value):
 
 def _print_price_summary(histories: dict[str, pd.DataFrame], statuses: dict[str, object]) -> None:
     print(f"Price histories: {len(histories)}")
+    counts: dict[str, int] = {}
+    for status in statuses.values():
+        source = str(getattr(status, "source", "unknown"))
+        counts[source] = counts.get(source, 0) + 1
+    if counts:
+        print("Summary:")
+        for source, count in sorted(counts.items()):
+            print(f"- {source}: {count}")
     for symbol in sorted(set(histories) | set(statuses)):
         history = histories.get(symbol, pd.DataFrame())
         status = statuses.get(symbol)

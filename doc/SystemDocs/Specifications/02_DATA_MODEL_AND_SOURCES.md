@@ -140,6 +140,7 @@ Key active behavior:
 - retry backoff multiplier: `2.0`
 - stale-cache fallback allowed
 - stale cached price series are refreshed with an incremental download period of `5d`
+- local price cache reuse requires both non-empty data and date completeness for the requested/expected latest price date; otherwise the series is marked `cache_incomplete` and is eligible for incremental refresh
 - price cache filenames are keyed by provider symbol and interval, for example `prices_AAPL_1d.csv`; initial download periods such as `3y` are not part of the active filename
 - legacy period-keyed cache files such as `prices_AAPL_3y_1d.csv` can be read and migrated to the active filename
 - `force_refresh=True` bypasses fresh-cache reuse, loads any existing cached price series as the merge/fallback base, and requests live yfinance data for the affected symbols
@@ -188,6 +189,10 @@ The current default config sets this to `false`, so sample fallback is inactive 
 - EntrySignal artifact-load exports under `data_runs/legacy_pipeline/entry_signals/`
 - latest-only preset diagnostics under `data_runs/legacy_pipeline/preset_diagnostics/`
 
+CLI price fetch uses the configured default universe when no explicit tickers or symbol file are supplied. Resolution follows the same default-universe order as the pipeline: fresh weekly universe snapshot, live discovery with snapshot persistence, stale snapshot fallback, then `app.default_symbols`. Explicit `--symbols` or `--symbols-file` inputs remain manual overrides.
+
+In interactive CLI mode, the price-fetch menu defaults to the common daily incremental update for the configured default universe. Optional detailed settings allow manual ticker/file input, cache-only checks, or forced refresh. Long-running price-fetch and scan paths emit coarse progress messages for cache checks, provider batches, indicator calculation, and scan evaluation. After an interactive action completes, is cancelled, or reports an error, the CLI returns to the first menu until the user selects exit.
+
 ### 4.2 Current TTLs
 
 - technical cache: `12h`
@@ -216,6 +221,9 @@ The implementation tracks per-symbol dataset status with these source states:
 
 - `live`
 - `cache_fresh`
+- `cache_complete`
+- `cache_incomplete`
+- `refreshed_incremental`
 - `cache_stale`
 - `sample`
 - `missing`

@@ -52,20 +52,26 @@ class IndicatorService:
         force_refresh: bool = False,
         write_outputs: bool = False,
         output_module: str = "indicators",
+        progress_callback: object | None = None,
     ) -> IndicatorRunResult:
         effective_end_date = as_of_date if as_of_date is not None else end_date
         normalized_symbols = self.price_service.store.normalize_symbols(symbols)
+        self._progress(progress_callback, f"Indicators: loading price histories for {len(normalized_symbols)} symbols")
         batch = self.price_service.get_histories(
             normalized_symbols,
             end_date=effective_end_date,
             refresh_missing=refresh_missing,
             force_refresh=force_refresh,
+            progress_callback=progress_callback,
         )
 
         rows: list[pd.DataFrame] = []
         histories: dict[str, pd.DataFrame] = {}
         missing: dict[str, str] = {}
-        for symbol in normalized_symbols:
+        total = len(normalized_symbols)
+        for index, symbol in enumerate(normalized_symbols, start=1):
+            if index == 1 or index == total or index % 250 == 0:
+                self._progress(progress_callback, f"Indicators: calculating {index}/{total}")
             history = batch.histories.get(symbol, pd.DataFrame())
             if history.empty:
                 status = batch.statuses.get(symbol)
@@ -87,6 +93,7 @@ class IndicatorService:
             rows.append(selected.reset_index(drop=True))
 
         frame = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
+        self._progress(progress_callback, f"Indicators: completed rows={len(frame)}, missing={len(missing)}")
         output_records = self._write_outputs(frame, output_module) if write_outputs else []
         return IndicatorRunResult(frame=frame, histories=histories, missing=missing, output_records=output_records)
 
@@ -130,3 +137,7 @@ class IndicatorService:
         if stamp.tzinfo is not None:
             stamp = stamp.tz_localize(None)
         return stamp.normalize()
+
+    def _progress(self, callback: object | None, message: str) -> None:
+        if callable(callback):
+            callback(message)

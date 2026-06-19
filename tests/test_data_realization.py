@@ -514,7 +514,7 @@ def test_research_platform_passes_force_price_refresh_to_price_provider() -> Non
     )
 
     class FakePriceProvider:
-        def get_price_history(self, symbols, period="18mo", interval="1d", *, force_refresh=False):
+        def get_price_history(self, symbols, period="18mo", interval="1d", *, force_refresh=False, progress_callback=None):
             calls.append(
                 {"symbols": list(symbols), "period": period, "interval": interval, "force_refresh": force_refresh}
             )

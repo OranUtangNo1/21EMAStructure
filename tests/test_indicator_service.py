@@ -66,6 +66,7 @@ class FakePriceService:
         end_date=None,
         refresh_missing=False,
         force_refresh=False,
+        progress_callback=None,
     ) -> PriceHistoryBatch:
         normalized = tuple(str(symbol).upper() for symbol in symbols)
         self.calls.append((normalized, start_date, end_date, refresh_missing, force_refresh))

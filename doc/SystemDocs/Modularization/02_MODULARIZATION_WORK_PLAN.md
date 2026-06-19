@@ -137,6 +137,8 @@ Outputs:
 
 The CLI user-facing market entrypoint should be unified as a market-environment action. Internally, market, radar, market-report input, and market_context remain separate modules/artifacts, but interactive users should not need to choose between market and radar as separate menu actions.
 
+The interactive CLI price-fetch flow should optimize for the most frequent operation: default-universe daily incremental update with minimal input. Detailed price-fetch settings are optional. Interactive tasks should return to the main menu after completion, cancellation, or handled errors, and long-running price-fetch and scan tasks should emit coarse progress messages.
+
 ### EntrySignalService
 
 Purpose:

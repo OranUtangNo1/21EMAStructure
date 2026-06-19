@@ -456,7 +456,7 @@ class DataSnapshotStore:
         sources = fetch_status["source"].astype(str)
         return {
             "live": int((sources == "live").sum()),
-            "cache": int(sources.isin(["cache_fresh", "cache_stale"]).sum()),
+            "cache": int(sources.isin(["cache_fresh", "cache_complete", "refreshed_incremental", "cache_incomplete", "cache_stale"]).sum()),
             "sample": int((sources == "sample").sum()),
             "missing": int((sources == "missing").sum()),
         }

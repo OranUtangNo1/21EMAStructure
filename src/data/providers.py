@@ -72,6 +72,7 @@ class PriceDataProvider(ABC):
         interval: str = "1d",
         *,
         force_refresh: bool = False,
+        progress_callback: object | None = None,
     ) -> PriceHistoryBatch:
         """Fetch OHLCV history for a list of symbols."""
 
@@ -252,6 +253,7 @@ class YFinancePriceDataProvider(PriceDataProvider):
         interval: str = "1d",
         *,
         force_refresh: bool = False,
+        progress_callback: object | None = None,
     ) -> PriceHistoryBatch:
         if yf is None:
             raise RuntimeError("yfinance is not installed.")
@@ -299,6 +301,7 @@ class YFinancePriceDataProvider(PriceDataProvider):
             statuses=statuses,
             fallback_histories={},
             fallback_cache_keys={},
+            progress_callback=progress_callback,
         )
 
         update_period = self.incremental_period or period
@@ -310,6 +313,7 @@ class YFinancePriceDataProvider(PriceDataProvider):
             statuses=statuses,
             fallback_histories=stale_histories,
             fallback_cache_keys=stale_cache_keys,
+            progress_callback=progress_callback,
         )
         return PriceHistoryBatch(histories=histories, statuses=statuses)
 
@@ -322,9 +326,14 @@ class YFinancePriceDataProvider(PriceDataProvider):
         statuses: dict[str, FetchStatus],
         fallback_histories: dict[str, pd.DataFrame],
         fallback_cache_keys: dict[str, str],
+        progress_callback: object | None = None,
     ) -> None:
         batches = self._chunk_symbols(symbols)
         for batch_index, batch in enumerate(batches):
+            if callable(progress_callback):
+                progress_callback(
+                    f"Price fetch batch {batch_index + 1}/{len(batches)}: {len(batch)} symbols, period={download_period}"
+                )
             downloaded, error_note = self._download_batch(batch, download_period, interval)
             fetched_at = datetime.now()
             for symbol in batch:

@@ -95,6 +95,8 @@
 - If numbered specs are added, moved, or repurposed, update `doc/SystemDocs/Specifications/00_INDEX.md` in the same pass.
 - During the modularization refactor, keep shared-data schema, service-boundary, DB-pause, and `as_of_date` contracts centralized in `doc/SystemDocs/Modularization/`.
 - Prefer ASCII-safe file edits by default. Only use non-ASCII text when it is explicitly needed and the write path has been verified to preserve UTF-8 without lossy replacement.
+- Keep Japanese CLI copy centralized in `src/cli/messages_ja.py`; avoid adding user-facing Japanese literals directly to `src/cli/oratek.py`.
+- After editing Japanese text or CLI copy, run the mojibake guard test in `tests/test_text_encoding.py`.
 - In this Windows Codex environment, if `rg` fails with `Access is denied`, switch immediately to `Get-ChildItem ... | Select-String`.
 - Preserve existing line endings when editing files; after edits, run `git diff --stat` and `git diff --check` to catch line-ending-only churn and trailing whitespace.
 

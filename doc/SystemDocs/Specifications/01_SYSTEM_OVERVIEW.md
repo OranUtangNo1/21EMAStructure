@@ -146,7 +146,7 @@ Non-public or uncertain logic remains configurable rather than fixed. This inclu
 
 ### 5.3 Data Lineage Is Product Behavior
 
-Fetch status and source labels are not incidental logging. The product exposes fetch-state lineage such as `live`, `cache_fresh`, `cache_stale`, `sample`, and `missing`, and it collapses those states into short app labels such as `live`, `live + cache`, `sample fallback`, `live + sample fallback`, `missing`, or `mixed`.
+Fetch status and source labels are not incidental logging. The product exposes fetch-state lineage such as `live`, `cache_complete`, `cache_incomplete`, `refreshed_incremental`, `cache_stale`, `sample`, and `missing`, and it collapses those states into short app labels such as `live`, `live + cache`, `sample fallback`, `live + sample fallback`, `missing`, or `mixed`.
 
 ### 5.4 Analysis Is Derived From Recorded Detections
 

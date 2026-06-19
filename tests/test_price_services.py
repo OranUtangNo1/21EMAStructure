@@ -45,15 +45,16 @@ def test_price_data_service_uses_local_cache_without_provider_call(tmp_path) -> 
 
     result = service.get_histories(["NVDA"], start_date="2026-03-03", end_date="2026-03-04")
 
-    assert result.statuses["NVDA"].source == "cache_fresh"
+    assert result.statuses["NVDA"].source == "cache_complete"
     assert list(result.histories["NVDA"].index) == [pd.Timestamp("2026-03-03"), pd.Timestamp("2026-03-04")]
 
 
-def test_price_data_service_refreshes_only_missing_symbols(tmp_path) -> None:
+def test_price_data_service_refreshes_missing_and_incomplete_symbols(tmp_path) -> None:
     store = PriceStore(tmp_path)
     store.save("NVDA", _history([100.0], ["2026-03-02"]))
     provider = FakeProvider(
         {
+            "NVDA": _history([100.0, 101.0], ["2026-03-02", "2026-03-03"]),
             "AAPL": _history([200.0, 201.0], ["2026-03-02", "2026-03-03"]),
         }
     )
@@ -66,11 +67,24 @@ def test_price_data_service_refreshes_only_missing_symbols(tmp_path) -> None:
         refresh_missing=True,
     )
 
-    assert provider.calls == [(("AAPL",), "3y", "1d", False)]
-    assert result.statuses["NVDA"].source == "cache_fresh"
+    assert provider.calls == [(("AAPL", "NVDA"), "3y", "1d", False)]
+    assert result.statuses["NVDA"].source == "refreshed_incremental"
     assert result.statuses["AAPL"].source == "live"
     assert store.path_for("AAPL").exists()
     assert list(result.histories["AAPL"].index) == [pd.Timestamp("2026-03-02"), pd.Timestamp("2026-03-03")]
+    assert list(result.histories["NVDA"].index) == [pd.Timestamp("2026-03-02"), pd.Timestamp("2026-03-03")]
+
+
+def test_price_data_service_marks_incomplete_cache_without_refresh(tmp_path) -> None:
+    store = PriceStore(tmp_path)
+    store.save("NVDA", _history([100.0], ["2026-03-02"]))
+    service = PriceDataService(store=store, provider=FailingProvider())
+
+    result = service.get_histories(["NVDA"], start_date="2026-03-02", end_date="2026-03-03")
+
+    assert result.statuses["NVDA"].source == "cache_incomplete"
+    assert "before expected 2026-03-03" in str(result.statuses["NVDA"].note)
+    assert list(result.histories["NVDA"].index) == [pd.Timestamp("2026-03-02")]
 
 
 def test_price_data_service_does_not_refresh_missing_without_flag(tmp_path) -> None:
@@ -92,7 +106,7 @@ class FakeProvider:
         self.histories = histories
         self.calls: list[tuple[tuple[str, ...], str, str, bool]] = []
 
-    def get_price_history(self, symbols, period="3y", interval="1d", *, force_refresh=False):
+    def get_price_history(self, symbols, period="3y", interval="1d", *, force_refresh=False, progress_callback=None):
         normalized = tuple(str(symbol).upper() for symbol in symbols)
         self.calls.append((normalized, period, interval, force_refresh))
         histories = {symbol: self.histories[symbol] for symbol in normalized if symbol in self.histories}

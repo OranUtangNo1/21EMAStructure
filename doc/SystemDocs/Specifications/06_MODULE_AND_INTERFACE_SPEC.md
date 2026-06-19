@@ -146,6 +146,7 @@ This keeps settings, reusable calculations, and display-ready outputs separate.
   - explicit service CLI entrypoint
   - interactive Japanese menu when launched without arguments
   - direct commands for price fetch, stockcard, scan, and unified market environment output
+  - price fetch uses the configured default universe when no tickers or symbol file are supplied; explicit tickers and `--symbols-file` continue to override that default
   - compatibility direct commands for market, radar, and market-report input remain available, but the interactive CLI resolves market/radar/report/context requests to the unified market environment action
   - no automatic execution before the user selects or invokes a command
 - `app/main.py`

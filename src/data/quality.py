@@ -6,6 +6,9 @@ import pandas as pd
 SOURCE_SCORES: dict[str, float] = {
     "live": 100.0,
     "cache_fresh": 85.0,
+    "cache_complete": 85.0,
+    "refreshed_incremental": 100.0,
+    "cache_incomplete": 70.0,
     "cache_stale": 65.0,
     "sample": 20.0,
     "missing": 0.0,
@@ -59,7 +62,8 @@ def summarize_data_health(fetch_status_frame: pd.DataFrame) -> dict[str, float |
 
     price_rows = fetch_status_frame.loc[fetch_status_frame["dataset"] == "price"]
     live_price_coverage = float((price_rows["source"] == "live").mean() * 100.0) if not price_rows.empty else 0.0
-    real_price_coverage = float(price_rows["source"].isin(["live", "cache_fresh", "cache_stale"]).mean() * 100.0) if not price_rows.empty else 0.0
+    real_sources = ["live", "cache_fresh", "cache_complete", "refreshed_incremental", "cache_incomplete", "cache_stale"]
+    real_price_coverage = float(price_rows["source"].isin(real_sources).mean() * 100.0) if not price_rows.empty else 0.0
     return {
         "live_price_coverage_pct": round(live_price_coverage, 2),
         "real_price_coverage_pct": round(real_price_coverage, 2),
@@ -78,7 +82,7 @@ def summarize_data_source_label(fetch_status_frame: pd.DataFrame) -> str:
         return "live"
     if "sample" in sources:
         return "live + sample fallback" if len(sources) > 1 else "sample fallback"
-    if sources <= {"live", "cache_fresh", "cache_stale"}:
+    if sources <= {"live", "cache_fresh", "cache_complete", "refreshed_incremental", "cache_incomplete", "cache_stale"}:
         return "live + cache"
     if sources == {"missing"}:
         return "missing"
@@ -104,6 +108,8 @@ def _warning_message(row: pd.Series) -> str:
     warnings: list[str] = []
     if row.get("price_data_source") == "cache_stale":
         warnings.append("stale price cache")
+    if row.get("price_data_source") == "cache_incomplete":
+        warnings.append("incomplete price cache")
     if row.get("profile_data_source") == "cache_stale":
         warnings.append("stale profile cache")
     if row.get("fundamental_data_source") == "cache_stale":

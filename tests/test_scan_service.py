@@ -152,6 +152,7 @@ class FakeIndicatorService:
         refresh_missing=False,
         force_refresh=False,
         write_outputs=False,
+        progress_callback=None,
     ) -> IndicatorRunResult:
         self.calls.append(
             {

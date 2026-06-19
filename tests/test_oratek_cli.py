@@ -10,6 +10,8 @@ from src.cli.oratek import (
     _parse_symbols,
     _read_symbol_file,
     _resolve_menu_action,
+    _resolve_default_universe_symbols,
+    _run_interactive_action,
     _stock_card_as_of_warnings,
     build_parser,
     run_interactive,
@@ -56,12 +58,54 @@ def test_cli_parser_accepts_unified_market_environment_command() -> None:
     assert args.as_of == "2026-06-18"
 
 
+def test_cli_price_fetch_accepts_default_universe_without_symbols() -> None:
+    parser = build_parser()
+    args = parser.parse_args(["price", "fetch", "--default-universe"])
+
+    assert args.command == "price"
+    assert args.price_command == "fetch"
+    assert args.symbols is None
+    assert args.default_universe is True
+
+
+def test_cli_resolves_default_universe_from_latest_snapshot(tmp_path: Path) -> None:
+    snapshot_dir = tmp_path / "runs"
+    universe_dir = snapshot_dir / "universe_snapshots"
+    universe_dir.mkdir(parents=True)
+    pd.DataFrame({"ticker": ["aapl", "AMD", "aapl"]}).to_csv(universe_dir / "latest.csv", index=False)
+    (universe_dir / "latest.json").write_text('{"saved_at":"2099-01-01T00:00:00"}', encoding="utf-8")
+
+    context = type(
+        "Context",
+        (),
+        {
+            "settings": {
+                "app": {"snapshot_dir": str(snapshot_dir), "default_symbols": ["NVDA"]},
+                "universe": {},
+                "universe_discovery": {"enabled": True, "use_snapshot_when_no_manual_symbols": True, "snapshot_ttl_days": 7},
+            }
+        },
+    )()
+
+    symbols, mode, path = _resolve_default_universe_symbols(context)
+
+    assert symbols == ["AAPL", "AMD"]
+    assert mode == "weekly_snapshot_cached"
+    assert path == str(universe_dir / "latest.csv")
+
+
 def test_interactive_market_environment_does_not_prompt_for_symbols() -> None:
-    source = inspect.getsource(run_interactive)
-    branch = source.split('if action == "market_environment":', 1)[1].split('if action == "market":', 1)[0]
+    source = inspect.getsource(_run_interactive_action)
+    branch = source.split('if action == "market_environment":', 1)[1].split("raise ValueError", 1)[0]
 
     assert "_prompt_symbols" not in branch
     assert "symbols: list[str] = []" in branch
+
+
+def test_interactive_cli_returns_to_menu_loop() -> None:
+    source = inspect.getsource(run_interactive) + inspect.getsource(_run_interactive_action)
+
+    assert "_run_interactive_loop" in source
 
 
 def test_cli_warns_when_stockcard_effective_date_is_before_requested_as_of() -> None:
