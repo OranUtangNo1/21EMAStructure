@@ -109,6 +109,10 @@ Related folders:
    - refresh cadence
    - current provider decisions
 
+12. `13_MARKET_SUMMARY_FIELD_CATALOG.md`
+   - AI-oriented `market_summary_YYYYMMDD.json` field catalog
+   - mathematical definitions, units, formulas, and conditional-output behavior
+
 ---
 
 ## Per-Scan References

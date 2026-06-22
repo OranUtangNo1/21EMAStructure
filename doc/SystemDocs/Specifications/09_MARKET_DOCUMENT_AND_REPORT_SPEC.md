@@ -52,6 +52,8 @@ The JSON artifact contains two layers:
 
 ## 4. Market Document Contract
 
+The raw `market_summary_YYYYMMDD.json` field inventory and mathematical definitions are maintained in `13_MARKET_SUMMARY_FIELD_CATALOG.md`.
+
 The market document JSON uses:
 
 - `schema_version`: `market_document.v1`
