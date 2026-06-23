@@ -9,10 +9,6 @@ app:
   - APP
   - SNOW
   benchmark_symbol: SPY
-  vix_symbol: ^VIX
   price_period: 3y
   cache_dir: data_cache
-  snapshot_dir: data_runs/legacy_pipeline
   user_preferences_path: data_cache/user_preferences.yaml
-  use_sample_data_if_fetch_fails: false
-  refresh_on_start: true

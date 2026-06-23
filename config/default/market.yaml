@@ -1,5 +1,5 @@
 market:
-  calculation_mode: etf
+  calculation_mode: blended
   etf_weight: 0.5
   active_symbols_weight: 0.5
   component_weights:
@@ -47,39 +47,10 @@ market:
     distribution_decline_pct: -0.2
     distribution_lookback: 25
     distribution_pressure_count: 5
-  market_report:
-    output:
-      mode: latest_only
-      write_json: true
-      write_markdown: false
-    horizons:
-      short_days: 5
-      medium_days: 21
-      long_days: 63
-    regime:
-      score_improving_1w: 3.0
-      score_deteriorating_1w: -3.0
-      score_improving_1m: 5.0
-      score_deteriorating_1m: -5.0
-      neutral_score_floor: 40.0
-      positive_score_floor: 60.0
-    breadth:
-      strong_level: 70.0
-      weak_level: 50.0
-      s2w_high_active_level: 30.0
-      s2w_high_weak_level: 15.0
-    volatility:
-      vix_low_level: 12.0
-      vix_neutral_level: 17.0
-      vix_elevated_level: 25.0
-      vix_stress_level: 30.0
-    risk:
-      safe_haven_positive_threshold: 2.0
-      safe_haven_negative_threshold: -2.0
-      high_distance_warning_pct: -5.0
-    confidence:
-      minimum_required_metric_coverage: 0.8
-      disagreement_penalty: 0.2
+  market_brief:
+    strong_layer_floor: 60.0
+    weak_layer_floor: 40.0
+    converging_down_ceiling: 45.0
   market_condition_etf_universe:
   - ticker: SPY
     name: S&P 500

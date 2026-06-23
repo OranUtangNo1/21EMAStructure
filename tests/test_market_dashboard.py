@@ -145,6 +145,8 @@ def test_market_dashboard_result_contains_expanded_sections() -> None:
     assert "QQQ DISTRIBUTION DAY COUNT" in result.index_state_summary
     assert result.drawdown_summary["SPY DD 252D %"] == pytest.approx(0.0)
     assert result.drawdown_summary["SPY T_DD"] == pytest.approx(0.0)
+    assert result.series_as_of["SPY"] == dates[-1].strftime("%Y-%m-%d")
+    assert result.series_as_of["ACTIVE_UNIVERSE_MAX"] == dates[-1].strftime("%Y-%m-%d")
     assert not result.market_snapshot.empty
     assert list(result.market_snapshot["TICKER"]) == ["XLK", "XLP"]
     assert result.leadership_snapshot.empty
@@ -228,6 +230,20 @@ def test_market_dashboard_required_symbols_include_risk_on_ratio_pair() -> None:
     assert "SPY" in required_symbols
     assert "QQQ" in required_symbols
     assert MarketConditionScorer(config).required_fred_series() == ["BAMLH0A0HYM2"]
+
+
+def test_market_dashboard_series_as_of_uses_latest_valid_close_date() -> None:
+    dates = pd.to_datetime(["2026-06-18", "2026-06-22"])
+    history = _make_history([19.57, 20.0], dates)
+    history.loc[pd.Timestamp("2026-06-22"), "close"] = np.nan
+
+    result = MarketConditionScorer(MarketConditionConfig.from_dict({}))._series_as_of(
+        {"^VIX3M": history},
+        {},
+        pd.DataFrame(),
+    )
+
+    assert result["^VIX3M"] == "2026-06-18"
 
 
 def test_market_dashboard_index_state_detects_ftd_and_distribution_days() -> None:

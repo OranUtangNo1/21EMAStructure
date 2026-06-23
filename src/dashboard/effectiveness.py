@@ -12,7 +12,7 @@ from src.dashboard.watchlist import WatchlistViewModelBuilder
 from src.data.cache import CacheLayer
 from src.data.tracking_db import connect_tracking_db
 from src.data.providers import YFinancePriceDataProvider
-from src.pipeline import PlatformArtifacts
+from src.services.platform_artifacts import PlatformArtifacts
 from src.scan.rules import ScanConfig, annotation_filter_column_name
 
 FORWARD_HORIZONS = (1, 5, 10, 20, 21)

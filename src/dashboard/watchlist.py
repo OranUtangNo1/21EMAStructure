@@ -28,7 +28,7 @@ class ScanCardViewModel:
 
 
 class WatchlistViewModelBuilder:
-    """Prepare screening-only watchlist outputs for Streamlit."""
+    """Prepare screening-only watchlist outputs for downstream consumers."""
 
     def __init__(self, config: ScanConfig | None = None) -> None:
         self.config = config or ScanConfig()

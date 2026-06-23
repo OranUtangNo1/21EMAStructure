@@ -17,8 +17,7 @@
 - Treat implementation files and `config/default.yaml` as the source of truth for behavior.
 - Use `doc/SystemDocs/Specifications/00_INDEX.md` as the navigation entry for numbered design docs.
 - Use `doc/SystemDocs/Scan/` as the source of truth for per-scan definitions.
-- Use `doc/SystemDocs/Modularization/00_INDEX.md` as the central entry for the current modularization refactor specifications and work plan.
-- Keep architecture and behavior docs aligned under the Documentation Sync Rules below.
+- Use `doc/SystemDocs/Modularization/00_INDEX.md` when modularization reference material is needed.
 
 ## Architecture Rules
 
@@ -29,8 +28,8 @@
 - `src/scoring/` computes RS, VCS, industry, hybrid, and other scores.
 - `src/scan/` applies scan rules, post-scan annotations, and watchlist assembly.
 - `src/dashboard/` shapes results for Market Dashboard, RS Radar, and Today's Watchlist.
-- `src/pipeline.py` orchestrates the end-to-end flow.
-- `app/main.py` is the Streamlit entrypoint for the active UI.
+- `src/services/` contains independently executable service orchestration.
+- `src/cli/oratek.py` is the active user entrypoint; the system has no GUI.
 
 ### Responsibilities Of Each Layer
 
@@ -52,11 +51,10 @@
 
 ### The Role Of The Main Directory
 
-- `app/` contains the active Streamlit application entrypoint.
 - `archived/` contains out-of-scope code and notes that are intentionally not active.
 - `config/` contains default and alternate configuration files.
-- `doc/SystemDocs/` contains the writable system specification set that must stay aligned with the active implementation.
-- `doc/SystemDocs/Modularization/` contains the current modularization refactor specifications, shared-data contracts, DB pause decisions, and work plan.
+- `doc/SystemDocs/` contains writable system specifications and references.
+- `doc/SystemDocs/Modularization/` contains modularization reference specifications, shared-data contracts, DB pause decisions, and the optional work plan.
 - `doc/Archive/` contains read-only warehouse-style reference material such as original dashboard notes and legacy logic references.
 - `doc/ForCodexOutput/` contains user-requested answer documents and Codex-generated project notes intended for user review.
 - `doc/ForUsersOnly/` contains project documents reserved for user-managed reading and writing unless a task explicitly directs Codex to use them.
@@ -69,11 +67,11 @@
 ### Where To Save New Files
 
 - New implementation modules go under the appropriate `src/` subdirectory.
-- New pipeline orchestration code belongs in `src/pipeline.py` or a nearby active `src/` module.
-- New UI files belong in `app/` or `src/dashboard/` depending on whether they are entrypoints or presentation helpers.
+- New orchestration code belongs in the relevant `src/services/` module or `src/cli/oratek.py`.
+- Do not add a GUI entrypoint; presentation builders that produce documents or tables belong in `src/dashboard/`.
 - New configuration files belong in `config/`.
-- New numbered design documents belong in `doc/SystemDocs/Specifications/` and must be linked from `doc/SystemDocs/Specifications/00_INDEX.md`.
-- New modularization refactor specifications and work-plan updates belong in `doc/SystemDocs/Modularization/` and should be linked from `doc/SystemDocs/Modularization/00_INDEX.md`.
+- When explicitly requested, new numbered design documents belong in `doc/SystemDocs/Specifications/` and must be linked from `doc/SystemDocs/Specifications/00_INDEX.md`.
+- When explicitly requested, modularization specifications and work-plan updates belong in `doc/SystemDocs/Modularization/` and should be linked from `doc/SystemDocs/Modularization/00_INDEX.md`.
 - New per-scan documents belong in `doc/SystemDocs/Scan/` and should follow the strict scan spec format.
 - New answer-style documents requested by the user should be saved in `doc/ForCodexOutput/`.
 - User-only working documents should be kept in `doc/ForUsersOnly/`; do not read or edit them unless the task explicitly requires it.
@@ -93,22 +91,22 @@
 - Treat `doc/Archive/` as read-only warehouse material unless the user explicitly requests archive maintenance.
 - Keep active screening docs separate from archived entry/risk docs.
 - If numbered specs are added, moved, or repurposed, update `doc/SystemDocs/Specifications/00_INDEX.md` in the same pass.
-- During the modularization refactor, keep shared-data schema, service-boundary, DB-pause, and `as_of_date` contracts centralized in `doc/SystemDocs/Modularization/`.
+- When documenting modularization contracts, place shared-data schema, service-boundary, DB-pause, and `as_of_date` material in `doc/SystemDocs/Modularization/`.
 - Prefer ASCII-safe file edits by default. Only use non-ASCII text when it is explicitly needed and the write path has been verified to preserve UTF-8 without lossy replacement.
 - Keep Japanese CLI copy centralized in `src/cli/messages_ja.py`; avoid adding user-facing Japanese literals directly to `src/cli/oratek.py`.
 - After editing Japanese text or CLI copy, run the mojibake guard test in `tests/test_text_encoding.py`.
 - In this Windows Codex environment, if `rg` fails with `Access is denied`, switch immediately to `Get-ChildItem ... | Select-String`.
 - Preserve existing line endings when editing files; after edits, run `git diff --stat` and `git diff --check` to catch line-ending-only churn and trailing whitespace.
 
-## Documentation Sync Rules
+## Planning And Documentation Policy
 
-- Treat implementation files and `config/default.yaml` as the behavior source of truth unless a task explicitly says a specification is authoritative.
-- At session start, do only a scoped drift check for the area being touched. Do not scan or resync all SystemDocs by default.
-- During implementation, avoid broad documentation sync for small edits, UI polish, internal refactors, or test-only work.
-- Update the minimum matching docs immediately when changing scan definitions or statuses, watchlist preset semantics, duplicate-rule behavior, config meaning, database schema, persisted artifacts, public module interfaces, app tab/page structure, or user-visible workflow contracts.
-- For other behavior changes, defer documentation sync until the end of the task and limit it to docs directly related to changed files.
-- At session end, compare changed implementation/config/tests to the related docs only. If they differ, update docs to match implementation or explicitly report the remaining mismatch.
-- Do not edit unrelated SystemDocs just for completeness.
+- Treat implementation files and `config/default.yaml` as the behavior source of truth unless the user explicitly makes a specification authoritative.
+- Do not create or update a plan, work-plan document, or specification as a routine prerequisite for implementation.
+- For a well-scoped implementation request, inspect only the relevant code and proceed directly to implementation and validation.
+- Do not perform documentation drift checks or SystemDocs synchronization by default.
+- Update specifications only when the user explicitly requests documentation work, explicitly makes a specification authoritative, or the implementation cannot proceed safely without resolving a material contract ambiguity.
+- If a material code-versus-spec contradiction is encountered during scoped work, report it concisely; do not broaden the task into automatic documentation maintenance.
+- When documentation is explicitly changed, keep its own links and indexes valid.
 
 ## Edit Rules
 
@@ -119,8 +117,7 @@
 - Keep the active product scope explicit.
 - Keep source-of-truth rules explicit.
 - Keep directory ownership explicit so new files are saved in the right place.
-- When behavior changes, follow the Documentation Sync Rules instead of broad automatic doc syncing.
-- When a scan definition changes, keep `doc/SystemDocs/Scan/` aligned with implementation or call out the mismatch immediately.
+- Do not create a plan or update SystemDocs merely because behavior changed.
 - Do not add long narrative explanations here.
 
 ## Python Environment
@@ -131,12 +128,12 @@
 
 - Run the full test suite with `python -m pytest -q`.
 - Run a focused test file when iterating on one subsystem, for example `python -m pytest -q tests/test_scoring.py`.
-- Launch the UI with `streamlit run app/main.py`.
+- Launch the CLI with `python -m src.cli.oratek`.
 - Use `config/default.yaml` as the default config path unless the task calls for an alternate config.
 
 ## Skills
 
-- Use `$oratek-spec-to-code-syncing` when the specifications are authoritative and implementation must change. Do not edit specs in that flow.
-- Use `$oratek-code-to-spec-syncing` when the implementation is authoritative and specifications must change. Do not edit implementation in that flow.
+- Use `$oratek-spec-to-code-syncing` only when the user explicitly makes specifications authoritative and implementation must change. Do not edit specs in that flow.
+- Use `$oratek-code-to-spec-syncing` only when the user explicitly requests specification synchronization from the current implementation. Do not edit implementation in that flow.
 - Use `$handoff-save` before compaction, session end, or interruption when session state should be preserved in `tmp/handoffs/`.
 - Use `$handoff-resume` when resuming prior work from a saved handoff in `tmp/handoffs/`.

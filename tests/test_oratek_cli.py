@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 import inspect
+from types import SimpleNamespace
 
 import pandas as pd
 
+from src.cli import oratek
 from src.cli.oratek import (
     _index_absorb_values,
     _parse_symbols,
@@ -69,8 +71,7 @@ def test_cli_price_fetch_accepts_default_universe_without_symbols() -> None:
 
 
 def test_cli_resolves_default_universe_from_latest_snapshot(tmp_path: Path) -> None:
-    snapshot_dir = tmp_path / "runs"
-    universe_dir = snapshot_dir / "universe_snapshots"
+    universe_dir = tmp_path / "universe_snapshots"
     universe_dir.mkdir(parents=True)
     pd.DataFrame({"ticker": ["aapl", "AMD", "aapl"]}).to_csv(universe_dir / "latest.csv", index=False)
     (universe_dir / "latest.json").write_text('{"saved_at":"2099-01-01T00:00:00"}', encoding="utf-8")
@@ -80,9 +81,14 @@ def test_cli_resolves_default_universe_from_latest_snapshot(tmp_path: Path) -> N
         (),
         {
             "settings": {
-                "app": {"snapshot_dir": str(snapshot_dir), "default_symbols": ["NVDA"]},
+                "app": {"default_symbols": ["NVDA"]},
                 "universe": {},
-                "universe_discovery": {"enabled": True, "use_snapshot_when_no_manual_symbols": True, "snapshot_ttl_days": 7},
+                "universe_discovery": {
+                    "enabled": True,
+                    "use_snapshot_when_no_manual_symbols": True,
+                    "snapshot_ttl_days": 7,
+                    "snapshot_dir": str(universe_dir),
+                },
             }
         },
     )()
@@ -100,6 +106,44 @@ def test_interactive_market_environment_does_not_prompt_for_symbols() -> None:
 
     assert "_prompt_symbols" not in branch
     assert "symbols: list[str] = []" in branch
+
+
+def test_interactive_scan_allows_default_universe_without_symbol_input() -> None:
+    source = inspect.getsource(_run_interactive_action)
+    branch = source.split('if action == "scan":', 1)[1].split('if action == "market_environment":', 1)[0]
+
+    assert '_prompt_symbols(required=False' in branch
+    assert 'symbols=symbols or ["default universe"]' in branch
+
+
+def test_scan_command_uses_default_universe_when_symbols_are_omitted(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeService:
+        def run(self, symbols, **kwargs):
+            captured["symbols"] = symbols
+            return SimpleNamespace(
+                output_records=[],
+                scan=pd.DataFrame(),
+                preset=pd.DataFrame(),
+                missing={},
+            )
+
+    monkeypatch.setattr(oratek, "_resolve_default_universe_symbols", lambda context: (["AAA", "BBB"], "cached", "latest.csv"))
+    monkeypatch.setattr(oratek, "ScanService", SimpleNamespace(from_config=lambda *args, **kwargs: FakeService()))
+    args = SimpleNamespace(
+        symbols=[],
+        symbols_file=None,
+        start_date=None,
+        end_date=None,
+        as_of=None,
+        refresh_missing=False,
+        force_refresh=False,
+    )
+    context = SimpleNamespace(config_path=Path("config/default.yaml"), module_output_store=None)
+
+    assert oratek.command_scan(args, context) == 0
+    assert captured["symbols"] == ["AAA", "BBB"]
 
 
 def test_interactive_cli_returns_to_menu_loop() -> None:

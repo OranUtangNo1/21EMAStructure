@@ -75,18 +75,17 @@ def test_default_settings_include_builtin_watchlist_presets() -> None:
 
     assert settings["scan"]["preset_csv_export"]["enabled"] is False
     assert settings["scan"]["preset_csv_export"]["output_dir"] == "data_runs/service_outputs/preset_exports"
-    assert settings["app"]["snapshot_dir"] == "data_runs/legacy_pipeline"
     assert settings["data"]["price_cache_dir"] == "C:/reository/shared_market_cache"
     assert settings["compressed_tape"]["output_dir"] == "data_runs/documents/compressed_tape"
     assert settings["stock_card"]["output_dir"] == "data_runs/documents/stock_cards"
     assert settings["stock_card"]["write_markdown"] is True
     assert settings["stock_card"]["write_json"] is True
-    assert settings["market"]["market_report"]["output"]["write_markdown"] is False
+    assert settings["market"]["calculation_mode"] == "blended"
+    assert settings["market"]["market_brief"]["strong_layer_floor"] == 60.0
     assert settings["market_context"]["output"]["dir"] == "data_runs/service_outputs/market_context"
+    assert settings["universe_discovery"]["snapshot_dir"] == "data_cache/universe_snapshots"
     assert settings["market_context"]["output"]["write_markdown"] is False
     assert settings["market_context"]["output"]["write_json"] is True
-    assert settings["data"]["retention"]["eligible_snapshot_runs"] == 5
-    assert settings["data"]["retention"]["run_metadata_runs"] == 5
 
     presets = settings["scan"]["watchlist_presets"]
     preset_names = [preset["preset_name"] for preset in presets]
@@ -239,5 +238,5 @@ def test_default_settings_include_annotation_and_entry_signal_status_maps() -> N
     assert context_guard["signal_overrides"]["momentum_acceleration_entry"]["weak_market_score_threshold"] == 40.0
     assert "early_cycle_recovery_entry" not in context_guard["signal_overrides"]
     assert orderly_pool["preset_sources"] == ["Pullback Trigger"]
-    assert settings["market"]["market_report"]["regime"]["neutral_score_floor"] == 40.0
-    assert settings["market"]["market_report"]["regime"]["positive_score_floor"] == 60.0
+    assert settings["market"]["market_brief"]["weak_layer_floor"] == 40.0
+    assert settings["market"]["market_brief"]["converging_down_ceiling"] == 45.0

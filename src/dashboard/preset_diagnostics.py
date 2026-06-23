@@ -47,6 +47,8 @@ PRESET_STEPS_COLUMNS = [
     "input_ticker_count",
     "pass_ticker_count",
     "output_ticker_count",
+    "rejected_ticker_count",
+    "rejection_rate",
 ]
 PRESET_TICKER_STEPS_COLUMNS = [
     "trade_date",
@@ -197,6 +199,12 @@ def _build_preset_frames(
                     "input_ticker_count": int(len(input_index)),
                     "pass_ticker_count": int(step_pass.sum()),
                     "output_ticker_count": int(len(output_index)),
+                    "rejected_ticker_count": int(len(input_index) - len(output_index)),
+                    "rejection_rate": (
+                        float((len(input_index) - len(output_index)) / len(input_index))
+                        if len(input_index)
+                        else 0.0
+                    ),
                 }
             )
             input_set = set(input_index)

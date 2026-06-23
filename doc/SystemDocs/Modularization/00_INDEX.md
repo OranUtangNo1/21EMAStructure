@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This folder is the central specification and work-plan location for the current modularization refactor.
+This folder contains reference specifications and an optional work plan for the modularization refactor.
 
 The refactor goal is to turn the current screening platform into reusable functional parts that can be executed independently, recombined for new applications, and evaluated against historical `as_of_date` inputs.
 
@@ -12,7 +12,7 @@ The refactor goal is to turn the current screening platform into reusable functi
 - file-based shared data access
 - date-addressable indicator, scan, signal, market, radar, and stock-card execution
 - database-dependent tracking and pool behavior paused unless explicitly re-enabled
-- service-style module APIs that can be used by Streamlit, scripts, tests, and future apps
+- service-style module APIs that can be used by CLI commands, scripts, tests, and future automation without a GUI dependency
 
 ## Current Documents
 
@@ -22,19 +22,27 @@ The refactor goal is to turn the current screening platform into reusable functi
    - `as_of_date` slicing rule
 
 2. `02_MODULARIZATION_WORK_PLAN.md`
-   - active refactor principles
+   - reference refactor principles
    - DB pause decision
    - target service boundaries
-   - phased work order
+   - reference work order
+
+3. `03_SERVICE_ARTIFACT_AND_REUSE_CONTRACT.md`
+   - final no-GUI output layout
+   - retained `service_outputs` and `documents` paths
+   - downstream output reuse instead of global saved-run restoration
+   - legacy and GUI-only directory removal contract
 
 ## Operating Rule
 
-During this modularization refactor, specifications and work plans for the refactor must be added or updated in this folder first.
-
-If implementation changes alter any refactor contract in this folder, update the matching document in the same pass or explicitly report the mismatch.
+Implementation may proceed directly when the requested scope is clear.
+Creating or updating a specification or work plan is not a prerequisite for implementation.
+Update this folder only when documentation work is explicitly requested or a material design decision needs a durable record.
+Implementation changes do not require same-pass documentation synchronization.
 
 ## Relationship To Numbered Specs
 
 The numbered specifications under `doc/SystemDocs/Specifications/` remain the active system reference for implemented behavior.
 
-This folder owns the forward refactor plan and transition contracts. When a refactor contract becomes implemented behavior, update the relevant numbered spec as part of the implementation documentation sync.
+This folder preserves forward-refactor and transition-contract references.
+Update numbered specifications only as a dedicated documentation task, not as an automatic implementation step.

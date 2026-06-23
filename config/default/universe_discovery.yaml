@@ -2,6 +2,7 @@ universe_discovery:
   enabled: true
   provider: finviz
   use_snapshot_when_no_manual_symbols: true
+  snapshot_dir: data_cache/universe_snapshots
   snapshot_ttl_days: 7
   allowed_exchanges:
   - NASDAQ

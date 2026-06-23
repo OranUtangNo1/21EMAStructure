@@ -11,7 +11,7 @@ import pandas as pd
 from src.dashboard.watchlist import WatchlistViewModelBuilder
 from src.data.signal_tracking import ACTIVE_POOL_STATUS, insert_signal_entry_event, insert_signal_evaluation
 from src.data.tracking_db import connect_tracking_db
-from src.pipeline import PlatformArtifacts
+from src.services.platform_artifacts import PlatformArtifacts
 from src.scan.rules import ScanConfig, WatchlistPresetConfig, enrich_with_scan_context
 from src.signals.evaluators.accumulation_breakout import evaluate_accumulation_breakout
 from src.signals.evaluators.momentum_acceleration import evaluate_momentum_acceleration

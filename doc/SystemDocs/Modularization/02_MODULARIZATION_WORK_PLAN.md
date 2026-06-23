@@ -2,7 +2,7 @@
 
 ## Status
 
-Active planning document for the large modularization refactor.
+Optional reference plan for the large modularization refactor.
 
 ## Principles
 
@@ -10,8 +10,10 @@ Active planning document for the large modularization refactor.
 - Prefer explicit service inputs and outputs over implicit app or database state.
 - Make every calculation date-addressable with `as_of_date`.
 - Keep price data as the common dependency for downstream analysis.
-- Allow modules to be recombined by the current app, scripts, tests, and future applications.
+- Allow modules to be recombined by CLI commands, scripts, tests, and future automation.
 - Preserve inspectability: outputs should record source data, config path, and effective date.
+- Preserve the current module-owned `data_runs/service_outputs/` layout as the canonical calculation-output structure.
+- Replace global application-state restoration with validated reuse of only the upstream artifacts required by a downstream service.
 
 ## DB Pause Decision
 
@@ -160,48 +162,49 @@ Outputs:
 
 Tracking persistence, if needed later, should be a separate optional service.
 
-## Main Dashboard Direction
+## Invocation Surface Direction
 
-The main dashboard should become a lightweight launcher and status manager.
+The target system has no GUI and does not restore UI or application session state.
+Users invoke services through CLI commands or other explicit service clients.
 
 Responsibilities:
 
-- accept button actions
-- manage selected config path
-- manage selected universe or ticker file
-- manage `as_of_date`
-- show last update state and artifact paths
-- call service APIs
+- accept explicit service actions
+- resolve the selected config path
+- resolve the selected universe, ticker file, or ticker list
+- resolve `as_of_date`
+- print the produced artifact and manifest paths
+- call service APIs without initializing unrelated services
 
 Non-responsibilities:
 
 - no business logic ownership
-- no automatic expensive work at startup
+- no automatic work at process startup
 - no DB requirement for basic module execution
+- no reconstruction of global `PlatformArtifacts` or prior UI state
 
-## Phased Work Order
+The previous result is reviewed directly from the producing service's latest completed artifact.
+Persisted calculation outputs are reused only as validated inputs to declared downstream services or explicitly retained historical analysis.
+The target path and reuse contract is defined in `03_SERVICE_ARTIFACT_AND_REUSE_CONTRACT.md`.
+
+## Reference Work Order
 
 1. Create shared price schema and date-slicing contract.
 2. Add shared price-data read/write helpers.
-3. Add `PriceDataService`.
-4. Add `StockCardService` with `as_of_date` support.
-5. Add `SnapshotService`.
-6. Add `ScanService` and preset-hit outputs from snapshots.
-7. Add `MarketService` for market, RS Radar, and Market Context.
-8. Split DB-dependent entry-signal behavior from pure entry-signal evaluation.
-9. Refactor `ResearchPlatform` into a thin compatibility facade over the services.
-10. Refactor `app/main.py` into a launcher/status UI over the services.
-11. Add performance-verification workflows that compose the same services across historical dates.
+3. Normalize current output paths, remove legacy/GUI-only output directories, and enforce the output reuse contract.
+4. Add `PriceDataService`.
+5. Add `StockCardService` with `as_of_date` support.
+6. Add `SnapshotService`.
+7. Add `ScanService` and preset-hit outputs from snapshots.
+8. Add `MarketService` for market, RS Radar, and Market Context.
+9. Split DB-dependent entry-signal behavior from pure entry-signal evaluation.
+10. Refactor `ResearchPlatform` into a temporary thin compatibility facade over the services.
+11. Expose CLI/service actions that do not depend on `app/main.py`.
+12. Remove global saved-run and UI/session restoration after service artifact consumers migrate.
+13. Add performance-verification workflows that compose the same services across historical dates.
 
-## Documentation Sync Rule
+## Planning And Documentation Policy
 
-For this refactor, update this folder before or alongside implementation changes that affect:
-
-- shared data schema
-- service boundaries
-- DB pause behavior
-- `as_of_date` calculation contracts
-- dashboard responsibilities
-- module output contracts
-
-When a planned contract becomes implemented behavior, also update the relevant numbered SystemDocs specification.
+This work plan is a reference, not an implementation gate.
+Do not update it or the numbered SystemDocs as a routine prerequisite or follow-up to code changes.
+Update planning or specification documents only when the user explicitly requests it or when a material design decision requires a durable record before implementation can proceed safely.

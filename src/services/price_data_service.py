@@ -21,6 +21,7 @@ class PriceDataService:
     provider: object | None = None
     default_period: str = "3y"
     interval: str = "1d"
+    technical_cache_ttl_hours: int = 12
 
     @classmethod
     def from_config(cls, config_path: str | Path | None = None) -> "PriceDataService":
@@ -31,9 +32,10 @@ class PriceDataService:
         cache_dir = Path(str(data_settings.get("price_cache_dir", app_settings.get("cache_dir", "data_cache")))).expanduser()
         if not cache_dir.is_absolute():
             cache_dir = root / cache_dir
+        technical_cache_ttl_hours = int(data_settings.get("technical_cache_ttl_hours", 12))
         provider = YFinancePriceDataProvider(
             CacheLayer(cache_dir),
-            technical_ttl_hours=int(data_settings.get("technical_cache_ttl_hours", 12)),
+            technical_ttl_hours=technical_cache_ttl_hours,
             allow_stale_cache_on_failure=bool(data_settings.get("allow_stale_cache_on_failure", True)),
             batch_size=int(data_settings.get("price_batch_size", 80)),
             max_retries=int(data_settings.get("price_max_retries", 3)),
@@ -45,6 +47,7 @@ class PriceDataService:
             store=PriceStore(cache_dir),
             provider=provider,
             default_period=str(app_settings.get("price_period", "3y")),
+            technical_cache_ttl_hours=technical_cache_ttl_hours,
         )
 
     def get_histories(
@@ -87,7 +90,21 @@ class PriceDataService:
                     continue
                 latest_date = local_latest_dates[symbol]
                 histories[symbol] = frame
-                if expected_latest_date is not None and latest_date < expected_latest_date:
+                cache_key = self.store.cache_key(symbol, resolved_interval)
+                cache_is_fresh = self.store.cache.is_fresh(
+                    cache_key,
+                    "csv",
+                    self.technical_cache_ttl_hours,
+                )
+                if not cache_is_fresh:
+                    missing_symbols.append(symbol)
+                    statuses[symbol] = self._status(
+                        symbol,
+                        "cache_incomplete",
+                        True,
+                        f"local price cache exceeded {self.technical_cache_ttl_hours} hour TTL",
+                    )
+                elif expected_latest_date is not None and latest_date < expected_latest_date:
                     missing_symbols.append(symbol)
                     statuses[symbol] = self._status(
                         symbol,

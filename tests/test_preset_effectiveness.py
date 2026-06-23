@@ -9,7 +9,7 @@ import pandas as pd
 from src.data.signal_tracking import insert_signal_entry_event
 from src.data.tracking_db import connect_tracking_db
 from src.dashboard.effectiveness import refresh_tracking_detection_prices, sync_preset_effectiveness_logs
-from src.pipeline import PlatformArtifacts
+from src.services.platform_artifacts import PlatformArtifacts
 
 
 def _build_artifacts(

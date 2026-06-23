@@ -12,12 +12,12 @@ import pandas as pd
 
 from src.cli.messages_ja import CLI_MESSAGES, YES_VALUES
 from src.configuration import load_settings
+from src.dashboard.market_brief import MarketBriefBuilder, MarketBriefConfig
 from src.dashboard.market_context import MarketContextBuilder, MarketContextConfig, MarketContextMarkdownRenderer
-from src.dashboard.market_report import MarketReportBuilder, MarketReportConfig, MarketReportMarkdownRenderer
 from src.dashboard.stock_card import StockCardConfig, StockCardDocument, StockCardExportResult
 from src.data.finviz_provider import FinvizScreenerConfig, FinvizScreenerProvider
 from src.data.providers import YahooScreenerConfig, YahooScreenerProvider
-from src.data.store import DataSnapshotStore
+from src.data.universe_snapshot_cache import UniverseSnapshotCache
 from src.services.market_service import MarketService
 from src.services.module_output_store import ModuleOutputRecord, ModuleOutputStore
 from src.services.price_data_service import PriceDataService
@@ -34,11 +34,6 @@ MENU_ACTIONS = ("price_fetch", "stockcard", "scan", "market_environment", "exit"
 class CliContext:
     config_path: Path
     settings: dict[str, object]
-
-    @property
-    def snapshot_dir(self) -> Path:
-        app_settings = self.settings.get("app", {}) if isinstance(self.settings.get("app", {}), dict) else {}
-        return _resolve_project_path(str(app_settings.get("snapshot_dir", "data_runs")))
 
     @property
     def data_runs_dir(self) -> Path:
@@ -101,7 +96,7 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument("--force-refresh", action="store_true")
     scan.set_defaults(func=command_scan)
 
-    market_env = subparsers.add_parser("market-env", help="Build unified market/radar/report/context outputs")
+    market_env = subparsers.add_parser("market-env", help="Build market/radar outputs and a dated market summary")
     _add_optional_symbol_args(market_env)
     market_env.add_argument("--as-of", default=None, help="Effective trade date")
     market_env.add_argument("--refresh-missing", action="store_true")
@@ -121,7 +116,7 @@ def build_parser() -> argparse.ArgumentParser:
     radar.add_argument("--force-refresh", action="store_true")
     radar.set_defaults(func=command_radar)
 
-    report = subparsers.add_parser("market-report-input", help="Build AI market-report input")
+    report = subparsers.add_parser("market-report-input", help="Build a dated AI-input market summary")
     _add_optional_symbol_args(report)
     report.add_argument("--as-of", default=None, help="Effective trade date")
     report.add_argument("--refresh-missing", action="store_true")
@@ -184,10 +179,10 @@ def _run_interactive_action(action: str, context: CliContext) -> int:
             context,
         )
     if action == "scan":
-        symbols = _prompt_symbols(required=True)
+        symbols = _prompt_symbols(required=False, prompt=CLI_MESSAGES["scan_symbol_prompt"])
         as_of = _prompt(CLI_MESSAGES["as_of_prompt"], default="")
         refresh_missing = _prompt_yes_no(CLI_MESSAGES["scan_refresh_missing_prompt"], default=False)
-        if not _confirm(CLI_MESSAGES["scan_confirm"], symbols=symbols, as_of=as_of or "latest"):
+        if not _confirm(CLI_MESSAGES["scan_confirm"], symbols=symbols or ["default universe"], as_of=as_of or "latest"):
             return 0
         return command_scan(
             argparse.Namespace(
@@ -320,8 +315,16 @@ def command_stockcard(args: argparse.Namespace, context: CliContext) -> int:
 
 def command_scan(args: argparse.Namespace, context: CliContext) -> int:
     symbols = _symbols_from_args(args)
+    universe_mode = "manual"
+    universe_path: str | None = None
     if not symbols:
-        raise ValueError("At least one symbol is required.")
+        symbols, universe_mode, universe_path = _resolve_default_universe_symbols(context)
+    if not symbols:
+        raise ValueError("No symbols resolved. Provide --symbols/--symbols-file or configure the default universe.")
+    if universe_mode != "manual":
+        print(f"Default universe: {len(symbols)} symbols [{universe_mode}]")
+        if universe_path:
+            print(f"Universe snapshot: {universe_path}")
     service = ScanService.from_config(context.config_path, output_store=context.module_output_store)
     result = service.run(
         symbols,
@@ -334,6 +337,11 @@ def command_scan(args: argparse.Namespace, context: CliContext) -> int:
         progress_callback=_cli_progress,
     )
     _print_records("Scan outputs", result.output_records)
+    for path in getattr(result, "document_paths", []):
+        print(f"Preset document: {path}")
+    preset_diagnostic_paths = getattr(result, "preset_diagnostic_paths", [])
+    if preset_diagnostic_paths:
+        print(f"Preset diagnostics: {preset_diagnostic_paths[0].parent}")
     print(f"Scan hits: {len(result.scan)}")
     print(f"Preset hits: {len(result.preset)}")
     if result.missing:
@@ -343,20 +351,12 @@ def command_scan(args: argparse.Namespace, context: CliContext) -> int:
 
 def command_market_environment(args: argparse.Namespace, context: CliContext) -> int:
     result = _run_market_service(args, context, write_outputs=True)
-    report_output = write_market_report_input(context, result)
-    context_output = write_market_context_output(context, result)
+    summary_output = write_market_report_input(context, result)
     print(f"Market Environment: {result.market_result.label} / score={result.market_result.score:.1f}")
     print(f"- radar sector leaders: {len(result.radar_result.sector_leaders)}")
     print(f"- radar industry leaders: {len(result.radar_result.industry_leaders)}")
     _print_records("Market/Radar module outputs", result.output_records)
-    print(f"MarketReport input JSON: {report_output['json_path']}")
-    if report_output.get("markdown_path") is not None:
-        print(f"MarketReport input Markdown: {report_output['markdown_path']}")
-    print(f"Market summary: {report_output['summary_path']}")
-    if context_output.get("json_path") is not None:
-        print(f"MarketContext JSON: {context_output['json_path']}")
-    if context_output.get("markdown_path") is not None:
-        print(f"MarketContext Markdown: {context_output['markdown_path']}")
+    print(f"Market summary: {summary_output['summary_path']}")
     if result.missing:
         _print_missing(result.missing)
     return 0
@@ -391,9 +391,6 @@ def command_radar(args: argparse.Namespace, context: CliContext) -> int:
 def command_market_report_input(args: argparse.Namespace, context: CliContext) -> int:
     result = _run_market_service(args, context, write_outputs=False)
     output = write_market_report_input(context, result)
-    print(f"MarketReport input JSON: {output['json_path']}")
-    if output.get("markdown_path") is not None:
-        print(f"MarketReport input Markdown: {output['markdown_path']}")
     print(f"Market summary: {output['summary_path']}")
     return 0
 
@@ -499,30 +496,21 @@ def _stock_card_as_of_warnings(
     return warnings
 
 
-def write_market_report_input(context: CliContext, result) -> dict[str, Path | None]:
+def write_market_report_input(context: CliContext, result) -> dict[str, Path]:
     date_key = _date_key_from_market_result(result.market_result)
     output_dir = context.service_output_dir / "market_report_input"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     summary_path = output_dir / f"market_summary_{date_key}.json"
-    summary = _market_summary_payload(result)
-    _enrich_index_absorb_inputs(context, summary, result.market_result.trade_date)
-    summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
-
+    raw_summary = _market_summary_payload(result)
+    _enrich_index_absorb_inputs(context, raw_summary, result.market_result.trade_date)
     market_settings = context.settings.get("market", {}) if isinstance(context.settings.get("market", {}), dict) else {}
-    report_config = MarketReportConfig.from_dict(market_settings.get("market_report", {}))
-    report = MarketReportBuilder(report_config).build(
-        summary,
-        source_summary_path=str(summary_path),
+    summary = MarketBriefBuilder(MarketBriefConfig.from_market_settings(market_settings)).build(
+        raw_summary,
         history_summaries=_recent_market_summaries(context, date_key),
-    )
-    stem = _output_stem(date_key, report_config.output_mode) or date_key
-    json_path = output_dir / f"{stem}.json"
-    markdown_path = output_dir / f"{stem}.md" if report_config.write_markdown else None
-    json_path.write_text(json.dumps(report.to_dict(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
-    if markdown_path is not None:
-        markdown_path.write_text(MarketReportMarkdownRenderer().render(report), encoding="utf-8", newline="\n")
-    return {"summary_path": summary_path, "json_path": json_path, "markdown_path": markdown_path}
+    ).to_dict()
+    summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+    return {"summary_path": summary_path}
 
 
 def write_market_context_output(context: CliContext, result) -> dict[str, Path | None]:
@@ -551,9 +539,14 @@ def write_market_context_output(context: CliContext, result) -> dict[str, Path |
 
 
 def _run_market_service(args: argparse.Namespace, context: CliContext, *, write_outputs: bool):
+    symbols = _symbols_from_args(args)
+    market_settings = context.settings.get("market", {}) if isinstance(context.settings.get("market", {}), dict) else {}
+    calculation_mode = str(market_settings.get("calculation_mode", "etf")).strip().lower()
+    if not symbols and calculation_mode in {"active_symbols", "blended"}:
+        symbols, _, _ = _resolve_default_universe_symbols(context)
     service = MarketService.from_config(context.config_path, output_store=context.module_output_store)
     return service.run(
-        stock_symbols=_symbols_from_args(args),
+        stock_symbols=symbols,
         as_of_date=args.as_of,
         refresh_missing=bool(args.refresh_missing),
         force_refresh=bool(args.force_refresh),
@@ -602,20 +595,22 @@ def _resolve_default_universe_symbols(
         if isinstance(context.settings.get("universe_discovery", {}), dict)
         else {}
     )
-    snapshot_store = DataSnapshotStore(_resolve_project_path(str(app_settings.get("snapshot_dir", "data_runs/legacy_pipeline"))))
+    snapshot_cache = UniverseSnapshotCache(
+        _resolve_project_path(str(discovery_settings.get("snapshot_dir", "data_cache/universe_snapshots")))
+    )
     discovery_enabled = bool(discovery_settings.get("enabled", True))
     use_snapshot = bool(discovery_settings.get("use_snapshot_when_no_manual_symbols", True))
     ttl_days = int(discovery_settings.get("snapshot_ttl_days", 7))
     if use_snapshot and discovery_enabled:
-        fresh = snapshot_store.load_latest_universe_snapshot(max_age_days=ttl_days)
+        fresh = snapshot_cache.load(max_age_days=ttl_days)
         if not force_universe_refresh and fresh.snapshot is not None and not fresh.snapshot.empty:
             return _symbols_from_universe_snapshot(fresh.snapshot), "weekly_snapshot_cached", fresh.path
 
-        stale = snapshot_store.load_latest_universe_snapshot(max_age_days=None)
+        stale = snapshot_cache.load(max_age_days=None)
         try:
             discovery = _build_universe_discovery_provider(universe_settings, discovery_settings).discover()
             if not discovery.snapshot.empty:
-                path = snapshot_store.save_universe_snapshot(discovery.snapshot, discovery.metadata)
+                path = snapshot_cache.save(discovery.snapshot, discovery.metadata)
                 return _symbols_from_universe_snapshot(discovery.snapshot), "weekly_snapshot_live", str(path)
         except Exception:
             if stale.snapshot is not None and not stale.snapshot.empty:
@@ -711,9 +706,9 @@ def _prompt(label: str, *, default: str = "") -> str:
     return value if value else default
 
 
-def _prompt_symbols(*, required: bool) -> list[str]:
+def _prompt_symbols(*, required: bool, prompt: str | None = None) -> list[str]:
     while True:
-        value = _prompt(CLI_MESSAGES["symbol_prompt"], default="")
+        value = _prompt(prompt or CLI_MESSAGES["symbol_prompt"], default="")
         if value.startswith("@"):
             symbols = _read_symbol_file(Path(value[1:]))
         else:
@@ -785,7 +780,7 @@ def _output_stem(date_key: str, mode: object) -> str | None:
     return date_key
 
 
-def _recent_market_summaries(context: CliContext, date_key: str, *, limit: int = 25) -> list[dict[str, object]]:
+def _recent_market_summaries(context: CliContext, date_key: str, *, limit: int = 251) -> list[dict[str, object]]:
     summary_dir = context.service_output_dir / "market_report_input"
     if not summary_dir.exists():
         return []
@@ -892,6 +887,7 @@ def _market_summary_payload(result) -> dict[str, object]:
             "index_state_summary": getattr(market, "index_state_summary", {}),
             "drawdown_summary": getattr(market, "drawdown_summary", {}),
             "index_context_summary": getattr(market, "index_context_summary", {}),
+            "series_as_of": getattr(market, "series_as_of", {}),
             "vix_close": getattr(market, "vix_close", None),
             "update_time": getattr(market, "update_time", None),
             "market_snapshot": _frame_to_records(getattr(market, "market_snapshot", pd.DataFrame())),

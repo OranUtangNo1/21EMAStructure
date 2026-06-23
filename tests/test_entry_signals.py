@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pandas as pd
 
 from src.data.tracking_db import connect_tracking_db
-from src.pipeline import PlatformArtifacts
+from src.services.platform_artifacts import PlatformArtifacts
 from src.scan.rules import ScanConfig
 from src.signals.entry_plan import build_entry_plan
 from src.signals.pool import SignalPoolEntry

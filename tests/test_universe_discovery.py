@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 
 from src.data.providers import YahooScreenerConfig, YahooScreenerProvider
-from src.data.store import DataSnapshotStore
+from src.data.universe_snapshot_cache import UniverseSnapshotCache
 
 
 def test_yahoo_screener_normalize_quotes_filters_non_equity() -> None:
@@ -42,21 +42,13 @@ def test_yahoo_screener_normalize_quotes_filters_non_equity() -> None:
     assert rows[0]["exchange"] == "NasdaqGS"
 
 
-def test_data_snapshot_store_roundtrip_universe_snapshot(tmp_path) -> None:
-    store = DataSnapshotStore(tmp_path)
-    snapshot = pd.DataFrame(
-        {
-            "ticker": ["nvda", "meta"],
-            "market_cap": [1.0, 2.0],
-        }
-    )
+def test_universe_snapshot_cache_roundtrip(tmp_path) -> None:
+    cache = UniverseSnapshotCache(tmp_path)
+    saved = cache.save(pd.DataFrame({"ticker": ["nvda", "meta"]}), {"source": "test"})
+    loaded = cache.load(max_age_days=7)
 
-    saved_path = store.save_universe_snapshot(snapshot, {"source": "test"})
-    loaded = store.load_latest_universe_snapshot(max_age_days=7)
-
-    assert saved_path.exists()
+    assert saved.exists()
     assert loaded.snapshot is not None
-    assert list(loaded.snapshot["ticker"]) == ["NVDA", "META"]
+    assert loaded.snapshot["ticker"].tolist() == ["NVDA", "META"]
     assert loaded.metadata is not None
     assert loaded.metadata["source"] == "test"
-    assert loaded.path is not None

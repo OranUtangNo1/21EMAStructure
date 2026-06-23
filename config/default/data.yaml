@@ -4,11 +4,6 @@ data:
   profile_cache_ttl_hours: 168
   fundamental_cache_ttl_hours: 24
   allow_stale_cache_on_failure: true
-  persist_research_snapshots: true
-  persist_watchlist_snapshot: false
-  retention:
-    eligible_snapshot_runs: 5
-    run_metadata_runs: 5
   price_batch_size: 80
   price_max_retries: 3
   price_request_sleep_seconds: 2.0

@@ -258,6 +258,7 @@ class MarketConditionResult:
     index_state_summary: dict[str, float] = field(default_factory=dict)
     drawdown_summary: dict[str, float] = field(default_factory=dict)
     index_context_summary: dict[str, object] = field(default_factory=dict)
+    series_as_of: dict[str, str] = field(default_factory=dict)
 
 
 class MarketSnapshotBuilder:
@@ -431,6 +432,7 @@ class MarketConditionScorer:
         breadth_momentum_summary = self._breadth_momentum_summary(latest_raw_components, metric_deltas)
         breadth_internal_summary = self._breadth_internal_summary(stock_histories)
         drawdown_summary = self._drawdown_summary(market_histories, benchmark_history)
+        series_as_of = self._series_as_of(market_histories, stock_histories, benchmark_history)
 
         return MarketConditionResult(
             trade_date=self._latest_trade_date(benchmark_history),
@@ -470,6 +472,7 @@ class MarketConditionScorer:
             index_state_summary={key: round(value, 3) for key, value in index_state_summary.items()},
             drawdown_summary={key: round(value, 3) for key, value in drawdown_summary.items()},
             index_context_summary=index_context_summary,
+            series_as_of=series_as_of,
             market_snapshot=market_snapshot,
             leadership_snapshot=leadership_snapshot,
             external_snapshot=external_snapshot,
@@ -510,6 +513,7 @@ class MarketConditionScorer:
             index_state_summary={},
             drawdown_summary={},
             index_context_summary={},
+            series_as_of={},
             market_snapshot=empty,
             leadership_snapshot=empty,
             external_snapshot=empty,
@@ -521,6 +525,30 @@ class MarketConditionScorer:
             style_pair_summary=empty,
             defensive_cyclical_summary={},
         )
+
+    def _series_as_of(
+        self,
+        market_histories: dict[str, pd.DataFrame],
+        stock_histories: dict[str, pd.DataFrame],
+        benchmark_history: pd.DataFrame,
+    ) -> dict[str, str]:
+        observations: dict[str, str] = {}
+        for symbol, history in market_histories.items():
+            latest_date = self._latest_valid_close_date(history)
+            if latest_date is not None:
+                observations[str(symbol)] = latest_date.strftime("%Y-%m-%d")
+        benchmark_date = self._latest_valid_close_date(benchmark_history)
+        if benchmark_date is not None:
+            observations.setdefault("SPY", benchmark_date.strftime("%Y-%m-%d"))
+        active_dates = [
+            latest_date
+            for history in stock_histories.values()
+            if (latest_date := self._latest_valid_close_date(history)) is not None
+        ]
+        if active_dates:
+            observations["ACTIVE_UNIVERSE_MIN"] = min(active_dates).strftime("%Y-%m-%d")
+            observations["ACTIVE_UNIVERSE_MAX"] = max(active_dates).strftime("%Y-%m-%d")
+        return observations
 
     def _raw_component_values_at_offset(
         self,
@@ -1579,6 +1607,14 @@ class MarketConditionScorer:
 
     def _latest_close(self, history: pd.DataFrame) -> float | None:
         return self._close_at_offset(history, 0)
+
+    def _latest_valid_close_date(self, history: pd.DataFrame) -> pd.Timestamp | None:
+        if history is None or history.empty or "close" not in history.columns:
+            return None
+        valid_close = pd.to_numeric(history["close"], errors="coerce").dropna()
+        if valid_close.empty:
+            return None
+        return pd.Timestamp(valid_close.index[-1])
 
     def _close_at_offset(self, history: pd.DataFrame, offset: int) -> float | None:
         if history.empty or "close" not in history.columns or len(history) <= offset:

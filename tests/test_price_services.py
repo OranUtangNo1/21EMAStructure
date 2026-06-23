@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import time
+
 import pandas as pd
 
 from src.data.results import FetchStatus, PriceHistoryBatch
@@ -85,6 +88,34 @@ def test_price_data_service_marks_incomplete_cache_without_refresh(tmp_path) -> 
     assert result.statuses["NVDA"].source == "cache_incomplete"
     assert "before expected 2026-03-03" in str(result.statuses["NVDA"].note)
     assert list(result.histories["NVDA"].index) == [pd.Timestamp("2026-03-02")]
+
+
+def test_price_data_service_refreshes_expired_cache_when_all_symbols_share_latest_date(tmp_path) -> None:
+    store = PriceStore(tmp_path)
+    for symbol, close in (("NVDA", 100.0), ("AAPL", 200.0)):
+        store.save(symbol, _history([close], ["2026-06-18"]))
+        stale_timestamp = time.time() - 13 * 3600
+        os.utime(store.path_for(symbol), (stale_timestamp, stale_timestamp))
+
+    provider = FakeProvider(
+        {
+            "NVDA": _history([100.0, 101.0], ["2026-06-18", "2026-06-22"]),
+            "AAPL": _history([200.0, 201.0], ["2026-06-18", "2026-06-22"]),
+        }
+    )
+    service = PriceDataService(
+        store=store,
+        provider=provider,
+        technical_cache_ttl_hours=12,
+    )
+
+    result = service.get_histories(["NVDA", "AAPL"], refresh_missing=True)
+
+    assert provider.calls == [(("NVDA", "AAPL"), "3y", "1d", False)]
+    assert result.statuses["NVDA"].source == "refreshed_incremental"
+    assert result.statuses["AAPL"].source == "refreshed_incremental"
+    assert result.histories["NVDA"].index.max() == pd.Timestamp("2026-06-22")
+    assert result.histories["AAPL"].index.max() == pd.Timestamp("2026-06-22")
 
 
 def test_price_data_service_does_not_refresh_missing_without_flag(tmp_path) -> None:

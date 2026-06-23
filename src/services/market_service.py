@@ -270,6 +270,7 @@ class MarketService:
                 "credit_risk_proxy": result.credit_risk_proxy,
                 "index_state_summary": result.index_state_summary,
                 "drawdown_summary": result.drawdown_summary,
+                "series_as_of": result.series_as_of,
                 "update_time": result.update_time,
             }
         )

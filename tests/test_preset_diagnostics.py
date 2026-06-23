@@ -6,7 +6,6 @@ from pathlib import Path
 import pandas as pd
 
 from src.dashboard.preset_diagnostics import build_preset_diagnostics
-from src.data.store import DataSnapshotStore
 from src.scan.rules import ScanConfig
 from src.watchlist_presets import ResolvedWatchlistPreset
 
@@ -87,6 +86,8 @@ def test_build_preset_diagnostics_emits_normalized_funnel_tables() -> None:
     assert list(steps["input_ticker_count"]) == [3, 2, 2]
     assert list(steps["pass_ticker_count"]) == [2, 2, 1]
     assert list(steps["output_ticker_count"]) == [2, 2, 1]
+    assert list(steps["rejected_ticker_count"]) == [1, 0, 1]
+    assert list(steps["rejection_rate"]) == [1 / 3, 0.0, 0.5]
     assert list(artifact.preset_hits["ticker"]) == ["AAA"]
     assert artifact.preset_hits.iloc[0]["selected_scan_names"] == "Pocket Pivot|VCS 52 High"
 
@@ -95,42 +96,3 @@ def test_build_preset_diagnostics_emits_normalized_funnel_tables() -> None:
     assert bool(bbb_group["input_eligible"]) is True
     assert bool(bbb_group["step_pass"]) is False
     assert bool(bbb_group["cumulative_pass"]) is False
-
-
-def test_snapshot_store_writes_latest_preset_diagnostics_files(tmp_path: Path) -> None:
-    config = _diagnostic_config()
-    watchlist, scan_hits = _diagnostic_inputs()
-    presets = [ResolvedWatchlistPreset("Accumulation Breakout", "Built-in", config.watchlist_presets[0])]
-    artifact = build_preset_diagnostics(
-        config_path="config/default.yaml",
-        scan_config=config,
-        watchlist=watchlist,
-        scan_hits=scan_hits,
-        presets=presets,
-        trade_date=pd.Timestamp("2026-04-10"),
-    )
-    store = DataSnapshotStore(tmp_path)
-    snapshot = pd.DataFrame({"trade_date": [pd.Timestamp("2026-04-10")], "close": [10.0]}, index=["AAA"])
-
-    store.save_run(
-        snapshot,
-        snapshot.copy(),
-        watchlist,
-        pd.DataFrame(),
-        {"trade_date": "2026-04-10", "data_source_label": "live"},
-        scan_hits=scan_hits,
-        preset_diagnostics=artifact,
-        persist_watchlist=False,
-    )
-
-    root = tmp_path / "preset_diagnostics"
-    assert (root / "latest_manifest.json").exists()
-    assert (root / "latest_scan_counts.csv").exists()
-    assert (root / "latest_annotation_counts.csv").exists()
-    assert (root / "latest_preset_steps.csv").exists()
-    assert (root / "latest_preset_ticker_steps.csv").exists()
-    assert (root / "latest_preset_hits.csv").exists()
-    manifest = json.loads((root / "latest_manifest.json").read_text(encoding="utf-8"))
-    assert manifest["schema_version"] == "preset_diagnostics.v1"
-    assert manifest["date_key"] == "20260410"
-    assert manifest["preset_hit_rows"] == 1
